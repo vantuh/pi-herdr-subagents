@@ -3,7 +3,14 @@ import {
   type ExtensionAPI,
   type ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
-import { Container, type SelectItem, SelectList, Text } from "@earendil-works/pi-tui";
+import {
+  Container,
+  Key,
+  matchesKey,
+  type SelectItem,
+  SelectList,
+  Text,
+} from "@earendil-works/pi-tui";
 import { discoverAgents } from "./agents.ts";
 import { CHILD_PROTOCOL, GLOBAL_INSTRUCTIONS } from "./constants.ts";
 import {
@@ -51,10 +58,15 @@ async function showNoAgentsDialog(ctx: ExtensionCommandContext): Promise<void> {
   );
 }
 
-async function pickAgentToKill(
+interface AgentMenuAction {
+  action: "focus" | "close";
+  agent: HerdrAgentInfo;
+}
+
+async function pickAgentAction(
   ctx: ExtensionCommandContext,
   agents: HerdrAgentInfo[],
-): Promise<HerdrAgentInfo | undefined> {
+): Promise<AgentMenuAction | undefined> {
   const items: SelectItem[] = agents.map((agent) => ({
     value: agent.tabId,
     label: `${agent.tabLabel} (${agent.agent})`,
@@ -67,7 +79,9 @@ async function pickAgentToKill(
       .join(" • "),
   }));
 
-  const selectedTabId = await ctx.ui.custom<string | null>(
+  const result = await ctx.ui.custom<
+    { action: "focus" | "close"; tabId: string } | null
+  >(
     (tui, theme, _kb, done) => {
       const container = new Container();
       container.addChild(new DynamicBorder((str: string) => theme.fg("accent", str)));
@@ -82,12 +96,16 @@ async function pickAgentToKill(
         scrollInfo: (text) => theme.fg("dim", text),
         noMatch: (text) => theme.fg("warning", text),
       });
-      selectList.onSelect = (item) => done(item.value);
+      selectList.onSelect = (item) => done({ action: "focus", tabId: item.value });
       selectList.onCancel = () => done(null);
 
       container.addChild(selectList);
       container.addChild(
-        new Text(theme.fg("dim", "↑↓ navigate • enter kill tab • esc close"), 1, 0),
+        new Text(
+          theme.fg("dim", "↑↓ navigate • enter focus • d/ctrl+d close • esc close"),
+          1,
+          0,
+        ),
       );
       container.addChild(new DynamicBorder((str: string) => theme.fg("accent", str)));
 
@@ -95,6 +113,12 @@ async function pickAgentToKill(
         render: (width: number) => container.render(width),
         invalidate: () => container.invalidate(),
         handleInput: (data: string) => {
+          if (data === "d" || matchesKey(data, Key.ctrl("d"))) {
+            const selected = selectList.getSelectedItem();
+            if (selected) done({ action: "close", tabId: selected.value });
+            return;
+          }
+
           selectList.handleInput(data);
           tui.requestRender();
         },
@@ -103,8 +127,12 @@ async function pickAgentToKill(
     { overlay: true, overlayOptions: { width: "70%", minWidth: 60, maxHeight: "80%" } },
   );
 
-  if (!selectedTabId) return undefined;
-  return agents.find((agent) => agent.tabId === selectedTabId);
+  if (!result) return undefined;
+
+  const agent = agents.find((agent) => agent.tabId === result.tabId);
+  if (!agent) return undefined;
+
+  return { action: result.action, agent };
 }
 
 async function showHerdrAgentsManager(
@@ -122,17 +150,17 @@ async function showHerdrAgentsManager(
       return;
     }
 
-    const selected = await pickAgentToKill(ctx, agents);
+    const selected = await pickAgentAction(ctx, agents);
     if (!selected) return;
 
-    const ok = await ctx.ui.confirm(
-      "Kill Herdr agent?",
-      `Close tab "${selected.tabLabel}" (${selected.status})?`,
-    );
-    if (!ok) continue;
+    if (selected.action === "focus") {
+      await execHerdr(["tab", "focus", selected.agent.tabId]);
+      ctx.ui.notify(`Focused Herdr agent tab "${selected.agent.tabLabel}"`, "info");
+      return;
+    }
 
-    await execHerdr(["tab", "close", selected.tabId]);
-    ctx.ui.notify(`Killed Herdr agent tab "${selected.tabLabel}"`, "info");
+    await execHerdr(["tab", "close", selected.agent.tabId]);
+    ctx.ui.notify(`Closed Herdr agent tab "${selected.agent.tabLabel}"`, "info");
   }
 }
 
