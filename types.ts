@@ -12,6 +12,7 @@ export interface PaneInfo {
   pane_id: string;
   tab_id: string;
   workspace_id: string;
+  terminal_id?: string;
   focused?: boolean;
   agent?: string;
   agent_status?: string;

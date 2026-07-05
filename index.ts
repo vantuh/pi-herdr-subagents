@@ -18,12 +18,22 @@ import {
   findReusableAgentTab,
   getCurrentContext,
   listCurrentWorkspaceAgents,
+  listPanes,
   listTabs,
   uniqueLabel,
   waitForAgentFinished,
 } from "./herdr.ts";
 import { HerdrAgentParams } from "./schema.ts";
-import type { HerdrAgentInfo, HerdrAgentLifecycle } from "./types.ts";
+import {
+  deleteAgentLifecycle,
+  emptyHerdrAgentsState,
+  getKnownAgentLifecyclesByTabId,
+  loadHerdrAgentsState,
+  pruneHerdrAgentsState,
+  recordAgentLifecycle,
+  saveHerdrAgentsState,
+} from "./state.ts";
+import type { HerdrAgentInfo, HerdrAgentLifecycle, PaneInfo } from "./types.ts";
 import {
   formatAgentOutput,
   shellJoin,
@@ -33,26 +43,38 @@ import {
   writeTempFile,
 } from "./utils.ts";
 
-const agentLifecycleByTabId = new Map<string, HerdrAgentLifecycle>();
-
-function pruneAgentLifecycles(tabs: { tab_id: string }[]): void {
-  const liveTabIds = new Set(tabs.map((tab) => tab.tab_id));
-  for (const tabId of agentLifecycleByTabId.keys()) {
-    if (!liveTabIds.has(tabId)) agentLifecycleByTabId.delete(tabId);
-  }
-}
-
 function formatLifecycle(lifecycle?: HerdrAgentLifecycle): string {
   if (lifecycle === "oneshot") return "one-shot";
   if (lifecycle === "persistent") return "reusable";
   return "unknown";
 }
 
+// Lifecycle state persistence (state.ts) is best-effort: a failure to
+// load/save/prune/record/delete must never abort agent execution/output or
+// manager listing. This swallows the error and returns a fallback so callers
+// can proceed without persisted lifecycle info.
+async function bestEffort<T>(fallback: T, task: () => Promise<T>): Promise<T> {
+  try {
+    return await task();
+  } catch {
+    return fallback;
+  }
+}
+
 async function loadCurrentAgents(): Promise<HerdrAgentInfo[]> {
   const current = await getCurrentContext();
   const tabs = await listTabs(current.workspaceId);
-  pruneAgentLifecycles(tabs);
-  return listCurrentWorkspaceAgents(current, tabs, agentLifecycleByTabId);
+  const state = await bestEffort(emptyHerdrAgentsState(), () => loadHerdrAgentsState());
+  await bestEffort(undefined, async () => {
+    if (pruneHerdrAgentsState(state, current.panes)) {
+      await saveHerdrAgentsState(state);
+    }
+  });
+  return listCurrentWorkspaceAgents(
+    current,
+    tabs,
+    getKnownAgentLifecyclesByTabId(current.panes, state),
+  );
 }
 
 async function showNoAgentsDialog(ctx: ExtensionCommandContext): Promise<void> {
@@ -192,7 +214,6 @@ async function showHerdrAgentsManager(
     }
 
     await execHerdr(["tab", "close", selected.agent.tabId]);
-    agentLifecycleByTabId.delete(selected.agent.tabId);
     ctx.ui.notify(`Closed Herdr agent tab "${selected.agent.tabLabel}"`, "info");
   }
 }
@@ -279,6 +300,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       let tabLabel = baseLabel;
       let tabId: string | undefined;
       let paneId: string | undefined;
+      let agentPane: PaneInfo | undefined;
       let reused = false;
 
       if (persistent) {
@@ -288,6 +310,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
           tabId = reusable.tab.tab_id;
           tabLabel = reusable.tab.label;
           paneId = reusable.pane.pane_id;
+          agentPane = reusable.pane;
         }
       }
 
@@ -315,13 +338,14 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
           );
         }
 
-        const rootPane = createResult?.root_pane;
+        const rootPane = createResult?.root_pane as PaneInfo | undefined;
         if (!rootPane || typeof rootPane.pane_id !== "string") {
           throw new Error(
             `Malformed Herdr tab create output: missing result.root_pane.pane_id. Output: ${createOutput}`,
           );
         }
         paneId = rootPane.pane_id;
+        agentPane = rootPane;
         tabId = typeof rootPane.tab_id === "string" ? rootPane.tab_id : undefined;
 
         if (!tabId) {
@@ -337,7 +361,20 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
         throw new Error(`Could not identify Herdr tab or pane for ${tabLabel}.`);
       }
 
-      agentLifecycleByTabId.set(tabId, lifecycle);
+      if (!agentPane?.terminal_id) {
+        // terminal_id is required to key lifecycle state (state.ts paneStateKey).
+        // If it's still missing after this lookup, lifecycle won't be persisted
+        // for this pane, which is a best-effort miss, not a fatal error.
+        agentPane = (await listPanes(signal)).find((pane) => pane.pane_id === paneId);
+      }
+      if (agentPane) {
+        await bestEffort(undefined, () =>
+          recordAgentLifecycle(agentPane!, lifecycle, {
+            tabLabel,
+            agent: agent.name,
+          }),
+        );
+      }
 
       const taskPrompt = [
         `You are the ${agent.name} Herdr agent.`,
@@ -425,7 +462,9 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
         if (closeAfterWait) {
           try {
             await execHerdr(["tab", "close", tabId], signal);
-            agentLifecycleByTabId.delete(tabId);
+            if (agentPane) {
+              await bestEffort(undefined, () => deleteAgentLifecycle(agentPane!));
+            }
             closed = true;
           } catch (error) {
             closeError = error instanceof Error ? error.message : String(error);
