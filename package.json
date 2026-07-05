@@ -10,7 +10,8 @@
     "typebox": "*"
   },
   "pi": {
-    "extensions": ["./index.ts"],
-    "prompts": ["./prompts"]
+    "extensions": [
+      "./index.ts"
+    ]
   }
 }
