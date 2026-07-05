@@ -4,14 +4,10 @@ This document describes the runtime flow of the `herdr_agent` tool.
 
 ## 1. Pi loads the extension
 
-Pi loads the package from `pi/.pi/agent/settings.json`:
+Pi loads the extension from the symlinked extension directory:
 
-```json
-{
-  "source": "extensions/herdr-agents",
-  "extensions": ["index.ts"],
-  "prompts": ["prompts/*.md"]
-}
+```text
+~/.pi/agent/extensions/herdr-agents/index.ts
 ```
 
 `index.ts` runs unless `HERDR_AGENT_CHILD=1` is set.

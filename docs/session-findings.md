@@ -39,7 +39,6 @@ The relevant Pi extension capabilities:
 - `pi.registerTool(...)` registers `herdr_agent`.
 - `pi.on("before_agent_start", ...)` appends Orchestrator instructions.
 - `pi.events.emit(...)` communicates with Herdr's installed state extension.
-- Prompt templates can be packaged through `pi.prompts` in `package.json` and `settings.json`.
 
 ## 4. Agent profiles are reused
 
@@ -148,43 +147,9 @@ Fix: custom polling now treats:
 - `done` as finished;
 - `idle` as finished after Pi has appeared in the pane and the pane was active, or after startup grace time.
 
-## 10. Prompt loading and extension loading are separate concerns
+## 10. Global prompt integration
 
-We tested three settings variants.
-
-### No package entry
-
-Result:
-
-- `herdr_agent` tool loaded through extension auto-discovery;
-- `/parallel-review` did **not** load.
-
-Reason: `~/.pi/agent/extensions/herdr-agents/index.ts` is auto-discovered, but `prompts/*.md` in that package are not loaded unless the package is registered or the prompt is placed in global prompts.
-
-### Package entry with `extensions: []`
-
-Result:
-
-- `/parallel-review` loaded;
-- `herdr_agent` disappeared from the model's tool list.
-
-This was a real bug. The model started using raw Herdr CLI and loader investigation because it did not see the tool.
-
-### Final chosen package entry
-
-```json
-{
-  "source": "extensions/herdr-agents",
-  "extensions": ["index.ts"],
-  "prompts": ["prompts/*.md"]
-}
-```
-
-Result:
-
-- `herdr_agent` is visible;
-- `/parallel-review` expands;
-- extension and prompt are both explicitly owned by the package.
+A global `/parallel-review` Pi prompt uses this extension's `herdr_agent` tool. The prompt itself is maintained outside this extension.
 
 ## 11. Runtime smoke test for tool visibility
 
@@ -203,25 +168,11 @@ herdr_agent
 
 If `herdr_agent` is missing, check:
 
-- `settings.json` package entry;
 - symlinks under `~/.pi/agent/extensions/herdr-agents`;
 - whether `HERDR_AGENT_CHILD=1` is accidentally set in the parent environment;
 - extension load errors on Pi startup.
 
-## 12. Runtime smoke test for prompt expansion
-
-Useful command:
-
-```bash
-PI_OFFLINE=1 pi --no-tools --no-context-files --no-skills --no-themes \
-  -p '/parallel-review answer in one sentence: did this slash prompt expand?'
-```
-
-Expected: model says the prompt expanded into review instructions.
-
-If it receives a literal slash command, prompt loading is broken.
-
-## 13. Stow/symlink issue after splitting files
+## 12. Stow/symlink issue after splitting files
 
 After the extension was refactored from one `index.ts` into multiple files, Pi failed with:
 
@@ -239,37 +190,7 @@ cd ~/dotfiles && stow pi
 
 or otherwise ensure every file in `pi/.pi/agent/extensions/herdr-agents/` exists under `~/.pi/agent/extensions/herdr-agents/`.
 
-## 14. `parallel-review` prompt was adapted
-
-The prompt originally talked about generic subagents.
-
-It now explicitly says:
-
-- use `herdr_agent`;
-- use fresh Herdr tabs;
-- do not use raw `herdr` CLI commands;
-- prefer the `reviewer` profile;
-- synthesize `HERDR_RESULT` output.
-
-This reduces confusion between Pi's old subagent concepts and the new Herdr persistent-agent workflow.
-
-## 15. Reviewer disagreement during debugging
-
-Two Herdr reviewer panes disagreed about `extensions: []`.
-
-- One reviewer reasoned from loader code and thought auto-discovery would still register the extension.
-- Another reviewer argued from package filtering semantics that `extensions: []` disables the extension.
-
-Runtime testing settled it:
-
-```text
-extensions: [] => herdr_agent missing
-extensions: ["index.ts"] => herdr_agent visible
-```
-
-Takeaway: for extension loading issues, always verify the actual model tool list, not only docs/source reasoning.
-
-## 16. Current known rough edges
+## 13. Current known rough edges
 
 These are known but not currently fixed:
 
@@ -278,7 +199,7 @@ These are known but not currently fixed:
 - Reusing an existing tab sends `@task-file` into that pane; this assumes the child Pi is ready to accept a new prompt.
 - Child agents do not inherit Orchestrator context by design, so poor task prompts lead to poor child results.
 
-## 17. Desired future improvements
+## 14. Desired future improvements
 
 Potential future work:
 

@@ -68,41 +68,26 @@ The extension uses:
 - `schema.ts` — TypeBox tool parameter schema.
 - `utils.ts` — shell-safe command building and temp prompt files.
 - `types.ts` — shared interfaces.
-- `prompts/parallel-review.md` — slash prompt for parallel Herdr reviewer workflows.
 
-## Settings and loading
+## Loading
 
-The extension package is explicitly listed in `pi/.pi/agent/settings.json`:
+The extension is loaded from the symlinked Pi extension directory:
+
+```text
+~/.pi/agent/extensions/herdr-agents/index.ts
+```
+
+Its package metadata declares only the extension entrypoint:
 
 ```json
 {
-  "source": "extensions/herdr-agents",
-  "extensions": ["index.ts"],
-  "prompts": ["prompts/*.md"]
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
 }
 ```
 
-This does two things:
-
-1. loads the extension and registers `herdr_agent`;
-2. loads prompt templates from `prompts/*.md`, especially `/parallel-review`.
-
-During development we tested removing this package entry. Result:
-
-- `herdr_agent` still loaded via extension auto-discovery;
-- `/parallel-review` did **not** load.
-
-We also tested `"extensions": []`. Result:
-
-- `/parallel-review` loaded;
-- `herdr_agent` disappeared from the model's tool list.
-
-So the chosen working configuration is explicit:
-
-```json
-"extensions": ["index.ts"],
-"prompts": ["prompts/*.md"]
-```
+A global `/parallel-review` Pi prompt uses this extension's `herdr_agent` tool, but the prompt itself is maintained outside this extension.
 
 ## Tool parameters
 

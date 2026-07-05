@@ -23,7 +23,6 @@ The intended model behavior:
 - `constants.ts` — injected Orchestrator instructions and child-agent protocol.
 - `utils.ts` — shell quoting, title casing, temp prompt files.
 - `types.ts` — shared TypeScript interfaces.
-- `prompts/parallel-review.md` — prompt template that drives parallel Herdr reviewer agents.
 - `docs/` — detailed implementation and session notes.
 
 ## Important behavior
@@ -33,19 +32,15 @@ The intended model behavior:
 - Waiting treats both `done` and certain `idle` states as finished. Herdr may show a completed agent as `idle` after the pane has been observed.
 - While waiting, the extension emits `pi.events.emit("herdr:blocked", ...)` so Herdr can mark the Orchestrator pane as blocked/waiting.
 
-## Settings integration
+## Loading
 
-This extension is loaded through the Pi settings package entry:
+This extension is loaded from the symlinked Pi extension directory:
 
-```json
-{
-  "source": "extensions/herdr-agents",
-  "extensions": ["index.ts"],
-  "prompts": ["prompts/*.md"]
-}
+```text
+~/.pi/agent/extensions/herdr-agents/index.ts
 ```
 
-Do not change this to `"extensions": []`: that caused `herdr_agent` to disappear from the model's tool list during development.
+A global `/parallel-review` Pi prompt uses this extension's `herdr_agent` tool, but the prompt itself is maintained outside this extension.
 
 ## Validation
 
@@ -62,10 +57,6 @@ bun build pi/.pi/agent/extensions/herdr-agents/index.ts \
 # Confirm the tool is visible to a fresh Pi model.
 PI_OFFLINE=1 pi --no-context-files --no-skills --no-prompt-templates --no-themes \
   -p 'List exact tool names available. Do not use tools.'
-
-# Confirm the prompt template expands.
-PI_OFFLINE=1 pi --no-tools --no-context-files --no-skills --no-themes \
-  -p '/parallel-review answer in one sentence: did this slash prompt expand?'
 ```
 
-After changing symlinked files or settings, restart Pi or run `/reload` in the active session.
+After changing symlinked files, restart Pi or run `/reload` in the active session.
