@@ -1,10 +1,10 @@
 ---
-description: Parallel subagents review
+description: Parallel Herdr agents review
 ---
 
-Launch parallel reviewers for an adversarial review of the current work.
+Launch parallel Herdr reviewer agents for an adversarial review of the current work.
 
-Use fresh context, not forked context, unless I explicitly ask for forked context. Reviewers should inspect the repository, relevant instructions, and current diff directly from files and commands. Do not rely on the main conversation history.
+Use the `herdr_agent` tool with fresh Herdr tabs, not forked conversation context, unless I explicitly ask for forked context. Reviewers should inspect the repository, relevant instructions, and current diff directly from files and commands. Do not rely on the main conversation history.
 
 Give each reviewer a distinct angle. Generate the angles dynamically from the user's intent, the plan, the implemented code, and the current diff. If I specify angles, use mine. Otherwise, choose the highest-value review angles for this specific work.
 
@@ -29,9 +29,9 @@ Choose or adapt angles when the work calls for it:
 
 Prefer three strong reviewers over many vague reviewers.
 
-Give every reviewer a specific task prompt naming its angle. Ask reviewers to return concise, evidence-backed findings with file/line references and suggested fixes. The response should be review feedback, not a context summary. Reviewers must not edit files unless I explicitly ask for a writer pass.
+Give every Herdr reviewer a specific `herdr_agent` task prompt naming its angle. Prefer the `reviewer` agent profile unless another profile is clearly better for a specific angle. Ask reviewers to return concise, evidence-backed findings with file/line references and suggested fixes. The response should be review feedback, not a context summary. Reviewers must not edit files unless I explicitly ask for a writer pass.
 
-While reviewers run, do your own narrow inspection if useful. After they return, synthesize the feedback into:
+While Herdr reviewers run, do your own narrow inspection if useful. After they return, read their `HERDR_RESULT` output and synthesize the feedback into:
 
 - fixes worth doing now
 - optional improvements
@@ -53,4 +53,4 @@ Additional review target or focus from the slash command invocation:
 
 $@
 
-If the invocation provides a URL, issue link, file path, plan path, or freeform focus, treat it as the primary review scope. Read or fetch that target before assigning reviewer angles, and pass the target explicitly into each reviewer task.
+If the invocation provides a URL, issue link, file path, plan path, or freeform focus, treat it as the primary review scope. Read or fetch that target before assigning reviewer angles, and pass the target explicitly into each `herdr_agent` task.
