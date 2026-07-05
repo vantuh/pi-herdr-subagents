@@ -14,8 +14,8 @@ import {
 import { discoverAgents } from "./agents.ts";
 import { CHILD_PROTOCOL, GLOBAL_INSTRUCTIONS } from "./constants.ts";
 import {
-  choosePaneForTab,
   execHerdr,
+  findReusableAgentTab,
   getCurrentContext,
   listCurrentWorkspaceAgents,
   listTabs,
@@ -195,11 +195,13 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
     name: "herdr_agent",
     label: "Herdr Agent",
     description:
-      "Spawn or reuse a persistent Herdr tab running a fresh Pi agent with a named profile from ~/.pi/agent/agents.",
+      "Spawn a one-shot Herdr agent or reuse a persistent Herdr tab with a named profile from ~/.pi/agent/agents.",
     promptSnippet:
-      "Delegate isolated research, scouting, planning, review, testing, or implementation to a persistent Herdr tab.",
+      "Delegate isolated research, scouting, planning, review, testing, or implementation to a one-shot or persistent Herdr agent.",
     promptGuidelines: [
       "Use herdr_agent when isolated context helps: broad codebase exploration, external research, review, planning, tests/logs, or independent implementation.",
+      "Use lifecycle: 'oneshot' for one-off tasks that should close after completion; this is the default.",
+      "Use lifecycle: 'persistent' when the same role should stay available for follow-up tasks or accumulate context; the tool will reuse the matching tab.",
       "Use herdr_agent with the smallest suitable profile and a self-contained task.",
     ],
     parameters: HerdrAgentParams,
@@ -222,8 +224,24 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       }
 
       const wait = params.wait ?? true;
+      const lifecycle = params.lifecycle ?? "oneshot";
+      const persistent = lifecycle === "persistent";
       const timeoutMs = params.timeoutMs ?? 600000;
       const baseLabel = params.tabLabel?.trim() || titleCase(agent.name);
+
+      if (lifecycle === "oneshot" && !wait) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "lifecycle: 'oneshot' requires wait: true so the one-shot tab can be closed after completion.",
+            },
+          ],
+          details: { lifecycle, waited: false },
+          isError: true,
+        };
+      }
+
       const current = await getCurrentContext(signal);
 
       await execHerdr(
@@ -233,17 +251,17 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
 
       const tabs = await listTabs(current.workspaceId, signal);
       let tabLabel = baseLabel;
+      let tabId: string | undefined;
       let paneId: string | undefined;
       let reused = false;
 
-      if (params.reuseExisting) {
-        const existingTab = tabs.find((tab) => tab.label === baseLabel);
-        const existingPane = existingTab
-          ? choosePaneForTab(current.panes, existingTab.tab_id)
-          : undefined;
-        if (existingPane) {
+      if (persistent) {
+        const reusable = findReusableAgentTab(current, tabs, baseLabel);
+        if (reusable) {
           reused = true;
-          paneId = existingPane.pane_id;
+          tabId = reusable.tab.tab_id;
+          tabLabel = reusable.tab.label;
+          paneId = reusable.pane.pane_id;
         }
       }
 
@@ -261,7 +279,22 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
           ],
           signal,
         );
-        paneId = JSON.parse(createOutput).result.root_pane.pane_id as string;
+        const createResult = JSON.parse(createOutput).result;
+        const rootPane = createResult.root_pane as {
+          pane_id: string;
+          tab_id?: string;
+        };
+        paneId = rootPane.pane_id;
+        tabId = rootPane.tab_id;
+
+        if (!tabId) {
+          const createdTabs = await listTabs(current.workspaceId, signal);
+          tabId = createdTabs.find((tab) => tab.label === tabLabel)?.tab_id;
+        }
+      }
+
+      if (!tabId || !paneId) {
+        throw new Error(`Could not identify Herdr tab or pane for ${tabLabel}.`);
       }
 
       const taskPrompt = [
@@ -280,9 +313,9 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
               text: `Sending task to existing Herdr tab ${tabLabel} (${paneId})...`,
             },
           ],
-          details: { paneId, tabLabel, reused, agent },
+          details: { tabId, paneId, tabLabel, lifecycle, reused, agent },
         });
-        await execHerdr(["pane", "run", paneId!, `@${taskPath}`], signal);
+        await execHerdr(["pane", "run", paneId, `@${taskPath}`], signal);
       } else {
         const profilePrompt = [agent.systemPrompt, CHILD_PROTOCOL]
           .filter(Boolean)
@@ -301,9 +334,9 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
               text: `Starting Herdr tab ${tabLabel} (${paneId})...`,
             },
           ],
-          details: { paneId, tabLabel, reused, agent },
+          details: { tabId, paneId, tabLabel, lifecycle, reused, agent },
         });
-        await execHerdr(["pane", "run", paneId!, command], signal);
+        await execHerdr(["pane", "run", paneId, command], signal);
       }
 
       if (!wait) {
@@ -314,7 +347,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
               text: `Herdr agent started in tab ${tabLabel} (${paneId}).`,
             },
           ],
-          details: { paneId, tabLabel, reused, agent, waited: false },
+          details: { tabId, paneId, tabLabel, lifecycle, reused, agent, waited: false },
         };
       }
 
@@ -325,18 +358,18 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
             text: `Waiting for Herdr agent ${tabLabel} (${paneId})...`,
           },
         ],
-        details: { paneId, tabLabel, reused, agent },
+        details: { tabId, paneId, tabLabel, lifecycle, reused, agent },
       });
 
       const blockedLabel = `waiting for ${tabLabel}`;
       pi.events.emit("herdr:blocked", { active: true, label: blockedLabel });
       try {
-        await waitForAgentFinished(paneId!, timeoutMs, signal);
+        await waitForAgentFinished(paneId, timeoutMs, signal);
         const output = await execHerdr(
           [
             "pane",
             "read",
-            paneId!,
+            paneId,
             "--source",
             "recent-unwrapped",
             "--lines",
@@ -345,16 +378,41 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
           signal,
         );
 
+        let closed = false;
+        let closeError: string | undefined;
+        if (!persistent) {
+          try {
+            await execHerdr(["tab", "close", tabId], signal);
+            closed = true;
+          } catch (error) {
+            closeError = error instanceof Error ? error.message : String(error);
+          }
+        }
+
+        const text =
+          output.trim() ||
+          `(Herdr agent ${tabLabel} finished with no visible output.)`;
+
         return {
           content: [
             {
               type: "text",
-              text:
-                output.trim() ||
-                `(Herdr agent ${tabLabel} finished with no visible output.)`,
+              text: closeError
+                ? `${text}\n\nWarning: failed to close one-shot Herdr tab ${tabLabel}: ${closeError}`
+                : text,
             },
           ],
-          details: { paneId, tabLabel, reused, agent, waited: true },
+          details: {
+            tabId,
+            paneId,
+            tabLabel,
+            lifecycle,
+            reused,
+            closed,
+            closeError,
+            agent,
+            waited: true,
+          },
         };
       } finally {
         pi.events.emit("herdr:blocked", { active: false, label: blockedLabel });

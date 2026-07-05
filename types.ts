@@ -35,6 +35,11 @@ export interface HerdrAgentInfo {
   cwd?: string;
 }
 
+export interface ReusableAgentTab {
+  tab: TabInfo;
+  pane: PaneInfo;
+}
+
 export interface HerdrContext {
   panes: PaneInfo[];
   currentPane: PaneInfo;

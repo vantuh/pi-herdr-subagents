@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { listCurrentWorkspaceAgents, observeAgentWaitState } from "./herdr.ts";
+import {
+  findReusableAgentTab,
+  listCurrentWorkspaceAgents,
+  observeAgentWaitState,
+} from "./herdr.ts";
 import type { AgentWaitState } from "./herdr.ts";
 import type { HerdrContext, PaneInfo, TabInfo } from "./types.ts";
 
@@ -313,4 +317,158 @@ test("skips panes with an agent but no matching tab", () => {
   };
 
   assert.deepEqual(listCurrentWorkspaceAgents(context, tabs), []);
+});
+
+test("finds a reusable agent tab by exact label", () => {
+  const panes: PaneInfo[] = [
+    {
+      pane_id: "pane-orchestrator",
+      tab_id: "tab-orchestrator",
+      workspace_id: "workspace-1",
+      agent: "pi",
+    },
+    {
+      pane_id: "pane-worker",
+      tab_id: "tab-worker",
+      workspace_id: "workspace-1",
+      agent: "pi",
+      agent_status: "idle",
+    },
+  ];
+  const tabs: TabInfo[] = [
+    { tab_id: "tab-orchestrator", label: "Orchestrator" },
+    { tab_id: "tab-worker", label: "Worker" },
+  ];
+  const context: HerdrContext = {
+    panes,
+    currentPane: panes[0]!,
+    currentTab: "tab-orchestrator",
+    workspaceId: "workspace-1",
+  };
+
+  assert.deepEqual(findReusableAgentTab(context, tabs, "Worker"), {
+    tab: tabs[1],
+    pane: panes[1],
+  });
+});
+
+test("does not reuse the orchestrator tab", () => {
+  const panes: PaneInfo[] = [
+    {
+      pane_id: "pane-orchestrator",
+      tab_id: "tab-orchestrator",
+      workspace_id: "workspace-1",
+      agent: "pi",
+    },
+  ];
+  const tabs: TabInfo[] = [{ tab_id: "tab-orchestrator", label: "Worker" }];
+  const context: HerdrContext = {
+    panes,
+    currentPane: panes[0]!,
+    currentTab: "tab-orchestrator",
+    workspaceId: "workspace-1",
+  };
+
+  assert.equal(findReusableAgentTab(context, tabs, "Worker"), undefined);
+});
+
+test("does not reuse a tab without a pi pane", () => {
+  const panes: PaneInfo[] = [
+    {
+      pane_id: "pane-orchestrator",
+      tab_id: "tab-orchestrator",
+      workspace_id: "workspace-1",
+      agent: "pi",
+    },
+    {
+      pane_id: "pane-shell",
+      tab_id: "tab-worker",
+      workspace_id: "workspace-1",
+      agent: "shell",
+      agent_status: "idle",
+    },
+  ];
+  const tabs: TabInfo[] = [
+    { tab_id: "tab-orchestrator", label: "Orchestrator" },
+    { tab_id: "tab-worker", label: "Worker" },
+  ];
+  const context: HerdrContext = {
+    panes,
+    currentPane: panes[0]!,
+    currentTab: "tab-orchestrator",
+    workspaceId: "workspace-1",
+  };
+
+  assert.equal(findReusableAgentTab(context, tabs, "Worker"), undefined);
+});
+
+test("reusable tab lookup prefers a pi pane in a multi-pane tab", () => {
+  const panes: PaneInfo[] = [
+    {
+      pane_id: "pane-orchestrator",
+      tab_id: "tab-orchestrator",
+      workspace_id: "workspace-1",
+      agent: "pi",
+    },
+    {
+      pane_id: "pane-shell",
+      tab_id: "tab-worker",
+      workspace_id: "workspace-1",
+      agent: "shell",
+    },
+    {
+      pane_id: "pane-pi",
+      tab_id: "tab-worker",
+      workspace_id: "workspace-1",
+      agent: "pi",
+    },
+  ];
+  const tabs: TabInfo[] = [
+    { tab_id: "tab-orchestrator", label: "Orchestrator" },
+    { tab_id: "tab-worker", label: "Worker" },
+  ];
+  const context: HerdrContext = {
+    panes,
+    currentPane: panes[0]!,
+    currentTab: "tab-orchestrator",
+    workspaceId: "workspace-1",
+  };
+
+  assert.equal(findReusableAgentTab(context, tabs, "Worker")?.pane, panes[2]);
+});
+
+test("reusable tab lookup matches exact base label, not numbered labels", () => {
+  const panes: PaneInfo[] = [
+    {
+      pane_id: "pane-orchestrator",
+      tab_id: "tab-orchestrator",
+      workspace_id: "workspace-1",
+      agent: "pi",
+    },
+    {
+      pane_id: "pane-worker-2",
+      tab_id: "tab-worker-2",
+      workspace_id: "workspace-1",
+      agent: "pi",
+    },
+    {
+      pane_id: "pane-worker",
+      tab_id: "tab-worker",
+      workspace_id: "workspace-1",
+      agent: "pi",
+    },
+  ];
+  const tabs: TabInfo[] = [
+    { tab_id: "tab-orchestrator", label: "Orchestrator" },
+    { tab_id: "tab-worker-2", label: "Worker #2" },
+    { tab_id: "tab-worker", label: "Worker" },
+  ];
+  const context: HerdrContext = {
+    panes,
+    currentPane: panes[0]!,
+    currentTab: "tab-orchestrator",
+    workspaceId: "workspace-1",
+  };
+
+  assert.equal(findReusableAgentTab(context, tabs, "Worker")?.tab, tabs[2]);
 });

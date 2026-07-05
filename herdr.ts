@@ -3,6 +3,7 @@ import type {
   HerdrAgentInfo,
   HerdrContext,
   PaneInfo,
+  ReusableAgentTab,
   TabInfo,
 } from "./types.ts";
 
@@ -115,6 +116,22 @@ export function choosePaneForTab(
 ): PaneInfo | undefined {
   const tabPanes = panes.filter((pane) => pane.tab_id === tabId);
   return tabPanes.find((pane) => pane.agent === "pi") ?? tabPanes[0];
+}
+
+export function findReusableAgentTab(
+  context: HerdrContext,
+  tabs: TabInfo[],
+  baseLabel: string,
+): ReusableAgentTab | undefined {
+  const tab = tabs.find(
+    (item) => item.label === baseLabel && item.tab_id !== context.currentTab,
+  );
+  if (!tab) return undefined;
+
+  const pane = choosePaneForTab(context.panes, tab.tab_id);
+  if (!pane || pane.agent !== "pi") return undefined;
+
+  return { tab, pane };
 }
 
 export function listCurrentWorkspaceAgents(

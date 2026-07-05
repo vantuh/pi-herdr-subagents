@@ -25,10 +25,10 @@ export const HerdrAgentParams = Type.Object({
       description: "Wait timeout in milliseconds. Default: 600000.",
     }),
   ),
-  reuseExisting: Type.Optional(
-    Type.Boolean({
+  lifecycle: Type.Optional(
+    Type.Union([Type.Literal("oneshot"), Type.Literal("persistent")], {
       description:
-        "Reuse an existing tab with the same label and send the task there. Default: false for fresh context.",
+        "Agent tab lifecycle. Use 'oneshot' for one-off tasks that close after completion, or 'persistent' to keep/reuse the tab for follow-up tasks. Default: oneshot.",
     }),
   ),
 });
