@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeTools } from "./utils.ts";
+import { formatAgentOutput, normalizeTools, shouldCloseTab } from "./utils.ts";
 
 test("normalizes comma-separated tools", () => {
   assert.deepEqual(normalizeTools("read, grep, bash"), [
@@ -26,4 +26,27 @@ test("returns undefined for empty tools", () => {
 test("returns undefined for unsupported tool shapes", () => {
   assert.equal(normalizeTools(123), undefined);
   assert.equal(normalizeTools({ read: true }), undefined);
+});
+
+test("closes only oneshot tabs", () => {
+  assert.equal(shouldCloseTab("oneshot"), true);
+  assert.equal(shouldCloseTab("persistent"), false);
+});
+
+test("formats agent output text", () => {
+  assert.equal(formatAgentOutput("  hello  \n", "Worker"), "hello");
+});
+
+test("falls back to a placeholder for empty agent output", () => {
+  assert.equal(
+    formatAgentOutput("   \n", "Worker"),
+    "(Herdr agent Worker finished with no visible output.)",
+  );
+});
+
+test("appends a close warning when closing the tab failed", () => {
+  assert.equal(
+    formatAgentOutput("done", "Worker", "tab not found"),
+    "done\n\nWarning: failed to close one-shot Herdr tab Worker: tab not found",
+  );
 });

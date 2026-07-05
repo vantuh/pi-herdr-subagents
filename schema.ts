@@ -17,7 +17,7 @@ export const HerdrAgentParams = Type.Object({
   wait: Type.Optional(
     Type.Boolean({
       description:
-        "Wait for the Herdr agent to finish and read its result. Default: true.",
+        "Wait for the Herdr agent to finish and read its result. Default: true. Required (must be true) when lifecycle is 'oneshot', since the tab is only closed after a successful wait.",
     }),
   ),
   timeoutMs: Type.Optional(
@@ -28,7 +28,7 @@ export const HerdrAgentParams = Type.Object({
   lifecycle: Type.Optional(
     Type.Union([Type.Literal("oneshot"), Type.Literal("persistent")], {
       description:
-        "Agent tab lifecycle. Use 'oneshot' for one-off tasks that close after completion, or 'persistent' to keep/reuse the tab for follow-up tasks. Default: oneshot.",
+        "Agent tab lifecycle. Use 'oneshot' for one-off tasks that close after completion, or 'persistent' to keep/reuse the tab for follow-up tasks. Default: oneshot. 'oneshot' requires wait: true.",
     }),
   ),
 });

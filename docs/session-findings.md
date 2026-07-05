@@ -72,7 +72,7 @@ Child agents are started as fresh Pi processes.
 
 They do not inherit the Orchestrator conversation. The Orchestrator must send a self-contained task.
 
-This avoids context pollution and matches the desired "persistent Herdr agent" mental model.
+This avoids context pollution for newly created agents. Persistent agents can still accumulate context across follow-up tasks when `lifecycle: "persistent"` reuses their tab.
 
 ## 6. Child agents must not recursively register the extension
 
@@ -196,14 +196,14 @@ These are known but not currently fixed:
 
 - Temp prompt directories under `/tmp/herdr-agent-*` are not cleaned up.
 - Herdr CLI JSON responses are parsed with light assumptions rather than full runtime validation.
-- Reusing an existing tab sends `@task-file` into that pane; this assumes the child Pi is ready to accept a new prompt.
+- Reusing a persistent tab sends `@task-file` into that pane; this assumes the child Pi is ready to accept a new prompt.
 - Child agents do not inherit Orchestrator context by design, so poor task prompts lead to poor child results.
 
 ## 14. Desired future improvements
 
 Potential future work:
 
-- Add a `herdr_agent_send` tool for explicit follow-up messages to existing tabs.
+- Add smarter handling when a matching persistent tab is currently `working` or `blocked`.
 - Add a `herdr_agent_list` tool to list known persistent agents/tabs.
 - Add temp file cleanup after child startup.
 - Add stronger Herdr response validation with clearer error messages.

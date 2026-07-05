@@ -24,7 +24,14 @@ import {
 } from "./herdr.ts";
 import { HerdrAgentParams } from "./schema.ts";
 import type { HerdrAgentInfo } from "./types.ts";
-import { shellJoin, shellQuote, titleCase, writeTempFile } from "./utils.ts";
+import {
+  formatAgentOutput,
+  shellJoin,
+  shellQuote,
+  shouldCloseTab,
+  titleCase,
+  writeTempFile,
+} from "./utils.ts";
 
 async function loadCurrentAgents(): Promise<HerdrAgentInfo[]> {
   const current = await getCurrentContext();
@@ -226,6 +233,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       const wait = params.wait ?? true;
       const lifecycle = params.lifecycle ?? "oneshot";
       const persistent = lifecycle === "persistent";
+      const closeAfterWait = shouldCloseTab(lifecycle);
       const timeoutMs = params.timeoutMs ?? 600000;
       const baseLabel = params.tabLabel?.trim() || titleCase(agent.name);
 
@@ -279,15 +287,29 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
           ],
           signal,
         );
-        const createResult = JSON.parse(createOutput).result;
-        const rootPane = createResult.root_pane as {
-          pane_id: string;
-          tab_id?: string;
-        };
+        let createResult;
+        try {
+          createResult = JSON.parse(createOutput)?.result;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new Error(
+            `Malformed Herdr tab create output: expected JSON with result.root_pane.pane_id (${message}). Output: ${createOutput}`,
+          );
+        }
+
+        const rootPane = createResult?.root_pane;
+        if (!rootPane || typeof rootPane.pane_id !== "string") {
+          throw new Error(
+            `Malformed Herdr tab create output: missing result.root_pane.pane_id. Output: ${createOutput}`,
+          );
+        }
         paneId = rootPane.pane_id;
-        tabId = rootPane.tab_id;
+        tabId = typeof rootPane.tab_id === "string" ? rootPane.tab_id : undefined;
 
         if (!tabId) {
+          // Fallback when `tab create` output omits tab_id. Assumes serial tool
+          // calls and a unique label, since concurrent creates could return
+          // the wrong tab for this label.
           const createdTabs = await listTabs(current.workspaceId, signal);
           tabId = createdTabs.find((tab) => tab.label === tabLabel)?.tab_id;
         }
@@ -380,7 +402,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
 
         let closed = false;
         let closeError: string | undefined;
-        if (!persistent) {
+        if (closeAfterWait) {
           try {
             await execHerdr(["tab", "close", tabId], signal);
             closed = true;
@@ -389,17 +411,13 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
           }
         }
 
-        const text =
-          output.trim() ||
-          `(Herdr agent ${tabLabel} finished with no visible output.)`;
+        const text = formatAgentOutput(output, tabLabel, closeError);
 
         return {
           content: [
             {
               type: "text",
-              text: closeError
-                ? `${text}\n\nWarning: failed to close one-shot Herdr tab ${tabLabel}: ${closeError}`
-                : text,
+              text,
             },
           ],
           details: {

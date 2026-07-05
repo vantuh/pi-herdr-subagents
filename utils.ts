@@ -31,6 +31,22 @@ export function normalizeTools(rawTools: unknown): string[] | undefined {
   return tools && tools.length > 0 ? tools : undefined;
 }
 
+export function shouldCloseTab(lifecycle: "oneshot" | "persistent"): boolean {
+  return lifecycle === "oneshot";
+}
+
+export function formatAgentOutput(
+  output: string,
+  tabLabel: string,
+  closeError?: string,
+): string {
+  const text =
+    output.trim() || `(Herdr agent ${tabLabel} finished with no visible output.)`;
+  return closeError
+    ? `${text}\n\nWarning: failed to close one-shot Herdr tab ${tabLabel}: ${closeError}`
+    : text;
+}
+
 export async function writeTempFile(
   prefix: string,
   content: string,

@@ -1,8 +1,8 @@
 # herdr-agents documentation
 
-`herdr-agents` is a Pi extension that turns Herdr into a persistent delegation layer.
+`herdr-agents` is a Pi extension that turns Herdr into a one-shot or persistent delegation layer.
 
-It registers a `herdr_agent` tool. The tool creates or reuses Herdr tabs, starts fresh Pi agents in those tabs, gives them role-specific prompts from `~/.pi/agent/agents/*.md`, waits for their result, and returns the visible pane output to the Orchestrator.
+It registers a `herdr_agent` tool. The tool creates Herdr tabs, starts Pi agents in those tabs, gives them role-specific prompts from `~/.pi/agent/agents/*.md`, waits for their result, and returns the visible pane output to the Orchestrator. One-shot tabs close after a successful result; persistent tabs stay open and are reused for matching follow-up tasks.
 
 ## Why this exists
 
@@ -13,8 +13,8 @@ This extension moves that workflow into a tool:
 - less prompt boilerplate;
 - fewer raw `herdr` CLI calls from the model;
 - consistent tab naming and child protocol;
-- fresh context for delegated agents;
-- persistent Herdr tabs that remain inspectable by the user.
+- fresh context for one-shot delegated agents;
+- persistent Herdr tabs when a role should remain inspectable and reusable.
 
 ## Main concepts
 
@@ -26,7 +26,12 @@ On first use, the extension renames the current Herdr tab to `Orchestrator`.
 
 ### Herdr agent
 
-A child Pi process launched in its own Herdr tab. It is persistent: the tab remains open after completion.
+A child Pi process launched in its own Herdr tab.
+
+Modes:
+
+- `lifecycle: "oneshot"` — one-shot task. The extension waits for the result, reads output, then closes the tab after successful completion.
+- `lifecycle: "persistent"` — reusable role. The tab remains open after completion and matching future tasks are sent to the existing tab instead of creating a duplicate.
 
 The child receives:
 
@@ -100,7 +105,7 @@ A global `/parallel-review` Pi prompt uses this extension's `herdr_agent` tool, 
   tabLabel?: string;
   wait?: boolean;
   timeoutMs?: number;
-  reuseExisting?: boolean;
+  lifecycle?: "oneshot" | "persistent";
 }
 ```
 
@@ -111,14 +116,17 @@ Typical call:
   "agent": "reviewer",
   "tabLabel": "HR Correctness",
   "task": "Review the current diff for correctness and regressions...",
-  "wait": true
+  "wait": true,
+  "lifecycle": "oneshot"
 }
 ```
 
 ## Known design choices
 
-- Tabs are not closed automatically.
-- Fresh context is preferred over forked conversation context.
+- `lifecycle: "oneshot"` is the default: use one-shot agents unless the role needs to survive for later tasks.
+- One-shot tabs are closed only after successful completion and output read; timeout/error/abort leaves the tab open for debugging.
+- `lifecycle: "persistent"` reuses an existing tab by exact label in the current workspace, requiring a `pi` pane in that tab; it never reuses the Orchestrator's own current tab.
+- Fresh context is preferred over forked conversation context for newly created agents.
 - Child agents are prevented from recursively registering `herdr_agent` by `HERDR_AGENT_CHILD=1`.
 - The Orchestrator must synthesize child results. Child output should not be blindly forwarded.
 - Raw Herdr CLI remains useful for diagnostics, but normal delegation should go through `herdr_agent`.

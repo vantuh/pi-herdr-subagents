@@ -27,7 +27,8 @@ The extension appends a short system instruction through `before_agent_start`:
 ```md
 When isolated context helps, use the `herdr_agent` tool instead of raw Herdr CLI commands.
 Pick the smallest suitable agent profile.
-Keep Herdr tabs persistent. Do not close delegated tabs or panes.
+Use `lifecycle: "oneshot"` for one-off tasks that should close after completion; this is the default.
+Use `lifecycle: "persistent"` when a role should stay available for follow-up tasks or accumulate context. The tool reuses a matching persistent tab automatically.
 The current tab is Orchestrator.
 Synthesize Herdr agent results yourself; do not blindly forward output.
 ```
@@ -44,11 +45,12 @@ Example:
   "tabLabel": "HR Correctness",
   "task": "Review the current diff for correctness and regressions. Return concise findings with file/line evidence.",
   "wait": true,
-  "timeoutMs": 600000
+  "timeoutMs": 600000,
+  "lifecycle": "oneshot"
 }
 ```
 
-The task must be self-contained because the child Pi session starts with fresh context and does not inherit the Orchestrator conversation.
+The task must be self-contained because newly created child Pi sessions start with fresh context and do not inherit the Orchestrator conversation.
 
 ## 4. The extension discovers agent profiles
 
@@ -85,9 +87,11 @@ herdr tab rename <current-tab> Orchestrator
 
 ## 6. The extension creates or reuses a Herdr tab
 
-If `reuseExisting` is true, the extension looks for an existing tab with the requested `tabLabel`.
+`lifecycle: "oneshot"` is the default. It always creates a new one-shot tab and never reuses an existing tab.
 
-Otherwise it creates a new tab in the same workspace:
+`lifecycle: "persistent"` first looks for an existing tab with the exact requested `tabLabel` in the current workspace, requiring a pane running the `pi` agent in that tab; a tab without a `pi` pane is not reused. The default label is the title-cased agent profile name, for example `worker` -> `Worker`. The lookup also never matches the Orchestrator's own current tab, even if its label happens to equal `tabLabel`. If a matching pane exists, the task is sent there instead of creating a duplicate tab.
+
+If no matching persistent tab exists, the extension creates a new tab in the same workspace:
 
 ```bash
 herdr tab create --workspace <workspace-id> --label <tab-label> --no-focus
@@ -95,7 +99,7 @@ herdr tab create --workspace <workspace-id> --label <tab-label> --no-focus
 
 `--no-focus` keeps the user's active pane stable.
 
-If a tab label already exists, the extension appends `#2`, `#3`, etc.
+If a tab label already exists, the extension appends `#2`, `#3`, etc. Exact base labels have priority for persistent reuse; numbered labels are not treated as the same persistent target.
 
 ## 7. The extension writes temporary prompt files
 
@@ -139,7 +143,7 @@ For a reused tab, the extension sends `@<task.md>` to the existing pane.
 
 ## 9. The Orchestrator waits
 
-If `wait` is false, the tool returns after starting/sending the task.
+If `wait` is false, the tool returns after starting/sending the task. This is only valid for `lifecycle: "persistent"`; `lifecycle: "oneshot"` requires waiting so the extension can close the tab.
 
 If `wait` is true, the extension:
 
@@ -189,12 +193,18 @@ The tool returns that text to the Orchestrator.
 
 The Orchestrator is expected to synthesize the result, not blindly forward it.
 
-## 12. Persistent tab remains open
+## 12. The extension keeps or closes the tab
 
-The extension never closes child tabs or panes.
+For `lifecycle: "persistent"`, the extension leaves the tab open after completion.
 
 This is intentional:
 
 - the user can inspect child reasoning/output;
 - the Orchestrator can reuse a tab later;
 - Herdr works as a visible persistent workspace, not a hidden subprocess runner.
+
+For `lifecycle: "oneshot"`, the extension closes only the tab created by the current tool call after it has successfully waited and read output.
+
+Timeout, abort, or execution errors leave the one-shot tab open for debugging.
+
+If the wait and output read succeed but the tab close call itself fails, the tool still returns the agent's output, appended with a warning that the one-shot tab could not be closed, and leaves that tab open for debugging.
