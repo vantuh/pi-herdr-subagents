@@ -75,7 +75,7 @@ async function pickAgentAction(
         if (status === "working") return theme.fg("accent", status);
         if (status === "blocked") return theme.fg("warning", status);
         if (status === "done") return theme.fg("success", status);
-        if (status === "idle") return theme.fg("muted", status);
+        if (status === "idle") return theme.fg("success", status);
         return theme.fg("dim", status);
       };
 
