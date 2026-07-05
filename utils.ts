@@ -18,6 +18,19 @@ export function titleCase(value: string): string {
     .join(" ");
 }
 
+export function normalizeTools(rawTools: unknown): string[] | undefined {
+  const tools = Array.isArray(rawTools)
+    ? rawTools.map((tool) => String(tool).trim()).filter(Boolean)
+    : typeof rawTools === "string"
+      ? rawTools
+          .split(",")
+          .map((tool) => tool.trim())
+          .filter(Boolean)
+      : undefined;
+
+  return tools && tools.length > 0 ? tools : undefined;
+}
+
 export async function writeTempFile(
   prefix: string,
   content: string,

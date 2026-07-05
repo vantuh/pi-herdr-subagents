@@ -7,6 +7,7 @@ import {
   getCurrentContext,
   listTabs,
   uniqueLabel,
+  waitForAgentFinished,
 } from "./herdr.ts";
 import { HerdrAgentParams } from "./schema.ts";
 import { shellJoin, shellQuote, titleCase, writeTempFile } from "./utils.ts";
@@ -158,18 +159,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       const blockedLabel = `waiting for ${tabLabel}`;
       pi.events.emit("herdr:blocked", { active: true, label: blockedLabel });
       try {
-        await execHerdr(
-          [
-            "wait",
-            "agent-status",
-            paneId!,
-            "--status",
-            "done",
-            "--timeout",
-            String(timeoutMs),
-          ],
-          signal,
-        );
+        await waitForAgentFinished(paneId!, timeoutMs, signal);
         const output = await execHerdr(
           [
             "pane",

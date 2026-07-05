@@ -2,6 +2,9 @@
   "name": "herdr-agents",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "node --test *.test.ts"
+  },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
     "typebox": "*"

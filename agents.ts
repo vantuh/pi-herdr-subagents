@@ -6,6 +6,7 @@ import {
   parseFrontmatter,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentProfile } from "./types.ts";
+import { normalizeTools } from "./utils.ts";
 
 function isDirectory(filePath: string): boolean {
   try {
@@ -50,19 +51,17 @@ async function loadAgentsFromDir(
       continue;
     }
 
-    const { frontmatter, body } =
-      parseFrontmatter<Record<string, string>>(content);
+    const { frontmatter, body } = parseFrontmatter<
+      Record<string, string> & { tools?: string | string[] }
+    >(content);
     if (!frontmatter.name || !frontmatter.description) continue;
 
-    const tools = frontmatter.tools
-      ?.split(",")
-      .map((tool) => tool.trim())
-      .filter(Boolean);
+    const tools = normalizeTools(frontmatter.tools);
 
     agents.push({
       name: frontmatter.name,
       description: frontmatter.description,
-      tools: tools && tools.length > 0 ? tools : undefined,
+      tools,
       model: frontmatter.model,
       systemPrompt: body.trim(),
       source,
