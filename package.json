@@ -1,0 +1,13 @@
+{
+  "name": "herdr-agents",
+  "private": true,
+  "type": "module",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": ["./index.ts"],
+    "prompts": ["./prompts"]
+  }
+}
