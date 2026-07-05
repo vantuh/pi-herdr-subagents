@@ -1,5 +1,10 @@
 import { execFile } from "node:child_process";
-import type { HerdrContext, PaneInfo, TabInfo } from "./types.ts";
+import type {
+  HerdrAgentInfo,
+  HerdrContext,
+  PaneInfo,
+  TabInfo,
+} from "./types.ts";
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -110,6 +115,38 @@ export function choosePaneForTab(
 ): PaneInfo | undefined {
   const tabPanes = panes.filter((pane) => pane.tab_id === tabId);
   return tabPanes.find((pane) => pane.agent === "pi") ?? tabPanes[0];
+}
+
+export function listCurrentWorkspaceAgents(
+  context: HerdrContext,
+  tabs: TabInfo[],
+): HerdrAgentInfo[] {
+  const tabsById = new Map(tabs.map((tab) => [tab.tab_id, tab]));
+  const seenTabs = new Set<string>();
+  const agents: HerdrAgentInfo[] = [];
+
+  for (const pane of context.panes) {
+    if (pane.workspace_id !== context.workspaceId) continue;
+    if (pane.tab_id === context.currentTab) continue;
+    if (!pane.agent) continue;
+    if (seenTabs.has(pane.tab_id)) continue;
+
+    const tab = tabsById.get(pane.tab_id);
+    if (!tab) continue;
+
+    seenTabs.add(pane.tab_id);
+    const chosenPane = choosePaneForTab(context.panes, pane.tab_id) ?? pane;
+    agents.push({
+      tabId: chosenPane.tab_id,
+      tabLabel: tab.label,
+      paneId: chosenPane.pane_id,
+      agent: chosenPane.agent ?? pane.agent,
+      status: chosenPane.agent_status ?? tab.agent_status ?? "unknown",
+      cwd: chosenPane.foreground_cwd ?? chosenPane.cwd,
+    });
+  }
+
+  return agents.sort((a, b) => a.tabLabel.localeCompare(b.tabLabel));
 }
 
 export interface AgentWaitState {

@@ -1,16 +1,140 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+  DynamicBorder,
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+} from "@earendil-works/pi-coding-agent";
+import { Container, type SelectItem, SelectList, Text } from "@earendil-works/pi-tui";
 import { discoverAgents } from "./agents.ts";
 import { CHILD_PROTOCOL, GLOBAL_INSTRUCTIONS } from "./constants.ts";
 import {
   choosePaneForTab,
   execHerdr,
   getCurrentContext,
+  listCurrentWorkspaceAgents,
   listTabs,
   uniqueLabel,
   waitForAgentFinished,
 } from "./herdr.ts";
 import { HerdrAgentParams } from "./schema.ts";
+import type { HerdrAgentInfo } from "./types.ts";
 import { shellJoin, shellQuote, titleCase, writeTempFile } from "./utils.ts";
+
+async function loadCurrentAgents(): Promise<HerdrAgentInfo[]> {
+  const current = await getCurrentContext();
+  const tabs = await listTabs(current.workspaceId);
+  return listCurrentWorkspaceAgents(current, tabs);
+}
+
+async function showNoAgentsDialog(ctx: ExtensionCommandContext): Promise<void> {
+  await ctx.ui.custom<void>(
+    (_tui, theme, _kb, done) => {
+      const container = new Container();
+      container.addChild(new DynamicBorder((str: string) => theme.fg("accent", str)));
+      container.addChild(
+        new Text(theme.fg("accent", theme.bold("Herdr Agents")), 1, 0),
+      );
+      container.addChild(
+        new Text("No Herdr agents in the current workspace.", 1, 0),
+      );
+      container.addChild(
+        new Text(theme.fg("dim", "enter/esc close"), 1, 0),
+      );
+      container.addChild(new DynamicBorder((str: string) => theme.fg("accent", str)));
+
+      return {
+        render: (width: number) => container.render(width),
+        invalidate: () => container.invalidate(),
+        handleInput: () => done(),
+      };
+    },
+    { overlay: true, overlayOptions: { width: 58, maxHeight: 8 } },
+  );
+}
+
+async function pickAgentToKill(
+  ctx: ExtensionCommandContext,
+  agents: HerdrAgentInfo[],
+): Promise<HerdrAgentInfo | undefined> {
+  const items: SelectItem[] = agents.map((agent) => ({
+    value: agent.tabId,
+    label: `${agent.tabLabel} (${agent.agent})`,
+    description: [
+      `status:${agent.status}`,
+      `pane:${agent.paneId}`,
+      agent.cwd,
+    ]
+      .filter(Boolean)
+      .join(" • "),
+  }));
+
+  const selectedTabId = await ctx.ui.custom<string | null>(
+    (tui, theme, _kb, done) => {
+      const container = new Container();
+      container.addChild(new DynamicBorder((str: string) => theme.fg("accent", str)));
+      container.addChild(
+        new Text(theme.fg("accent", theme.bold("Herdr Agents")), 1, 0),
+      );
+
+      const selectList = new SelectList(items, Math.min(items.length, 12), {
+        selectedPrefix: (text) => theme.fg("accent", text),
+        selectedText: (text) => theme.fg("accent", text),
+        description: (text) => theme.fg("muted", text),
+        scrollInfo: (text) => theme.fg("dim", text),
+        noMatch: (text) => theme.fg("warning", text),
+      });
+      selectList.onSelect = (item) => done(item.value);
+      selectList.onCancel = () => done(null);
+
+      container.addChild(selectList);
+      container.addChild(
+        new Text(theme.fg("dim", "↑↓ navigate • enter kill tab • esc close"), 1, 0),
+      );
+      container.addChild(new DynamicBorder((str: string) => theme.fg("accent", str)));
+
+      return {
+        render: (width: number) => container.render(width),
+        invalidate: () => container.invalidate(),
+        handleInput: (data: string) => {
+          selectList.handleInput(data);
+          tui.requestRender();
+        },
+      };
+    },
+    { overlay: true, overlayOptions: { width: "70%", minWidth: 60, maxHeight: "80%" } },
+  );
+
+  if (!selectedTabId) return undefined;
+  return agents.find((agent) => agent.tabId === selectedTabId);
+}
+
+async function showHerdrAgentsManager(
+  ctx: ExtensionCommandContext,
+): Promise<void> {
+  if (ctx.mode !== "tui") {
+    ctx.ui.notify("/herdr-agents requires TUI mode", "error");
+    return;
+  }
+
+  while (true) {
+    const agents = await loadCurrentAgents();
+    if (agents.length === 0) {
+      await showNoAgentsDialog(ctx);
+      return;
+    }
+
+    const selected = await pickAgentToKill(ctx, agents);
+    if (!selected) return;
+
+    const ok = await ctx.ui.confirm(
+      "Kill Herdr agent?",
+      `Close tab "${selected.tabLabel}" (${selected.status})?`,
+    );
+    if (!ok) continue;
+
+    await execHerdr(["tab", "close", selected.tabId]);
+    ctx.ui.notify(`Killed Herdr agent tab "${selected.tabLabel}"`, "info");
+  }
+}
 
 export default function herdrAgentsExtension(pi: ExtensionAPI) {
   if (process.env.HERDR_AGENT_CHILD === "1") return;
@@ -18,6 +142,18 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => ({
     systemPrompt: `${event.systemPrompt}\n\n${GLOBAL_INSTRUCTIONS}`,
   }));
+
+  pi.registerCommand("herdr-agents", {
+    description: "Show and kill Herdr agents in the current workspace",
+    handler: async (_args, ctx) => {
+      try {
+        await showHerdrAgentsManager(ctx);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        ctx.ui.notify(`Failed to load Herdr agents: ${message}`, "error");
+      }
+    },
+  });
 
   pi.registerTool({
     name: "herdr_agent",

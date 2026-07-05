@@ -56,6 +56,7 @@ Useful smoke checks:
 bun build pi/.pi/agent/extensions/herdr-agents/index.ts \
   --outfile /tmp/herdr-agents-check.js \
   --external @earendil-works/pi-coding-agent \
+  --external @earendil-works/pi-tui \
   --external typebox
 
 # Confirm the tool is visible to a fresh Pi model.

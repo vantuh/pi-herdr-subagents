@@ -15,6 +15,8 @@ export interface PaneInfo {
   focused?: boolean;
   agent?: string;
   agent_status?: string;
+  cwd?: string;
+  foreground_cwd?: string;
 }
 
 export interface TabInfo {
@@ -22,6 +24,15 @@ export interface TabInfo {
   label: string;
   focused?: boolean;
   agent_status?: string;
+}
+
+export interface HerdrAgentInfo {
+  tabId: string;
+  tabLabel: string;
+  paneId: string;
+  agent: string;
+  status: string;
+  cwd?: string;
 }
 
 export interface HerdrContext {
