@@ -4,7 +4,7 @@ description: Parallel Herdr agents review
 
 Launch parallel Herdr reviewer agents for an adversarial review of the current work.
 
-Use the `herdr_agent` tool with fresh Herdr tabs, not forked conversation context, unless I explicitly ask for forked context. Reviewers should inspect the repository, relevant instructions, and current diff directly from files and commands. Do not rely on the main conversation history.
+Use the `herdr_agent` tool with fresh Herdr tabs, not raw `herdr` CLI commands and not forked conversation context, unless I explicitly ask for forked context. Reviewers should inspect the repository, relevant instructions, and current diff directly from files and commands. Do not rely on the main conversation history.
 
 Give each reviewer a distinct angle. Generate the angles dynamically from the user's intent, the plan, the implemented code, and the current diff. If I specify angles, use mine. Otherwise, choose the highest-value review angles for this specific work.
 

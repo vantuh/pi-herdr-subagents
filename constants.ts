@@ -1,6 +1,6 @@
 export const GLOBAL_INSTRUCTIONS = `## Herdr agents
 
-When isolated context helps, use \`herdr_agent\`.
+When isolated context helps, use the \`herdr_agent\` tool instead of raw Herdr CLI commands.
 Pick the smallest suitable agent profile.
 Keep Herdr tabs persistent. Do not close delegated tabs or panes.
 The current tab is Orchestrator.
