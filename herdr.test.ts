@@ -159,6 +159,42 @@ test("prefers the pi pane when a tab has multiple panes", () => {
   ]);
 });
 
+test("includes known lifecycle for agent tabs", () => {
+  const panes: PaneInfo[] = [
+    {
+      pane_id: "pane-orchestrator",
+      tab_id: "tab-orchestrator",
+      workspace_id: "workspace-1",
+      agent: "pi",
+    },
+    {
+      pane_id: "pane-agent",
+      tab_id: "tab-agent",
+      workspace_id: "workspace-1",
+      agent: "pi",
+      agent_status: "idle",
+    },
+  ];
+  const tabs: TabInfo[] = [
+    { tab_id: "tab-orchestrator", label: "Orchestrator" },
+    { tab_id: "tab-agent", label: "Researcher" },
+  ];
+  const context: HerdrContext = {
+    panes,
+    currentPane: panes[0]!,
+    currentTab: "tab-orchestrator",
+    workspaceId: "workspace-1",
+  };
+
+  const [agent] = listCurrentWorkspaceAgents(
+    context,
+    tabs,
+    new Map([["tab-agent", "persistent"]]),
+  );
+
+  assert.equal(agent?.lifecycle, "persistent");
+});
+
 test("falls back to tab.agent_status when pane.agent_status is missing", () => {
   const panes: PaneInfo[] = [
     {

@@ -26,12 +26,15 @@ export interface TabInfo {
   agent_status?: string;
 }
 
+export type HerdrAgentLifecycle = "oneshot" | "persistent";
+
 export interface HerdrAgentInfo {
   tabId: string;
   tabLabel: string;
   paneId: string;
   agent: string;
   status: string;
+  lifecycle?: HerdrAgentLifecycle;
   cwd?: string;
 }
 

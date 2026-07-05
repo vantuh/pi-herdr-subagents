@@ -23,7 +23,7 @@ import {
   waitForAgentFinished,
 } from "./herdr.ts";
 import { HerdrAgentParams } from "./schema.ts";
-import type { HerdrAgentInfo } from "./types.ts";
+import type { HerdrAgentInfo, HerdrAgentLifecycle } from "./types.ts";
 import {
   formatAgentOutput,
   shellJoin,
@@ -33,10 +33,26 @@ import {
   writeTempFile,
 } from "./utils.ts";
 
+const agentLifecycleByTabId = new Map<string, HerdrAgentLifecycle>();
+
+function pruneAgentLifecycles(tabs: { tab_id: string }[]): void {
+  const liveTabIds = new Set(tabs.map((tab) => tab.tab_id));
+  for (const tabId of agentLifecycleByTabId.keys()) {
+    if (!liveTabIds.has(tabId)) agentLifecycleByTabId.delete(tabId);
+  }
+}
+
+function formatLifecycle(lifecycle?: HerdrAgentLifecycle): string {
+  if (lifecycle === "oneshot") return "one-shot";
+  if (lifecycle === "persistent") return "reusable";
+  return "unknown";
+}
+
 async function loadCurrentAgents(): Promise<HerdrAgentInfo[]> {
   const current = await getCurrentContext();
   const tabs = await listTabs(current.workspaceId);
-  return listCurrentWorkspaceAgents(current, tabs);
+  pruneAgentLifecycles(tabs);
+  return listCurrentWorkspaceAgents(current, tabs, agentLifecycleByTabId);
 }
 
 async function showNoAgentsDialog(ctx: ExtensionCommandContext): Promise<void> {
@@ -91,6 +107,7 @@ async function pickAgentAction(
         label: `${agent.tabLabel} (${agent.agent})`,
         description: [
           `status:${colorStatus(agent.status)}`,
+          `mode:${formatLifecycle(agent.lifecycle)}`,
           `pane:${agent.paneId}`,
           agent.cwd,
         ]
@@ -175,6 +192,7 @@ async function showHerdrAgentsManager(
     }
 
     await execHerdr(["tab", "close", selected.agent.tabId]);
+    agentLifecycleByTabId.delete(selected.agent.tabId);
     ctx.ui.notify(`Closed Herdr agent tab "${selected.agent.tabLabel}"`, "info");
   }
 }
@@ -319,6 +337,8 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
         throw new Error(`Could not identify Herdr tab or pane for ${tabLabel}.`);
       }
 
+      agentLifecycleByTabId.set(tabId, lifecycle);
+
       const taskPrompt = [
         `You are the ${agent.name} Herdr agent.`,
         "",
@@ -405,6 +425,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
         if (closeAfterWait) {
           try {
             await execHerdr(["tab", "close", tabId], signal);
+            agentLifecycleByTabId.delete(tabId);
             closed = true;
           } catch (error) {
             closeError = error instanceof Error ? error.message : String(error);

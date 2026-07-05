@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import type {
   HerdrAgentInfo,
+  HerdrAgentLifecycle,
   HerdrContext,
   PaneInfo,
   ReusableAgentTab,
@@ -137,6 +138,7 @@ export function findReusableAgentTab(
 export function listCurrentWorkspaceAgents(
   context: HerdrContext,
   tabs: TabInfo[],
+  lifecycleByTabId: ReadonlyMap<string, HerdrAgentLifecycle> = new Map(),
 ): HerdrAgentInfo[] {
   const tabsById = new Map(tabs.map((tab) => [tab.tab_id, tab]));
   const seenTabs = new Set<string>();
@@ -153,12 +155,14 @@ export function listCurrentWorkspaceAgents(
 
     seenTabs.add(pane.tab_id);
     const chosenPane = choosePaneForTab(context.panes, pane.tab_id) ?? pane;
+    const lifecycle = lifecycleByTabId.get(chosenPane.tab_id);
     agents.push({
       tabId: chosenPane.tab_id,
       tabLabel: tab.label,
       paneId: chosenPane.pane_id,
       agent: chosenPane.agent ?? pane.agent,
       status: chosenPane.agent_status ?? tab.agent_status ?? "unknown",
+      ...(lifecycle ? { lifecycle } : {}),
       cwd: chosenPane.foreground_cwd ?? chosenPane.cwd,
     });
   }
