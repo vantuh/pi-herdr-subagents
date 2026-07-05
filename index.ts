@@ -67,22 +67,30 @@ async function pickAgentAction(
   ctx: ExtensionCommandContext,
   agents: HerdrAgentInfo[],
 ): Promise<AgentMenuAction | undefined> {
-  const items: SelectItem[] = agents.map((agent) => ({
-    value: agent.tabId,
-    label: `${agent.tabLabel} (${agent.agent})`,
-    description: [
-      `status:${agent.status}`,
-      `pane:${agent.paneId}`,
-      agent.cwd,
-    ]
-      .filter(Boolean)
-      .join(" • "),
-  }));
-
   const result = await ctx.ui.custom<
     { action: "focus" | "close"; tabId: string } | null
   >(
     (tui, theme, _kb, done) => {
+      const colorStatus = (status: string) => {
+        if (status === "working") return theme.fg("accent", status);
+        if (status === "blocked") return theme.fg("warning", status);
+        if (status === "done") return theme.fg("success", status);
+        if (status === "idle") return theme.fg("muted", status);
+        return theme.fg("dim", status);
+      };
+
+      const items: SelectItem[] = agents.map((agent) => ({
+        value: agent.tabId,
+        label: `${agent.tabLabel} (${agent.agent})`,
+        description: [
+          `status:${colorStatus(agent.status)}`,
+          `pane:${agent.paneId}`,
+          agent.cwd,
+        ]
+          .filter(Boolean)
+          .join(" • "),
+      }));
+
       const container = new Container();
       container.addChild(new DynamicBorder((str: string) => theme.fg("accent", str)));
       container.addChild(
