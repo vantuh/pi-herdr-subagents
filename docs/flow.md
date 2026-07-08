@@ -154,6 +154,22 @@ If `wait` is true, the extension:
 
 The `herdr:blocked` event is consumed by Herdr's installed Pi state extension. It lets the Herdr UI show that the Orchestrator is blocked while waiting for a child.
 
+### Re-waiting after a timeout
+
+`timeoutMs` (default 600000ms / 10 minutes) bounds a single tool call's wait, not the child agent's
+lifetime. A large delegated task (e.g. spinning up testcontainers and iterating on e2e tests) can
+legitimately still be `working` when the tool call times out.
+
+To continue waiting on the same tab without starting a new one or re-sending the task, call
+`herdr_agent` again with the same `tabLabel` and `task` omitted. This re-wait mode:
+
+- looks up the existing tab by exact `tabLabel` (any lifecycle, not just persistent);
+- does not call `pane run` — it never sends a new prompt into the pane;
+- waits (respecting `wait`/`timeoutMs` as usual) and returns the pane's current output.
+
+This avoids two bad alternatives: assuming the timeout means failure, or falling back to raw
+`herdr wait agent-status`/`herdr pane read` bash commands to poll the same pane manually.
+
 ## 10. Completion detection
 
 Herdr has these relevant agent states:

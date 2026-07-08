@@ -5,13 +5,16 @@ export const HerdrAgentParams = Type.Object({
     description:
       "Agent profile name from ~/.pi/agent/agents/*.md, e.g. researcher, scout, reviewer, planner, worker.",
   }),
-  task: Type.String({
-    description: "Self-contained task to give the Herdr agent.",
-  }),
+  task: Type.Optional(
+    Type.String({
+      description:
+        "Self-contained task to give the Herdr agent. Omit only to re-wait on an existing tab (matched by tabLabel) that is still running, e.g. after a previous call to this tool timed out while the agent kept working — this reconnects to the same pane instead of sending a new prompt.",
+    }),
+  ),
   tabLabel: Type.Optional(
     Type.String({
       description:
-        "Herdr tab label. Defaults to the agent role, e.g. Researcher.",
+        "Herdr tab label. Defaults to the agent role, e.g. Researcher. Required when task is omitted, to identify which existing tab to re-wait on.",
     }),
   ),
   wait: Type.Optional(

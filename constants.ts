@@ -4,6 +4,7 @@ When isolated context helps, use the \`herdr_agent\` tool instead of raw Herdr C
 Pick the smallest suitable agent profile.
 Use \`lifecycle: "oneshot"\` for one-off tasks that should close after completion; this is the default.
 Use \`lifecycle: "persistent"\` when a role should stay available for follow-up tasks or accumulate context. The tool reuses a matching persistent tab automatically.
+If a call times out but the agent is still running (e.g. a long task), call \`herdr_agent\` again with the same \`tabLabel\` and no \`task\` to re-wait on that same tab instead of raw \`herdr wait\`/bash commands or sending a new task into a busy pane.
 The current tab is Orchestrator.
 Synthesize Herdr agent results yourself; do not blindly forward output.`;
 

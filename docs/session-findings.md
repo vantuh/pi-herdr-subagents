@@ -230,9 +230,34 @@ These are known but not currently fixed:
 
 Potential future work:
 
-- Add smarter handling when a matching persistent tab is currently `working` or `blocked`.
 - Add a `herdr_agent_list` tool to list known persistent agents/tabs.
 - Add temp file cleanup after child startup.
 - Add stronger Herdr response validation with clearer error messages.
 - Add a small test harness or documented smoke-test script.
 - Consider optional result extraction that returns only the `HERDR_RESULT` block plus recent context.
+
+## 15. Re-waiting on a timed-out call without re-sending the task
+
+Observed (in a `notification-service` Orchestrator session): a `herdr_agent` call delegated a large
+task (21 OpenSpec tasks, testcontainers-based e2e setup) and hit the default 600000ms wait timeout
+while the child was still legitimately `working` (container pulls + test iteration). The Orchestrator
+correctly diagnosed this via `herdr pane list`/`herdr pane read` instead of assuming failure, but had
+no tool-level way to keep waiting on the same pane — it fell back to a raw
+`herdr wait agent-status <pane> --status done --timeout ...` bash command.
+
+That raw-CLI fallback works but bypasses the extension entirely (no `herdr:blocked` event, no
+lifecycle bookkeeping, no consistent output formatting), and models can misinterpret a timeout as
+"the agent failed" and try to resend the task into a still-busy pane, which is a different bug (see
+§ 9a) since it corrupts the pane's input.
+
+Fix: `herdr_agent` now accepts a call with `task` omitted. When `task` is omitted:
+
+- `tabLabel` is required and is used to find an existing tab by exact label (any lifecycle, not
+  just `persistent` — a timed-out `oneshot` tab is never auto-closed, so it can still be re-waited
+  on);
+- no `pane run` is sent, so the pane's input is never touched;
+- the tool waits (respecting `wait`/`timeoutMs`) and returns the pane's current output, exactly like
+  a normal wait.
+
+`GLOBAL_INSTRUCTIONS` and the tool's `promptGuidelines` now tell the Orchestrator to use this
+re-wait call instead of raw Herdr CLI commands when a wait times out but the tab is still running.

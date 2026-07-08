@@ -249,6 +249,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       "Use lifecycle: 'oneshot' for one-off tasks that should close after completion; this is the default.",
       "Use lifecycle: 'persistent' when the same role should stay available for follow-up tasks or accumulate context; the tool will reuse the matching tab.",
       "Use herdr_agent with the smallest suitable profile and a self-contained task.",
+      "If a call times out but the agent tab is still running, call herdr_agent again with the same tabLabel and no task to re-wait on it, instead of raw Herdr CLI commands or sending a new task into a busy pane.",
     ],
     parameters: HerdrAgentParams,
 
@@ -276,6 +277,91 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       const timeoutMs = params.timeoutMs ?? 600000;
       const baseLabel = params.tabLabel?.trim() || titleCase(agent.name);
 
+      if (params.task === undefined) {
+        // Re-wait mode: no new task, just reconnect to an existing tab that is
+        // (expected to be) still running — e.g. after a previous call to this
+        // tool timed out while the agent kept working. Skips `pane run`
+        // entirely so it never re-sends a prompt into a busy pane.
+        if (!params.tabLabel?.trim()) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "tabLabel is required when task is omitted (re-wait mode).",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const current = await getCurrentContext(signal);
+        const tabs = await listTabs(current.workspaceId, signal);
+        const reusable = findReusableAgentTab(current, tabs, baseLabel);
+        if (!reusable) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `No running Herdr tab named "${baseLabel}" found to re-wait on.`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const { tab, pane } = reusable;
+        onUpdate?.({
+          content: [
+            {
+              type: "text",
+              text: `Reconnecting to existing Herdr tab ${tab.label} (${pane.pane_id})...`,
+            },
+          ],
+          details: { tabId: tab.tab_id, paneId: pane.pane_id, tabLabel: tab.label, agent },
+        });
+
+        if (!wait) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Herdr agent tab ${tab.label} (${pane.pane_id}) is still running.`,
+              },
+            ],
+            details: {
+              tabId: tab.tab_id,
+              paneId: pane.pane_id,
+              tabLabel: tab.label,
+              agent,
+              waited: false,
+            },
+          };
+        }
+
+        const blockedLabel = `waiting for ${tab.label}`;
+        pi.events.emit("herdr:blocked", { active: true, label: blockedLabel });
+        try {
+          await waitForAgentFinished(pane.pane_id, timeoutMs, signal);
+          const output = await execHerdr(
+            ["pane", "read", pane.pane_id, "--source", "recent-unwrapped", "--lines", "180"],
+            signal,
+          );
+          const text = formatAgentOutput(output, tab.label);
+          return {
+            content: [{ type: "text", text }],
+            details: {
+              tabId: tab.tab_id,
+              paneId: pane.pane_id,
+              tabLabel: tab.label,
+              agent,
+              waited: true,
+            },
+          };
+        } finally {
+          pi.events.emit("herdr:blocked", { active: false, label: blockedLabel });
+        }
+      }
+
       if (lifecycle === "oneshot" && !wait) {
         return {
           content: [
@@ -287,6 +373,14 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
           details: { lifecycle, waited: false },
           isError: true,
         };
+      }
+
+      const task = params.task;
+      if (task === undefined) {
+        // Unreachable: the re-wait branch above returns early when task is
+        // omitted. This satisfies the type checker that `task` is a string
+        // from here on.
+        throw new Error("Unreachable: task is required past this point.");
       }
 
       const current = await getCurrentContext(signal);
@@ -380,7 +474,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
         `You are the ${agent.name} Herdr agent.`,
         "",
         "Task from Orchestrator:",
-        params.task,
+        task,
       ].join("\n");
       const taskPath = await writeTempFile("task", taskPrompt);
 
