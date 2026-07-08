@@ -147,6 +147,33 @@ Fix: custom polling now treats:
 - `done` as finished;
 - `idle` as finished after Pi has appeared in the pane and the pane was active, or after startup grace time.
 
+## 9a. Reusing a persistent tab can read the *previous* task's output (stale-result race)
+
+Observed bug (seen live in a `notification-service` Orchestrator session): after sending a new
+task to an already-existing persistent tab (`lifecycle: "persistent"`, tab reused), the
+`herdr_agent` tool call returned in under 100ms with output that was clearly from the *previous*
+task (e.g. husky/lint-staged setup instead of the newly requested `.env.example` consolidation).
+The Orchestrator had to notice the mismatch and re-prompt the worker ("It looks like your last
+response repeated the previous task's summary...").
+
+Root cause: for a reused pane, `pane run <pane_id> <task-file>` only injects the new prompt into
+the already-running child Pi's terminal. Herdr's `agent_status` for that pane is still whatever it
+was at the end of the *previous* task (`done`, then possibly `idle`) until the child Pi process
+asynchronously reports a new state. `waitForAgentFinished` starts polling immediately after
+`pane run`, so the very first `pane list` poll can still observe the stale `done`/`idle` status
+from before the new prompt was even processed. Since `observeAgentWaitState` treated `done` as an
+unconditional finish signal, the wait loop returned immediately and the tool read+returned the
+old terminal output.
+
+This is a race in the extension's polling, not a model behavior issue — the child Pi had not yet
+received/processed the new prompt when the "finished" output was read.
+
+Fix: `waitForAgentFinished` accepts `{ requireActiveFirst: boolean }`. When reusing an existing
+tab (`reused === true`), the extension passes `requireActiveFirst: true`, which requires the wait
+loop to observe `working`/`blocked` at least once before any `done`/`idle` status is accepted as
+completion of the *new* task. Freshly created tabs (`reused === false`) keep the original
+immediate-`done` behavior, since there is no previous task whose stale status could leak through.
+
 ## 10. Global prompt integration
 
 A global `/parallel-review` Pi prompt uses this extension's `herdr_agent` tool. The prompt itself is maintained outside this extension.

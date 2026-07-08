@@ -181,6 +181,15 @@ Current behavior:
 
 This matches Herdr's behavior where `done` can become `idle` after the completed pane is observed.
 
+For a **reused** persistent tab, an extra safeguard applies: `waitForAgentFinished` is called with
+`requireActiveFirst: true`. Sending a new task to an already-running pane (`pane run`) does not
+immediately change Herdr's reported `agent_status` — it can still show `done`/`idle` from the
+*previous* task for a moment, before the child Pi process picks up the new prompt and reports
+`working`. With `requireActiveFirst: true`, the wait loop ignores `done`/`idle` until it has
+observed `working`/`blocked` at least once, so it can't mistake the previous task's leftover
+status for completion of the new one. Freshly created tabs don't need this, since there is no
+previous task whose status could leak through.
+
 ## 11. The extension reads child output
 
 After completion:

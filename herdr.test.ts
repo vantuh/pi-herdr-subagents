@@ -54,6 +54,24 @@ test("keeps waiting on unknown", () => {
   assert.equal(state.sawActive, false);
 });
 
+test("requireActiveFirst: does not finish on stale done from a reused pane", () => {
+  const state: AgentWaitState = { sawActive: false, requireActiveFirst: true };
+
+  // A reused persistent pane can still report `done` from its *previous*
+  // task for a moment after a new prompt is sent. That stale `done` must
+  // not be treated as completion of the new task.
+  assert.equal(observeAgentWaitState(pane("done"), state), false);
+  assert.equal(state.sawActive, false);
+});
+
+test("requireActiveFirst: finishes on done once the pane has been seen active", () => {
+  const state: AgentWaitState = { sawActive: false, requireActiveFirst: true };
+
+  assert.equal(observeAgentWaitState(pane("working"), state), false);
+  assert.equal(state.sawActive, true);
+  assert.equal(observeAgentWaitState(pane("done"), state), true);
+});
+
 test("lists agent tabs in the current workspace except the orchestrator", () => {
   const panes: PaneInfo[] = [
     {

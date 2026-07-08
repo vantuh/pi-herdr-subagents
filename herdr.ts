@@ -172,6 +172,7 @@ export function listCurrentWorkspaceAgents(
 
 export interface AgentWaitState {
   sawActive: boolean;
+  requireActiveFirst?: boolean;
 }
 
 export function observeAgentWaitState(
@@ -182,7 +183,13 @@ export function observeAgentWaitState(
     state.sawActive = true;
   }
 
-  if (pane.agent_status === "done") return true;
+  // When reusing an existing pane (a persistent agent getting a new task),
+  // Herdr's reported status can still be `done`/`idle` from the *previous*
+  // task for a moment after the new prompt is sent, because the child Pi
+  // process updates its status asynchronously. Requiring `sawActive` first
+  // in that case prevents mistaking the previous task's leftover `done`
+  // status for completion of the new one.
+  if (pane.agent_status === "done") return state.sawActive || !state.requireActiveFirst;
 
   // Herdr reports `done` only until the finished pane is observed. After that,
   // the same completed agent can appear as `idle`, so treat idle as finished
@@ -194,9 +201,13 @@ export async function waitForAgentFinished(
   paneId: string,
   timeoutMs: number,
   signal?: AbortSignal,
+  options?: { requireActiveFirst?: boolean },
 ): Promise<PaneInfo> {
   const startedAt = Date.now();
-  const state: AgentWaitState = { sawActive: false };
+  const state: AgentWaitState = {
+    sawActive: false,
+    requireActiveFirst: options?.requireActiveFirst ?? false,
+  };
 
   while (Date.now() - startedAt < timeoutMs) {
     const pane = (await listPanes(signal)).find(

@@ -443,7 +443,9 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       const blockedLabel = `waiting for ${tabLabel}`;
       pi.events.emit("herdr:blocked", { active: true, label: blockedLabel });
       try {
-        await waitForAgentFinished(paneId, timeoutMs, signal);
+        await waitForAgentFinished(paneId, timeoutMs, signal, {
+          requireActiveFirst: reused,
+        });
         const output = await execHerdr(
           [
             "pane",
