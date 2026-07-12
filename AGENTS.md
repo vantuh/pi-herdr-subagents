@@ -15,6 +15,10 @@ The intended model behavior:
 - Use `lifecycle: "persistent"` when a role should stay available for follow-up tasks or accumulate context; the extension reuses a matching tab automatically.
 - The Orchestrator waits for the child result, reads it, and synthesizes the answer.
 
+## Delegation policy
+
+Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Role matrix, lifecycle examples, and negative policy live in `docs/README.md`. Orchestrator mechanics are in `constants.ts` (`GLOBAL_INSTRUCTIONS`).
+
 ## Files
 
 - `index.ts` — Pi extension entrypoint and `herdr_agent` tool registration.

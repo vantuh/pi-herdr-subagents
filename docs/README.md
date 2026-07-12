@@ -16,6 +16,27 @@ This extension moves that workflow into a tool:
 - fresh context for one-shot delegated agents;
 - persistent Herdr tabs when a role should remain inspectable and reusable.
 
+## Delegation policy
+
+Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. This extension docs describe **how** Pi/Herdr delegates.
+
+| Situation | `agent` profile | Default lifecycle | Expected output |
+|---|---|---:|---|
+| Unknown code, entry points, call/data-flow tracing | `scout` | one-shot | file/line evidence, flow, likely change areas, risks |
+| Official docs, API behavior, library choice, current facts | `researcher` | one-shot | concise decision brief, primary-source links, gaps |
+| Multi-file approach after code/requirements are understood | `planner` | one-shot | ordered plan with paths, validations, open questions |
+| Clear and isolated implementation slice | `worker` | one-shot | minimal diff and actual validation result |
+| Non-trivial/risky final diff, migration, public contract | `reviewer` | one-shot | evidence-backed Critical / Warnings / Suggestions |
+| Bounded domain with expected follow-up | same role | persistent | stable scope-specific `tabLabel` and explicit handoff |
+
+**Negative policy:** do not delegate trivial known-file edits, simple questions, or one-command checks. No parallel workers with overlapping write areas. Parallelize only independent reads or disjoint write slices (2–3 agents max).
+
+**Lifecycle examples:**
+
+- One-shot scout: `{ "agent": "scout", "task": "...", "lifecycle": "oneshot" }` — tab closes after result.
+- Persistent scout: `{ "agent": "scout", "tabLabel": "Scout — message-bus", "task": "...", "lifecycle": "persistent" }` — follow-up reuses the same label.
+- Re-wait after timeout: `{ "tabLabel": "Scout — message-bus" }` with no `task`.
+
 ## Main concepts
 
 ### Orchestrator
