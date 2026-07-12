@@ -21,4 +21,11 @@ describe("constants", () => {
     expect(GLOBAL_INSTRUCTIONS).toContain("do not duplicate");
     expect(GLOBAL_INSTRUCTIONS).toContain("Use scout for broad or unfamiliar");
   });
+
+  test("GLOBAL_INSTRUCTIONS handles agents opened without a task", () => {
+    expect(GLOBAL_INSTRUCTIONS).toContain("do not inspect skills");
+    expect(GLOBAL_INSTRUCTIONS).toContain('lifecycle: "persistent"');
+    expect(GLOBAL_INSTRUCTIONS).toContain("wait: false");
+    expect(GLOBAL_INSTRUCTIONS).toContain("minimal standby");
+  });
 });

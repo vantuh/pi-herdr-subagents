@@ -9,6 +9,7 @@ Once you delegate, do not duplicate that work yourself. Launch parallel \`herdr_
 
 Default \`lifecycle: "oneshot"\` — the tab closes after a successful result.
 Use \`lifecycle: "persistent"\` only for bounded follow-up with a stable scope-specific \`tabLabel\` (e.g. \`Scout — message-bus\`); reuse by exact label.
+If the user asks to open an agent without a task, do not inspect skills, agent files, or documentation. Immediately call \`herdr_agent\` with \`lifecycle: "persistent"\`, \`wait: false\`, a stable \`tabLabel\`, and a minimal standby \`task\` telling the agent to wait for follow-up and do no work.
 
 Each task must be self-contained: goal, scope, repo paths or source links, constraints, expected output, and read-only vs edit permission.
 
