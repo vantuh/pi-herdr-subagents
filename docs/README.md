@@ -18,18 +18,27 @@ This extension moves that workflow into a tool:
 
 ## Delegation policy
 
-Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. This extension docs describe **how** Pi/Herdr delegates.
+Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. This extension docs describe **how** Pi/Herdr delegates. Agent profile `description` fields route proactive delegation.
 
-| Situation | `agent` profile | Default lifecycle | Expected output |
-|---|---|---:|---|
-| Unknown code, entry points, call/data-flow tracing | `scout` | one-shot | file/line evidence, flow, likely change areas, risks |
-| Official docs, API behavior, library choice, current facts | `researcher` | one-shot | concise decision brief, primary-source links, gaps |
-| Multi-file approach after code/requirements are understood | `planner` | one-shot | ordered plan with paths, validations, open questions |
-| Clear and isolated implementation slice | `worker` | one-shot | minimal diff and actual validation result |
-| Non-trivial/risky final diff, migration, public contract | `reviewer` | one-shot | evidence-backed Critical / Warnings / Suggestions |
-| Bounded domain with expected follow-up | same role | persistent | stable scope-specific `tabLabel` and explicit handoff |
+| Situation | `agent` profile | Default delegate? | Default lifecycle | Expected output |
+|---|---|:---:|---:|---|
+| Unknown code, entry points, call/data-flow tracing | `scout` | **yes** | one-shot | file/line evidence, flow, likely change areas, risks |
+| Official docs, API behavior, library choice, current facts | `researcher` | **yes** | one-shot | concise decision brief, primary-source links, gaps |
+| Multi-file approach after code/requirements are understood | `planner` | **yes** (after scout) | one-shot | ordered plan with paths, validations, open questions |
+| Clear and isolated implementation slice | `worker` | after plan | one-shot | minimal diff and actual validation result |
+| Non-trivial/risky final diff, migration, public contract | `reviewer` | **yes** | one-shot | evidence-backed Critical / Warnings / Suggestions |
+| Bounded domain with expected follow-up | same role | — | persistent | stable scope-specific `tabLabel` and explicit handoff |
 
-**Negative policy:** do not delegate trivial known-file edits, simple questions, or one-command checks. No parallel workers with overlapping write areas. Parallelize only independent reads or disjoint write slices (2–3 agents max).
+**When NOT to delegate** (stay direct in Orchestrator tab):
+
+- needle query: specific file, class, or function in 1–2 files
+- known single-file edit or typo fix
+- one-command check (`git status`, single test run)
+- answer is already in the current conversation context
+
+**Proactive delegation:** if an agent `description` says "use proactively", the Orchestrator should spawn it when triggers match — without the user asking. Broad or unfamiliar exploration and flow tracing go to `scout`; exact file/class/function lookups stay direct. Do not duplicate delegated work in the parent tab.
+
+**Negative policy:** no parallel workers with overlapping write areas. Parallelize only independent reads or disjoint write slices (2–3 agents max).
 
 **Lifecycle examples:**
 

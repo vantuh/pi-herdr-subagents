@@ -243,10 +243,10 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
     description:
       "Spawn a one-shot Herdr agent or reuse a persistent Herdr tab with a named profile from ~/.pi/agent/agents.",
     promptSnippet:
-      "Delegate isolated research, scouting, planning, review, testing, or implementation to a one-shot or persistent Herdr agent.",
+      "Delegate exploration, research, planning, review, and isolated implementation to a one-shot or persistent Herdr agent.",
     promptGuidelines: [
-      "Use herdr_agent when isolated context helps; pick the smallest suitable agent profile.",
-      "Follow the Herdr agents system instructions for lifecycle, self-contained tasks, parallel rules, and re-wait.",
+      "Proactively use herdr_agent with the smallest matching profile for broad exploration, external research, multi-file planning, review, or isolated implementation; stay direct for needle queries, known single-file edits, and one-command checks.",
+      "Follow the Herdr agents system instructions for lifecycle, self-contained tasks, independent parallel calls, avoiding duplicate work, and re-wait.",
     ],
     parameters: HerdrAgentParams,
 
