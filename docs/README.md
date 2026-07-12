@@ -165,3 +165,4 @@ See also:
 
 - [`flow.md`](./flow.md) — detailed lifecycle.
 - [`session-findings.md`](./session-findings.md) — development findings and bug history.
+- [`composer-cursor-sdk-compatibility.md`](./composer-cursor-sdk-compatibility.md) — Composer tool-name adaptation and tool/skill boundary tuning.
