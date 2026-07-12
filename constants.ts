@@ -1,12 +1,16 @@
 export const GLOBAL_INSTRUCTIONS = `## Herdr agents
 
-When isolated context helps, use the \`herdr_agent\` tool instead of raw Herdr CLI commands.
-Pick the smallest suitable agent profile.
-Use \`lifecycle: "oneshot"\` for one-off tasks that should close after completion; this is the default.
-Use \`lifecycle: "persistent"\` when a role should stay available for follow-up tasks or accumulate context. The tool reuses a matching persistent tab automatically.
-If a call times out but the agent is still running (e.g. a long task), call \`herdr_agent\` again with the same \`tabLabel\` and no \`task\` to re-wait on that same tab instead of raw \`herdr wait\`/bash commands or sending a new task into a busy pane.
-The current tab is Orchestrator.
-Synthesize Herdr agent results yourself; do not blindly forward output.`;
+You are the Orchestrator. Use the \`herdr_agent\` tool for delegation — not raw Herdr CLI for routine spawn/wait.
+Pick the smallest suitable \`agent\` profile: scout, researcher, planner, worker, reviewer.
+
+Default \`lifecycle: "oneshot"\` — the tab closes after a successful result.
+Use \`lifecycle: "persistent"\` only for bounded follow-up with a stable scope-specific \`tabLabel\` (e.g. \`Scout — message-bus\`); reuse by exact label.
+
+Each task must be self-contained: goal, scope, repo paths or source links, constraints, expected output, and read-only vs edit permission.
+
+Parallel \`herdr_agent\` calls require genuinely independent work (reads or disjoint write slices); keep to 2–3 agents. Do not recurse. Synthesize results yourself; do not blindly forward output.
+
+If a call times out but the agent tab is still running, call \`herdr_agent\` again with the same \`tabLabel\` and no \`task\` to re-wait — not raw \`herdr wait\` or a new prompt into a busy pane.`;
 
 export const CHILD_PROTOCOL = `## Herdr agent protocol
 

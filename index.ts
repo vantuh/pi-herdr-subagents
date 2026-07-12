@@ -245,11 +245,8 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
     promptSnippet:
       "Delegate isolated research, scouting, planning, review, testing, or implementation to a one-shot or persistent Herdr agent.",
     promptGuidelines: [
-      "Use herdr_agent when isolated context helps: broad codebase exploration, external research, review, planning, tests/logs, or independent implementation.",
-      "Use lifecycle: 'oneshot' for one-off tasks that should close after completion; this is the default.",
-      "Use lifecycle: 'persistent' when the same role should stay available for follow-up tasks or accumulate context; the tool will reuse the matching tab.",
-      "Use herdr_agent with the smallest suitable profile and a self-contained task.",
-      "If a call times out but the agent tab is still running, call herdr_agent again with the same tabLabel and no task to re-wait on it, instead of raw Herdr CLI commands or sending a new task into a busy pane.",
+      "Use herdr_agent when isolated context helps; pick the smallest suitable agent profile.",
+      "Follow the Herdr agents system instructions for lifecycle, self-contained tasks, parallel rules, and re-wait.",
     ],
     parameters: HerdrAgentParams,
 
