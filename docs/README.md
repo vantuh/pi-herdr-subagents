@@ -18,15 +18,15 @@ This extension moves that workflow into a tool:
 
 ## Delegation policy
 
-Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. This extension docs describe **how** Pi/Herdr delegates. Agent profile `description` fields route proactive delegation.
+Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. This extension docs describe **how** Pi/Herdr delegates.
 
-| Situation | `agent` profile | Default delegate? | Default lifecycle | Expected output |
+| Situation | `agent` profile | Delegate? | Default lifecycle | Expected output |
 |---|---|:---:|---:|---|
-| Unknown code, entry points, call/data-flow tracing | `scout` | **yes** | one-shot | file/line evidence, flow, likely change areas, risks |
-| Official docs, API behavior, library choice, current facts | `researcher` | **yes** | one-shot | concise decision brief, primary-source links, gaps |
-| Multi-file approach after code/requirements are understood | `planner` | **yes** (after scout) | one-shot | ordered plan with paths, validations, open questions |
+| Unknown code, entry points, call/data-flow tracing | `scout` | when needed | one-shot | file/line evidence, flow, likely change areas, risks |
+| Official docs, API behavior, library choice, current facts | `researcher` | when needed | one-shot | concise decision brief, primary-source links, gaps |
+| Multi-file approach after code/requirements are understood | `planner` | after scout | one-shot | ordered plan with paths, validations, open questions |
 | Clear and isolated implementation slice | `worker` | after plan | one-shot | minimal diff and actual validation result |
-| Non-trivial/risky final diff, migration, public contract | `reviewer` | **yes** | one-shot | evidence-backed Critical / Warnings / Suggestions |
+| Non-trivial/risky final diff, migration, public contract | `reviewer` | when needed | one-shot | evidence-backed Critical / Warnings / Suggestions |
 | Bounded domain with expected follow-up | same role | — | persistent | stable scope-specific `tabLabel` and explicit handoff |
 
 **When NOT to delegate** (stay direct in Orchestrator tab):
@@ -35,8 +35,6 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Thi
 - known single-file edit or typo fix
 - one-command check (`git status`, single test run)
 - answer is already in the current conversation context
-
-**Proactive delegation:** if an agent `description` says "use proactively", the Orchestrator should spawn it when triggers match — without the user asking. Broad or unfamiliar exploration and flow tracing go to `scout`; exact file/class/function lookups stay direct. Do not duplicate delegated work in the parent tab.
 
 **Negative policy:** no parallel workers with overlapping write areas. Parallelize only independent reads or disjoint write slices (2–3 agents max).
 
@@ -139,7 +137,7 @@ A global `/parallel-review` Pi prompt uses this extension's `herdr_agent` tool, 
 }
 ```
 
-Typical call:
+Typical tool call:
 
 ```json
 {

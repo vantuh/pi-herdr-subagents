@@ -17,18 +17,16 @@ The intended model behavior:
 
 ## Delegation policy
 
-Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Role matrix, lifecycle examples, and negative policy live in `docs/README.md`. Orchestrator mechanics are in `constants.ts` (`GLOBAL_INSTRUCTIONS`). Agent profile `description` fields route proactive delegation.
+Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Role matrix, lifecycle examples, and negative policy live in `docs/README.md`. Orchestrator mechanics are in `constants.ts` (`GLOBAL_INSTRUCTIONS`).
 
-| Situation | `agent` | Default? |
+| Situation | `agent` | Delegate? |
 |---|---|:---:|
-| Unknown code / flows / "where-how" | scout | **yes** |
-| External docs / APIs / facts | researcher | **yes** |
+| Unknown code / flows / "where-how" | scout | when needed |
+| External docs / APIs / facts | researcher | when needed |
 | Known single-file edit | — | no |
-| Multi-file plan | planner | **yes** (after scout) |
+| Multi-file plan | planner | after scout |
 | Isolated implementation | worker | after plan |
-| Non-trivial / risky diff | reviewer | **yes** |
-
-**Proactive:** descriptions with "use proactively" trigger delegation without user asking. Broad or unfamiliar exploration and flow tracing → scout, not broad grep in the Orchestrator tab.
+| Non-trivial / risky diff | reviewer | when needed |
 
 ## Files
 

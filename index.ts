@@ -245,7 +245,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
     promptSnippet:
       "Delegate exploration, research, planning, review, and isolated implementation to a one-shot or persistent Herdr agent.",
     promptGuidelines: [
-      "Proactively use herdr_agent with the smallest matching profile for broad exploration, external research, multi-file planning, review, or isolated implementation; stay direct for needle queries, known single-file edits, and one-command checks.",
+      "Use herdr_agent when global Delegation says isolated context helps; honor explicit role requests and delegation asks.",
       "Follow the Herdr agents system instructions for lifecycle, self-contained tasks, independent parallel calls, avoiding duplicate work, and re-wait.",
     ],
     parameters: HerdrAgentParams,

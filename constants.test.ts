@@ -3,8 +3,9 @@ import { CHILD_PROTOCOL, GLOBAL_INSTRUCTIONS } from "./constants.ts";
 
 describe("constants", () => {
   test("CHILD_PROTOCOL prohibits recursive delegation", () => {
-    expect(CHILD_PROTOCOL).toContain("Do not spawn additional agents");
-    expect(CHILD_PROTOCOL).not.toContain("unless explicitly asked");
+    expect(CHILD_PROTOCOL).toContain(
+      "Do not spawn additional agents unless explicitly asked",
+    );
   });
 
   test("GLOBAL_INSTRUCTIONS names herdr_agent and oneshot default", () => {
@@ -15,17 +16,15 @@ describe("constants", () => {
     expect(GLOBAL_INSTRUCTIONS).toContain("scout, researcher, planner, worker, reviewer");
   });
 
-  test("GLOBAL_INSTRUCTIONS keeps proactive delegation boundaries", () => {
-    expect(GLOBAL_INSTRUCTIONS).toContain("Proactively use");
-    expect(GLOBAL_INSTRUCTIONS).toContain("Stay direct for needle queries");
-    expect(GLOBAL_INSTRUCTIONS).toContain("do not duplicate");
-    expect(GLOBAL_INSTRUCTIONS).toContain("Use scout for broad or unfamiliar");
-  });
-
   test("GLOBAL_INSTRUCTIONS handles agents opened without a task", () => {
     expect(GLOBAL_INSTRUCTIONS).toContain("do not inspect skills");
     expect(GLOBAL_INSTRUCTIONS).toContain('lifecycle: "persistent"');
     expect(GLOBAL_INSTRUCTIONS).toContain("wait: false");
     expect(GLOBAL_INSTRUCTIONS).toContain("minimal standby");
+  });
+
+  test("GLOBAL_INSTRUCTIONS does not use proactive delegation", () => {
+    expect(GLOBAL_INSTRUCTIONS).not.toContain("openai-codex");
+    expect(GLOBAL_INSTRUCTIONS).not.toContain("Proactively use");
   });
 });
