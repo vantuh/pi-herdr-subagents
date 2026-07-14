@@ -3,6 +3,7 @@ import {
   type ExtensionAPI,
   type ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
+import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import {
   Container,
   Key,
@@ -12,7 +13,16 @@ import {
   Text,
 } from "@earendil-works/pi-tui";
 import { discoverAgents } from "./agents.ts";
-import { CHILD_PROTOCOL, GLOBAL_INSTRUCTIONS } from "./constants.ts";
+import {
+  buildRunTurnInstructions,
+  CHILD_PROTOCOL,
+  GLOBAL_INSTRUCTIONS,
+} from "./constants.ts";
+import {
+  formatRunUserMessage,
+  parseRunArgs,
+  type RunDelegationRequest,
+} from "./run.ts";
 import {
   execHerdr,
   findReusableAgentTab,
@@ -218,12 +228,69 @@ async function showHerdrAgentsManager(
   }
 }
 
+let pendingRunDelegation: RunDelegationRequest | null = null;
+
 export default function herdrAgentsExtension(pi: ExtensionAPI) {
   if (process.env.HERDR_AGENT_CHILD === "1") return;
 
-  pi.on("before_agent_start", async (event) => ({
-    systemPrompt: `${event.systemPrompt}\n\n${GLOBAL_INSTRUCTIONS}`,
-  }));
+  pi.on("before_agent_start", async (event) => {
+    let instructions = GLOBAL_INSTRUCTIONS;
+
+    if (pendingRunDelegation) {
+      const runRequest = pendingRunDelegation;
+      pendingRunDelegation = null;
+      instructions = `${instructions}\n\n${buildRunTurnInstructions(runRequest.agent)}`;
+    }
+
+    return {
+      systemPrompt: `${event.systemPrompt}\n\n${instructions}`,
+    };
+  });
+
+  pi.registerCommand("run", {
+    description: "Explicitly delegate a task to a Herdr agent",
+    getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
+      const agents = ["scout", "researcher", "planner", "worker", "reviewer"];
+      const [first = "", ...rest] = prefix.trimStart().split(/\s+/);
+      const taskPrefix = rest.join(" ");
+
+      if (!prefix.trim() || (!taskPrefix && !prefix.includes(" "))) {
+        const items = agents.map((agent) => ({
+          value: `${agent} `,
+          label: agent,
+        }));
+        const filtered = items.filter((item) =>
+          item.value.startsWith(prefix.toLowerCase()),
+        );
+        return filtered.length > 0 ? filtered : null;
+      }
+
+      if (taskPrefix) return null;
+
+      const items = agents
+        .filter((agent) => agent.startsWith(first.toLowerCase()))
+        .map((agent) => ({ value: `${agent} `, label: agent }));
+      return items.length > 0 ? items : null;
+    },
+    handler: async (args, ctx) => {
+      const parsed = parseRunArgs(args);
+      if (!parsed) {
+        ctx.ui.notify(
+          "Usage: /run [agent] <task> — e.g. /run scout find auth flow",
+          "warning",
+        );
+        return;
+      }
+
+      if (!ctx.isIdle()) {
+        ctx.ui.notify("Agent is busy. Wait for the current turn to finish.", "warning");
+        return;
+      }
+
+      pendingRunDelegation = parsed;
+      pi.sendUserMessage(formatRunUserMessage(parsed));
+    },
+  });
 
   pi.registerCommand("herdr-agents", {
     description: "Show and kill Herdr agents in the current workspace",
@@ -245,7 +312,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
     promptSnippet:
       "Delegate exploration, research, planning, review, and isolated implementation to a one-shot or persistent Herdr agent.",
     promptGuidelines: [
-      "Use herdr_agent when global Delegation says isolated context helps; honor explicit role requests and delegation asks.",
+      "Use herdr_agent when global Delegation says isolated context helps; call after /run, a named role, or explicit delegation request.",
       "Follow the Herdr agents system instructions for lifecycle, self-contained tasks, independent parallel calls, avoiding duplicate work, and re-wait.",
     ],
     parameters: HerdrAgentParams,

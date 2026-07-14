@@ -12,6 +12,17 @@ Each task must be self-contained: goal, scope, repo paths or source links, const
 
 If a call times out but the agent tab is still running, call \`herdr_agent\` again with the same \`tabLabel\` and no \`task\` to re-wait — not raw \`herdr wait\` or a new prompt into a busy pane.`;
 
+export function buildRunTurnInstructions(agent?: string): string {
+  const profile = agent
+    ? `Use \`herdr_agent\` with \`agent: "${agent}"\` unless a different profile is clearly better.`
+    : "Pick the smallest suitable \`herdr_agent\` profile: scout, researcher, planner, worker, reviewer.";
+  return `## /run delegation
+
+This turn authorizes delegation via \`/run\`.
+${profile}
+Call \`herdr_agent\` now for the user's task. Do not duplicate delegated work in this tab afterward.`;
+}
+
 export const CHILD_PROTOCOL = `## Herdr agent protocol
 
 You are running in a Herdr tab spawned by the Orchestrator.

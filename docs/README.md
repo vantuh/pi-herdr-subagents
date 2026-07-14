@@ -137,6 +137,18 @@ A global `/parallel-review` Pi prompt uses this extension's `herdr_agent` tool, 
 }
 ```
 
+### `/run` command
+
+Explicit delegation via `/run`:
+
+```text
+/run scout find where auth is handled
+/run reviewer check the current diff
+/run implement the login timeout fix
+```
+
+`/run [agent] <task>` injects a one-turn delegation authorization and sends the task as a user message.
+
 Typical tool call:
 
 ```json

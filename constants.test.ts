@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { CHILD_PROTOCOL, GLOBAL_INSTRUCTIONS } from "./constants.ts";
+import {
+  buildRunTurnInstructions,
+  CHILD_PROTOCOL,
+  GLOBAL_INSTRUCTIONS,
+} from "./constants.ts";
 
 describe("constants", () => {
   test("CHILD_PROTOCOL prohibits recursive delegation", () => {
@@ -26,5 +30,10 @@ describe("constants", () => {
   test("GLOBAL_INSTRUCTIONS does not use proactive delegation", () => {
     expect(GLOBAL_INSTRUCTIONS).not.toContain("openai-codex");
     expect(GLOBAL_INSTRUCTIONS).not.toContain("Proactively use");
+  });
+
+  test("buildRunTurnInstructions names agent when provided", () => {
+    expect(buildRunTurnInstructions("scout")).toContain('agent: "scout"');
+    expect(buildRunTurnInstructions()).toContain("smallest suitable");
   });
 });
