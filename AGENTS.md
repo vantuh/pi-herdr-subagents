@@ -67,6 +67,7 @@ Useful smoke checks:
 ```bash
 # Parse/bundle the extension modules.
 bun build pi/.pi/agent/extensions/herdr-agents/index.ts \
+  --target node \
   --outfile /tmp/herdr-agents-check.js \
   --external @earendil-works/pi-coding-agent \
   --external @earendil-works/pi-tui \

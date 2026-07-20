@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createConnection } from "node:net";
 import type { HerdrAgentsState } from "./state.ts";
 import { paneStateKey } from "./state.ts";
 import type {
@@ -66,6 +67,67 @@ export function execHerdr(
       };
       signal.addEventListener("abort", onAbort, { once: true });
     }
+  });
+}
+
+export function execHerdrApi(
+  method: string,
+  params: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const socketPath = process.env.HERDR_SOCKET_PATH;
+    if (!socketPath) {
+      reject(new Error("HERDR_SOCKET_PATH is not set."));
+      return;
+    }
+
+    const requestId = `herdr-agents:${process.pid}:${Date.now()}:${Math.random()}`;
+    const socket = createConnection(socketPath);
+    let buffer = "";
+    let settled = false;
+
+    const finish = (error?: Error, value?: unknown) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      socket.destroy();
+      if (error) reject(error);
+      else resolve(value);
+    };
+    const onAbort = () => finish(new Error("Aborted"));
+
+    socket.setEncoding("utf8");
+    socket.on("connect", () => {
+      socket.write(`${JSON.stringify({ id: requestId, method, params })}\n`);
+    });
+    socket.on("data", (chunk: string) => {
+      buffer += chunk;
+      const newline = buffer.indexOf("\n");
+      if (newline < 0) return;
+
+      let response: {
+        id?: string;
+        result?: unknown;
+        error?: { message?: string };
+      };
+      try {
+        response = JSON.parse(buffer.slice(0, newline));
+      } catch (error) {
+        finish(error instanceof Error ? error : new Error(String(error)));
+        return;
+      }
+      if (response.id !== requestId) return;
+      if (response.error) {
+        finish(new Error(response.error.message ?? `${method} failed`));
+        return;
+      }
+      finish(undefined, response.result);
+    });
+    socket.on("error", (error) => finish(error));
+    socket.on("end", () => finish(new Error(`Herdr socket closed during ${method}.`)));
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
   });
 }
 
@@ -185,6 +247,86 @@ export function listManagedWorkspaceAgents(
   }
 
   return agents.sort((a, b) => a.tabLabel.localeCompare(b.tabLabel));
+}
+
+export type PortableLayoutNode =
+  | { type: "pane"; pane_id?: string }
+  | {
+      type: "split";
+      direction: "right" | "down";
+      ratio: number;
+      first: PortableLayoutNode;
+      second: PortableLayoutNode;
+    };
+
+export interface SplitRatioUpdate {
+  path: boolean[];
+  ratio: number;
+}
+
+function countManagedPanes(
+  node: PortableLayoutNode,
+  managedPaneIds: ReadonlySet<string>,
+): number {
+  if (node.type === "pane") {
+    return node.pane_id && managedPaneIds.has(node.pane_id) ? 1 : 0;
+  }
+  return (
+    countManagedPanes(node.first, managedPaneIds) +
+    countManagedPanes(node.second, managedPaneIds)
+  );
+}
+
+export function buildEqualAgentSplitRatios(
+  root: PortableLayoutNode,
+  managedPaneIds: ReadonlySet<string>,
+): SplitRatioUpdate[] {
+  const updates: SplitRatioUpdate[] = [];
+
+  const visit = (node: PortableLayoutNode, path: boolean[]) => {
+    if (node.type === "pane") return;
+
+    const firstCount = countManagedPanes(node.first, managedPaneIds);
+    const secondCount = countManagedPanes(node.second, managedPaneIds);
+    const total = firstCount + secondCount;
+
+    if (node.direction === "down" && firstCount > 0 && secondCount > 0) {
+      updates.push({ path, ratio: firstCount / total });
+    }
+    if (firstCount > 0) visit(node.first, [...path, false]);
+    if (secondCount > 0) visit(node.second, [...path, true]);
+  };
+
+  visit(root, []);
+  return updates;
+}
+
+export async function exportPaneLayout(
+  paneId: string,
+  signal?: AbortSignal,
+): Promise<{ tab_id: string; root: PortableLayoutNode }> {
+  const result = (await execHerdrApi(
+    "layout.export",
+    { pane_id: paneId },
+    signal,
+  )) as { layout?: { tab_id?: string; root?: PortableLayoutNode } };
+  if (!result.layout?.tab_id || !result.layout.root) {
+    throw new Error("Malformed Herdr layout.export response.");
+  }
+  return { tab_id: result.layout.tab_id, root: result.layout.root };
+}
+
+export async function setLayoutSplitRatio(
+  tabId: string,
+  path: boolean[],
+  ratio: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  await execHerdrApi(
+    "layout.set_split_ratio",
+    { tab_id: tabId, path, ratio },
+    signal,
+  );
 }
 
 interface PaneLayout {

@@ -56,7 +56,7 @@ On first use, the extension renames the current Herdr tab to `Orchestrator`.
 
 A child Pi process launched in a managed Herdr pane or tab.
 
-The internal layout defaults to `pane`: the first agent splits the Orchestrator pane to the right at 60/40, and additional agents split the largest managed pane downward in the right column. Short placement operations are serialized so parallel tool calls preserve that structure. `HERDR_AGENTS_LAYOUT=tab` selects the legacy one-tab-per-agent behavior.
+The internal layout defaults to `pane`: the first agent splits the Orchestrator pane to the right at 60/40, and additional agents split the largest managed pane downward in the right column. After spawn or close, the extension rebalances that column to equal heights (for example, three agents use thirds). Short placement operations are serialized so parallel tool calls preserve that structure. `HERDR_AGENTS_LAYOUT=tab` selects the legacy one-tab-per-agent behavior.
 
 Lifecycle modes are independent of layout:
 

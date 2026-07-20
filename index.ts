@@ -25,14 +25,17 @@ import {
   type RunDelegationRequest,
 } from "./run.ts";
 import {
+  buildEqualAgentSplitRatios,
   chooseAgentColumnSplitTarget,
   execHerdr,
+  exportPaneLayout,
   findReusableAgentPane,
   findReusableAgentTab,
   getCurrentContext,
   listManagedWorkspaceAgents,
   listPanes,
   listTabs,
+  setLayoutSplitRatio,
   uniqueLabel,
   waitForAgentFinished,
 } from "./herdr.ts";
@@ -70,6 +73,27 @@ async function bestEffort<T>(fallback: T, task: () => Promise<T>): Promise<T> {
     return await task();
   } catch {
     return fallback;
+  }
+}
+
+async function rebalanceCurrentPaneAgents(
+  signal?: AbortSignal,
+): Promise<void> {
+  const current = await getCurrentContext(signal);
+  const state = await loadHerdrAgentsState();
+  if (pruneHerdrAgentsState(state, current.panes)) {
+    await saveHerdrAgentsState(state);
+  }
+  const agents = listManagedWorkspaceAgents(current, state).filter(
+    (agent) => agent.layout === "pane" && agent.tabId === current.currentTab,
+  );
+  if (agents.length < 2) return;
+
+  const layout = await exportPaneLayout(current.currentPane.pane_id, signal);
+  const managedPaneIds = new Set(agents.map((agent) => agent.paneId));
+  const updates = buildEqualAgentSplitRatios(layout.root, managedPaneIds);
+  for (const update of updates) {
+    await setLayoutSplitRatio(layout.tab_id, update.path, update.ratio, signal);
   }
 }
 
@@ -229,6 +253,9 @@ async function showHerdrAgentsManager(
         ? ["pane", "close", selected.agent.paneId]
         : ["tab", "close", selected.agent.tabId],
     );
+    if (selected.agent.layout === "pane") {
+      await bestEffort(undefined, () => rebalanceCurrentPaneAgents());
+    }
     ctx.ui.notify(`Closed Herdr agent "${selected.agent.tabLabel}"`, "info");
   }
 }
@@ -646,6 +673,9 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
             }),
           );
         }
+        if (layout === "pane") {
+          await bestEffort(undefined, () => rebalanceCurrentPaneAgents(signal));
+        }
 
         const taskPrompt = [
           `You are the ${agent.name} Herdr agent.`,
@@ -745,6 +775,11 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
             );
             if (agentPane) {
               await bestEffort(undefined, () => deleteAgentLifecycle(agentPane!));
+            }
+            if (layout === "pane") {
+              await bestEffort(undefined, () =>
+                rebalanceCurrentPaneAgents(signal),
+              );
             }
             closed = true;
           } catch (error) {

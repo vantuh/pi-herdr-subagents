@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildEqualAgentSplitRatios,
   chooseAgentColumnSplitTarget,
   findReusableAgentPane,
   findReusableAgentTab,
@@ -531,6 +532,54 @@ test("does not reuse an unmanaged or cross-tab pane", () => {
   };
 
   assert.equal(findReusableAgentPane(context, state, "Worker"), undefined);
+});
+
+test("builds equal ratios for three vertically stacked agent panes", () => {
+  const root = {
+    type: "split" as const,
+    direction: "right" as const,
+    ratio: 0.6,
+    first: { type: "pane" as const, pane_id: "orchestrator" },
+    second: {
+      type: "split" as const,
+      direction: "down" as const,
+      ratio: 0.5,
+      first: { type: "pane" as const, pane_id: "agent-1" },
+      second: {
+        type: "split" as const,
+        direction: "down" as const,
+        ratio: 0.5,
+        first: { type: "pane" as const, pane_id: "agent-2" },
+        second: { type: "pane" as const, pane_id: "agent-3" },
+      },
+    },
+  };
+
+  assert.deepEqual(
+    buildEqualAgentSplitRatios(
+      root,
+      new Set(["agent-1", "agent-2", "agent-3"]),
+    ),
+    [
+      { path: [true], ratio: 1 / 3 },
+      { path: [true, true], ratio: 1 / 2 },
+    ],
+  );
+});
+
+test("does not resize the outer orchestrator split", () => {
+  const root = {
+    type: "split" as const,
+    direction: "right" as const,
+    ratio: 0.6,
+    first: { type: "pane" as const, pane_id: "orchestrator" },
+    second: { type: "pane" as const, pane_id: "agent" },
+  };
+
+  assert.deepEqual(
+    buildEqualAgentSplitRatios(root, new Set(["agent"])),
+    [],
+  );
 });
 
 test("splits the largest existing agent pane in the right column", () => {

@@ -95,7 +95,7 @@ In default pane mode, the first agent splits the Orchestrator pane to the right 
 herdr pane split <orchestrator-pane> --direction right --ratio 0.6 --no-focus
 ```
 
-Additional agents split the largest managed pane downward, keeping them in the right column. Placement and label allocation are serialized across parallel tool calls.
+Additional agents split the largest managed pane downward, keeping them in the right column. The extension then uses `layout.set_split_ratio` to give every managed agent equal height, and repeats that rebalance after an agent closes. Placement and label allocation are serialized across parallel tool calls.
 
 Legacy tab mode creates a sibling tab as before:
 
