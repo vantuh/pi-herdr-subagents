@@ -4,15 +4,15 @@ This extension belongs to the dotfiles repo and is symlinked into `~/.pi/agent/e
 
 ## Purpose
 
-`herdr-agents` gives Pi a `herdr_agent` tool for one-shot or persistent delegation through Herdr tabs.
+`herdr-agents` gives Pi a `herdr_agent` tool for one-shot or persistent delegation through Herdr panes or tabs. Layout is internal configuration and is not part of the tool schema.
 
 The intended model behavior:
 
 - The main Pi session is the Orchestrator.
 - When isolated context helps, the Orchestrator calls `herdr_agent` instead of raw `herdr` CLI commands.
-- `herdr_agent` starts a Pi process in a named Herdr tab using an agent profile from `~/.pi/agent/agents/*.md`.
-- Use `lifecycle: "oneshot"` for one-shot tasks; the extension closes that tab after a successful result.
-- Use `lifecycle: "persistent"` when a role should stay available for follow-up tasks or accumulate context; the extension reuses a matching tab automatically.
+- `herdr_agent` starts a Pi process in a named Herdr target using an agent profile from `~/.pi/agent/agents/*.md`.
+- Use `lifecycle: "oneshot"` for one-shot tasks; the extension closes that agent target after a successful result.
+- Use `lifecycle: "persistent"` when a role should stay available for follow-up tasks or accumulate context; the extension reuses a matching target automatically.
 - The Orchestrator waits for the child result, reads it, and synthesizes the answer.
 
 ## Delegation policy
@@ -45,7 +45,9 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 - `HERDR_PANE_ID` is preferred over focused pane detection. Focus can move while a tool is running.
 - Waiting treats both `done` and certain `idle` states as finished. Herdr may show a completed agent as `idle` after the pane has been observed.
 - `lifecycle: "oneshot"` requires `wait: true`, because the Orchestrator must wait before closing the one-shot tab.
-- Persistent agent reuse is label-based: the default label is the title-cased agent profile name unless `tabLabel` is provided. Reuse requires an exact label match on a tab that has a `pi` pane, and it never reuses the Orchestrator's own current tab.
+- Layout defaults to `pane`. Set `HERDR_AGENTS_LAYOUT=tab` before starting Pi to use the legacy tab layout; the model receives no layout parameter.
+- Pane mode splits the Orchestrator 60/40 on the first spawn and stacks additional agents down the right column. Placement is serialized so parallel calls cannot create competing right columns.
+- Persistent agent reuse is label-based: the default label is the title-cased agent profile name unless `tabLabel` is provided. Reuse requires an exact managed-agent label match.
 - While waiting, the extension emits `pi.events.emit("herdr:blocked", ...)` so Herdr can mark the Orchestrator pane as blocked/waiting.
 
 ## Loading

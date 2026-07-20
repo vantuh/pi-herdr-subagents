@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import type { HerdrAgentsState } from "./state.ts";
+import { paneStateKey } from "./state.ts";
 import type {
   HerdrAgentInfo,
   HerdrAgentLifecycle,
@@ -133,6 +135,80 @@ export function findReusableAgentTab(
   if (!pane || pane.agent !== "pi") return undefined;
 
   return { tab, pane };
+}
+
+export function findReusableAgentPane(
+  context: HerdrContext,
+  state: HerdrAgentsState,
+  label: string,
+): PaneInfo | undefined {
+  return context.panes.find((pane) => {
+    if (pane.workspace_id !== context.workspaceId) return false;
+    if (pane.tab_id !== context.currentTab) return false;
+    if (pane.pane_id === context.currentPane.pane_id || pane.agent !== "pi") {
+      return false;
+    }
+    const key = paneStateKey(pane);
+    const record = key ? state.agents[key] : undefined;
+    return (
+      (record?.layout === "pane" || record?.layout === undefined) &&
+      record?.tabLabel === label
+    );
+  });
+}
+
+export function listManagedWorkspaceAgents(
+  context: HerdrContext,
+  state: HerdrAgentsState,
+): HerdrAgentInfo[] {
+  const agents: HerdrAgentInfo[] = [];
+
+  for (const pane of context.panes) {
+    if (pane.workspace_id !== context.workspaceId) continue;
+    if (pane.pane_id === context.currentPane.pane_id) continue;
+
+    const key = paneStateKey(pane);
+    const record = key ? state.agents[key] : undefined;
+    if (!record) continue;
+
+    agents.push({
+      tabId: pane.tab_id,
+      tabLabel: record.tabLabel ?? pane.label ?? record.agent ?? "Agent",
+      paneId: pane.pane_id,
+      agent: record.agent ?? pane.agent ?? "pi",
+      status: pane.agent_status ?? "unknown",
+      lifecycle: record.lifecycle,
+      layout:
+        record.layout ?? (pane.tab_id === context.currentTab ? "pane" : "tab"),
+      cwd: pane.foreground_cwd ?? pane.cwd,
+    });
+  }
+
+  return agents.sort((a, b) => a.tabLabel.localeCompare(b.tabLabel));
+}
+
+interface PaneLayout {
+  panes?: Array<{
+    pane_id: string;
+    rect?: { height?: number; width?: number };
+  }>;
+}
+
+export function chooseAgentColumnSplitTarget(
+  panes: PaneInfo[],
+  layout?: PaneLayout,
+): PaneInfo | undefined {
+  const areaByPaneId = new Map(
+    (layout?.panes ?? []).map((pane) => [
+      pane.pane_id,
+      (pane.rect?.height ?? 0) * (pane.rect?.width ?? 0),
+    ]),
+  );
+  return [...panes].sort(
+    (a, b) =>
+      (areaByPaneId.get(b.pane_id) ?? 0) -
+      (areaByPaneId.get(a.pane_id) ?? 0),
+  )[0];
 }
 
 export function listCurrentWorkspaceAgents(

@@ -85,21 +85,25 @@ The extension then renames that tab:
 herdr tab rename <current-tab> Orchestrator
 ```
 
-## 6. The extension creates or reuses a Herdr tab
+## 6. The extension creates or reuses a Herdr target
 
-`lifecycle: "oneshot"` is the default. It always creates a new one-shot tab and never reuses an existing tab.
+Layout is internal configuration and is not exposed in `herdr_agent` parameters. `HERDR_AGENTS_LAYOUT` accepts `pane` or `tab`; unset and unsupported values use `pane`.
 
-`lifecycle: "persistent"` first looks for an existing tab with the exact requested `tabLabel` in the current workspace, requiring a pane running the `pi` agent in that tab; a tab without a `pi` pane is not reused. The default label is the title-cased agent profile name, for example `worker` -> `Worker`. The lookup also never matches the Orchestrator's own current tab, even if its label happens to equal `tabLabel`. If a matching pane exists, the task is sent there instead of creating a duplicate tab.
-
-If no matching persistent tab exists, the extension creates a new tab in the same workspace:
+In default pane mode, the first agent splits the Orchestrator pane to the right with ratio `0.6`, leaving the new agent 40%:
 
 ```bash
-herdr tab create --workspace <workspace-id> --label <tab-label> --no-focus
+herdr pane split <orchestrator-pane> --direction right --ratio 0.6 --no-focus
 ```
 
-`--no-focus` keeps the user's active pane stable.
+Additional agents split the largest managed pane downward, keeping them in the right column. Placement and label allocation are serialized across parallel tool calls.
 
-If a tab label already exists, the extension appends `#2`, `#3`, etc. Exact base labels have priority for persistent reuse; numbered labels are not treated as the same persistent target.
+Legacy tab mode creates a sibling tab as before:
+
+```bash
+herdr tab create --workspace <workspace-id> --label <label> --no-focus
+```
+
+`lifecycle: "oneshot"` always creates a fresh target. `lifecycle: "persistent"` first looks for a managed agent with the exact requested `tabLabel`; pane mode searches the Orchestrator tab and tab mode searches sibling tabs. The default label is the title-cased profile name. Duplicate fresh labels receive `#2`, `#3`, etc.
 
 ## 7. The extension writes temporary prompt files
 
@@ -220,7 +224,7 @@ The Orchestrator is expected to synthesize the result, not blindly forward it.
 
 ## 12. The extension keeps or closes the tab
 
-For `lifecycle: "persistent"`, the extension leaves the tab open after completion.
+For `lifecycle: "persistent"`, the extension leaves the managed pane or tab open after completion.
 
 This is intentional:
 
@@ -228,8 +232,8 @@ This is intentional:
 - the Orchestrator can reuse a tab later;
 - Herdr works as a visible persistent workspace, not a hidden subprocess runner.
 
-For `lifecycle: "oneshot"`, the extension closes only the tab created by the current tool call after it has successfully waited and read output.
+For `lifecycle: "oneshot"`, the extension closes only the target created by the current tool call after it has successfully waited and read output: `pane close` in pane mode or `tab close` in tab mode.
 
-Timeout, abort, or execution errors leave the one-shot tab open for debugging.
+Timeout, abort, or execution errors leave the one-shot target open for debugging.
 
-If the wait and output read succeed but the tab close call itself fails, the tool still returns the agent's output, appended with a warning that the one-shot tab could not be closed, and leaves that tab open for debugging.
+If closing fails after output was read, the tool still returns the agent output with a warning and leaves the target open for debugging.

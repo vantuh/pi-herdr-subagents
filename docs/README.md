@@ -2,7 +2,7 @@
 
 `herdr-agents` is a Pi extension that turns Herdr into a one-shot or persistent delegation layer.
 
-It registers a `herdr_agent` tool. The tool creates Herdr tabs, starts Pi agents in those tabs, gives them role-specific prompts from `~/.pi/agent/agents/*.md`, waits for their result, and returns the visible pane output to the Orchestrator. One-shot tabs close after a successful result; persistent tabs stay open and are reused for matching follow-up tasks.
+It registers a `herdr_agent` tool. The tool creates Herdr panes by default, starts Pi agents in them, gives them role-specific prompts from `~/.pi/agent/agents/*.md`, waits for their result, and returns the visible output to the Orchestrator. One-shot agents close after a successful result; persistent agents stay open and are reused for matching follow-up tasks. Set `HERDR_AGENTS_LAYOUT=tab` before starting Pi to restore the legacy tab layout; layout is intentionally absent from the tool schema.
 
 ## Why this exists
 
@@ -54,12 +54,14 @@ On first use, the extension renames the current Herdr tab to `Orchestrator`.
 
 ### Herdr agent
 
-A child Pi process launched in its own Herdr tab.
+A child Pi process launched in a managed Herdr pane or tab.
 
-Modes:
+The internal layout defaults to `pane`: the first agent splits the Orchestrator pane to the right at 60/40, and additional agents split the largest managed pane downward in the right column. Short placement operations are serialized so parallel tool calls preserve that structure. `HERDR_AGENTS_LAYOUT=tab` selects the legacy one-tab-per-agent behavior.
 
-- `lifecycle: "oneshot"` — one-shot task. The extension waits for the result, reads output, then closes the tab after successful completion.
-- `lifecycle: "persistent"` — reusable role. The tab remains open after completion and matching future tasks are sent to the existing tab instead of creating a duplicate.
+Lifecycle modes are independent of layout:
+
+- `lifecycle: "oneshot"` — one-shot task. The extension waits for the result, reads output, then closes the managed target after successful completion.
+- `lifecycle: "persistent"` — reusable role. The target remains open after completion and matching future tasks are sent to it instead of creating a duplicate.
 
 The child receives:
 
@@ -122,6 +124,16 @@ Its package metadata declares only the extension entrypoint:
 
 A global `/parallel-review` Pi prompt uses this extension's `herdr_agent` tool, but the prompt itself is maintained outside this extension.
 
+### Layout configuration
+
+Pane mode is the default and requires no environment variable. To temporarily restore legacy tab mode, set this before starting Pi (for example in `zsh/.zshrc.d/10-env.zsh`):
+
+```sh
+export HERDR_AGENTS_LAYOUT=tab
+```
+
+Use `pane` or remove the variable to return to the default. Restart Pi after changing a shell environment variable; `/reload` reloads extension code but cannot import environment changes from the parent shell.
+
 ## Tool parameters
 
 `herdr_agent` accepts:
@@ -164,8 +176,8 @@ Typical tool call:
 ## Known design choices
 
 - `lifecycle: "oneshot"` is the default: use one-shot agents unless the role needs to survive for later tasks.
-- One-shot tabs are closed only after successful completion and output read; timeout/error/abort leaves the tab open for debugging.
-- `lifecycle: "persistent"` reuses an existing tab by exact label in the current workspace, requiring a `pi` pane in that tab; it never reuses the Orchestrator's own current tab.
+- One-shot targets are closed only after successful completion and output read; timeout/error/abort leaves them open for debugging.
+- `lifecycle: "persistent"` reuses an existing managed agent by exact label. Pane mode searches the Orchestrator tab; legacy tab mode searches sibling tabs.
 - Fresh context is preferred over forked conversation context for newly created agents.
 - Child agents are prevented from recursively registering `herdr_agent` by `HERDR_AGENT_CHILD=1`.
 - The Orchestrator must synthesize child results. Child output should not be blindly forwarded.

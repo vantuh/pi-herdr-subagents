@@ -13,6 +13,7 @@ export interface PaneInfo {
   tab_id: string;
   workspace_id: string;
   terminal_id?: string;
+  label?: string;
   focused?: boolean;
   agent?: string;
   agent_status?: string;
@@ -28,6 +29,7 @@ export interface TabInfo {
 }
 
 export type HerdrAgentLifecycle = "oneshot" | "persistent";
+export type HerdrAgentLayout = "pane" | "tab";
 
 export interface HerdrAgentInfo {
   tabId: string;
@@ -36,6 +38,7 @@ export interface HerdrAgentInfo {
   agent: string;
   status: string;
   lifecycle?: HerdrAgentLifecycle;
+  layout?: HerdrAgentLayout;
   cwd?: string;
 }
 

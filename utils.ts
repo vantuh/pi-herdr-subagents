@@ -43,7 +43,7 @@ export function formatAgentOutput(
   const text =
     output.trim() || `(Herdr agent ${tabLabel} finished with no visible output.)`;
   return closeError
-    ? `${text}\n\nWarning: failed to close one-shot Herdr tab ${tabLabel}: ${closeError}`
+    ? `${text}\n\nWarning: failed to close one-shot Herdr agent ${tabLabel}: ${closeError}`
     : text;
 }
 

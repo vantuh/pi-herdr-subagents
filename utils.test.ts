@@ -44,9 +44,9 @@ test("falls back to a placeholder for empty agent output", () => {
   );
 });
 
-test("appends a close warning when closing the tab failed", () => {
+test("appends a close warning when closing the agent failed", () => {
   assert.equal(
-    formatAgentOutput("done", "Worker", "tab not found"),
-    "done\n\nWarning: failed to close one-shot Herdr tab Worker: tab not found",
+    formatAgentOutput("done", "Worker", "target not found"),
+    "done\n\nWarning: failed to close one-shot Herdr agent Worker: target not found",
   );
 });

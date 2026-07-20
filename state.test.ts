@@ -40,7 +40,7 @@ test("records and loads agent lifecycle state", async () => {
   await recordAgentLifecycle(
     pane(),
     "persistent",
-    { tabLabel: "Researcher", agent: "researcher" },
+    { tabLabel: "Researcher", agent: "researcher", layout: "pane" },
     filePath,
   );
 
@@ -49,6 +49,7 @@ test("records and loads agent lifecycle state", async () => {
     lifecycle: "persistent",
     tabLabel: "Researcher",
     agent: "researcher",
+    layout: "pane",
     updatedAt: state.agents["terminal:term-1"]?.updatedAt,
   });
 });

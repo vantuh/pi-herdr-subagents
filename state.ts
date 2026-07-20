@@ -1,12 +1,17 @@
 import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { HerdrAgentLifecycle, PaneInfo } from "./types.ts";
+import type {
+  HerdrAgentLayout,
+  HerdrAgentLifecycle,
+  PaneInfo,
+} from "./types.ts";
 
 export interface HerdrAgentStateRecord {
   lifecycle: HerdrAgentLifecycle;
   tabLabel?: string;
   agent?: string;
+  layout?: HerdrAgentLayout;
   updatedAt: string;
 }
 
@@ -55,6 +60,10 @@ function isLifecycle(value: unknown): value is HerdrAgentLifecycle {
   return value === "oneshot" || value === "persistent";
 }
 
+function isLayout(value: unknown): value is HerdrAgentLayout {
+  return value === "pane" || value === "tab";
+}
+
 // terminal_id is used as the durable state key (rather than pane_id/tab_id)
 // because Herdr can recreate panes/tabs with new ids while keeping the same
 // underlying terminal, and we want lifecycle state to survive that.
@@ -93,6 +102,7 @@ export async function loadHerdrAgentsState(
       lifecycle: record.lifecycle,
       ...(typeof record.tabLabel === "string" ? { tabLabel: record.tabLabel } : {}),
       ...(typeof record.agent === "string" ? { agent: record.agent } : {}),
+      ...(isLayout(record.layout) ? { layout: record.layout } : {}),
       updatedAt:
         typeof record.updatedAt === "string"
           ? record.updatedAt
@@ -152,7 +162,11 @@ export function pruneHerdrAgentsState(
 export async function recordAgentLifecycle(
   pane: PaneInfo,
   lifecycle: HerdrAgentLifecycle,
-  metadata: { tabLabel?: string; agent?: string } = {},
+  metadata: {
+    tabLabel?: string;
+    agent?: string;
+    layout?: HerdrAgentLayout;
+  } = {},
   filePath = getHerdrAgentsStatePath(),
 ): Promise<void> {
   const key = paneStateKey(pane);

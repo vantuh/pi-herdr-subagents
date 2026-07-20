@@ -15,7 +15,7 @@ describe("constants", () => {
   test("GLOBAL_INSTRUCTIONS names herdr_agent and oneshot default", () => {
     expect(GLOBAL_INSTRUCTIONS).toContain("herdr_agent");
     expect(GLOBAL_INSTRUCTIONS).toContain('lifecycle: "oneshot"');
-    expect(GLOBAL_INSTRUCTIONS).toContain("tab closes after a successful result");
+    expect(GLOBAL_INSTRUCTIONS).toContain("agent closes after a successful result");
     expect(GLOBAL_INSTRUCTIONS).toContain("reuse by exact label");
     expect(GLOBAL_INSTRUCTIONS).toContain("scout, researcher, planner, worker, reviewer");
   });

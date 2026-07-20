@@ -8,19 +8,19 @@ export const HerdrAgentParams = Type.Object({
   task: Type.Optional(
     Type.String({
       description:
-        "Self-contained task to give the Herdr agent. Omit only to re-wait on an existing tab (matched by tabLabel) that is still running, e.g. after a previous call to this tool timed out while the agent kept working — this reconnects to the same pane instead of sending a new prompt.",
+        "Self-contained task to give the Herdr agent. Omit only to re-wait on an existing agent (matched by tabLabel) that is still running, e.g. after a previous call timed out — this reconnects without sending a new prompt.",
     }),
   ),
   tabLabel: Type.Optional(
     Type.String({
       description:
-        "Herdr tab label. Defaults to the agent role, e.g. Researcher. Required when task is omitted, to identify which existing tab to re-wait on.",
+        "Herdr agent label. Defaults to the agent role, e.g. Researcher. Required when task is omitted, to identify which existing agent to re-wait on.",
     }),
   ),
   wait: Type.Optional(
     Type.Boolean({
       description:
-        "Wait for the Herdr agent to finish and read its result. Default: true. Required (must be true) when lifecycle is 'oneshot', since the tab is only closed after a successful wait.",
+        "Wait for the Herdr agent to finish and read its result. Default: true. Required (must be true) when lifecycle is 'oneshot', since the agent is only closed after a successful wait.",
     }),
   ),
   timeoutMs: Type.Optional(
@@ -31,7 +31,7 @@ export const HerdrAgentParams = Type.Object({
   lifecycle: Type.Optional(
     Type.Union([Type.Literal("oneshot"), Type.Literal("persistent")], {
       description:
-        "Agent tab lifecycle. Use 'oneshot' for one-off tasks that close after completion, or 'persistent' to keep/reuse the tab for follow-up tasks. Default: oneshot. 'oneshot' requires wait: true.",
+        "Agent lifecycle. Use 'oneshot' for one-off tasks that close after completion, or 'persistent' to keep/reuse the agent for follow-up tasks. Default: oneshot. 'oneshot' requires wait: true.",
     }),
   ),
 });

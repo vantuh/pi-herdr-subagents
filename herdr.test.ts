@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  chooseAgentColumnSplitTarget,
+  findReusableAgentPane,
   findReusableAgentTab,
   listCurrentWorkspaceAgents,
+  listManagedWorkspaceAgents,
   observeAgentWaitState,
 } from "./herdr.ts";
 import type { AgentWaitState } from "./herdr.ts";
+import { emptyHerdrAgentsState } from "./state.ts";
 import type { HerdrContext, PaneInfo, TabInfo } from "./types.ts";
 
 function pane(agent_status: string): PaneInfo {
@@ -371,6 +375,179 @@ test("skips panes with an agent but no matching tab", () => {
   };
 
   assert.deepEqual(listCurrentWorkspaceAgents(context, tabs), []);
+});
+
+test("finds a reusable managed pane by exact label in the orchestrator tab", () => {
+  const panes: PaneInfo[] = [
+    {
+      pane_id: "pane-orchestrator",
+      tab_id: "tab-orchestrator",
+      workspace_id: "workspace-1",
+      terminal_id: "term-orchestrator",
+      agent: "pi",
+    },
+    {
+      pane_id: "pane-worker",
+      tab_id: "tab-orchestrator",
+      workspace_id: "workspace-1",
+      terminal_id: "term-worker",
+      agent: "pi",
+      agent_status: "idle",
+    },
+  ];
+  const context: HerdrContext = {
+    panes,
+    currentPane: panes[0]!,
+    currentTab: "tab-orchestrator",
+    workspaceId: "workspace-1",
+  };
+  const state = emptyHerdrAgentsState();
+  state.agents["terminal:term-worker"] = {
+    lifecycle: "persistent",
+    layout: "pane",
+    tabLabel: "Worker",
+    agent: "worker",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  assert.equal(findReusableAgentPane(context, state, "Worker"), panes[1]);
+  assert.deepEqual(listManagedWorkspaceAgents(context, state), [
+    {
+      tabId: "tab-orchestrator",
+      tabLabel: "Worker",
+      paneId: "pane-worker",
+      agent: "worker",
+      status: "idle",
+      lifecycle: "persistent",
+      layout: "pane",
+      cwd: undefined,
+    },
+  ]);
+});
+
+test("lists a newly created managed pane before Pi agent detection", () => {
+  const panes: PaneInfo[] = [
+    {
+      pane_id: "pane-orchestrator",
+      tab_id: "tab-orchestrator",
+      workspace_id: "workspace-1",
+      terminal_id: "term-orchestrator",
+      agent: "pi",
+    },
+    {
+      pane_id: "pane-starting",
+      tab_id: "tab-orchestrator",
+      workspace_id: "workspace-1",
+      terminal_id: "term-starting",
+    },
+  ];
+  const context: HerdrContext = {
+    panes,
+    currentPane: panes[0]!,
+    currentTab: "tab-orchestrator",
+    workspaceId: "workspace-1",
+  };
+  const state = emptyHerdrAgentsState();
+  state.agents["terminal:term-starting"] = {
+    lifecycle: "oneshot",
+    layout: "pane",
+    tabLabel: "Scout",
+    agent: "scout",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  assert.equal(listManagedWorkspaceAgents(context, state)[0]?.paneId, "pane-starting");
+});
+
+test("reuses a legacy same-tab pane record without a layout field", () => {
+  const panes: PaneInfo[] = [
+    {
+      pane_id: "pane-orchestrator",
+      tab_id: "tab-orchestrator",
+      workspace_id: "workspace-1",
+      terminal_id: "term-orchestrator",
+      agent: "pi",
+    },
+    {
+      pane_id: "pane-worker",
+      tab_id: "tab-orchestrator",
+      workspace_id: "workspace-1",
+      terminal_id: "term-worker",
+      agent: "pi",
+    },
+  ];
+  const context: HerdrContext = {
+    panes,
+    currentPane: panes[0]!,
+    currentTab: "tab-orchestrator",
+    workspaceId: "workspace-1",
+  };
+  const state = emptyHerdrAgentsState();
+  state.agents["terminal:term-worker"] = {
+    lifecycle: "persistent",
+    tabLabel: "Worker",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  assert.equal(findReusableAgentPane(context, state, "Worker"), panes[1]);
+});
+
+test("does not reuse an unmanaged or cross-tab pane", () => {
+  const panes: PaneInfo[] = [
+    {
+      pane_id: "pane-orchestrator",
+      tab_id: "tab-orchestrator",
+      workspace_id: "workspace-1",
+      terminal_id: "term-orchestrator",
+      agent: "pi",
+    },
+    {
+      pane_id: "pane-unmanaged",
+      tab_id: "tab-orchestrator",
+      workspace_id: "workspace-1",
+      terminal_id: "term-unmanaged",
+      agent: "pi",
+    },
+    {
+      pane_id: "pane-other-tab",
+      tab_id: "tab-other",
+      workspace_id: "workspace-1",
+      terminal_id: "term-other",
+      agent: "pi",
+    },
+  ];
+  const context: HerdrContext = {
+    panes,
+    currentPane: panes[0]!,
+    currentTab: "tab-orchestrator",
+    workspaceId: "workspace-1",
+  };
+  const state = emptyHerdrAgentsState();
+  state.agents["terminal:term-other"] = {
+    lifecycle: "persistent",
+    layout: "pane",
+    tabLabel: "Worker",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  assert.equal(findReusableAgentPane(context, state, "Worker"), undefined);
+});
+
+test("splits the largest existing agent pane in the right column", () => {
+  const panes: PaneInfo[] = [
+    { pane_id: "small", tab_id: "tab", workspace_id: "workspace" },
+    { pane_id: "large", tab_id: "tab", workspace_id: "workspace" },
+  ];
+
+  assert.equal(
+    chooseAgentColumnSplitTarget(panes, {
+      panes: [
+        { pane_id: "small", rect: { width: 40, height: 20 } },
+        { pane_id: "large", rect: { width: 40, height: 40 } },
+      ],
+    })?.pane_id,
+    "large",
+  );
 });
 
 test("finds a reusable agent tab by exact label", () => {
