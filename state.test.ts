@@ -40,7 +40,13 @@ test("records and loads agent lifecycle state", async () => {
   await recordAgentLifecycle(
     pane(),
     "persistent",
-    { tabLabel: "Researcher", agent: "researcher", layout: "pane" },
+    {
+      tabLabel: "Researcher",
+      agent: "researcher",
+      automationName: "researcher_ab12cd34",
+      resultFile: "/tmp/herdr-agent-test/result.md",
+      layout: "pane",
+    },
     filePath,
   );
 
@@ -49,6 +55,8 @@ test("records and loads agent lifecycle state", async () => {
     lifecycle: "persistent",
     tabLabel: "Researcher",
     agent: "researcher",
+    automationName: "researcher_ab12cd34",
+    resultFile: "/tmp/herdr-agent-test/result.md",
     layout: "pane",
     updatedAt: state.agents["terminal:term-1"]?.updatedAt,
   });

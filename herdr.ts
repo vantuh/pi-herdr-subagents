@@ -6,34 +6,63 @@ import type {
   HerdrAgentInfo,
   HerdrAgentLifecycle,
   HerdrContext,
+  HerdrSessionSnapshot,
   PaneInfo,
   ReusableAgentTab,
   TabInfo,
 } from "./types.ts";
 
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+export class HerdrCliError extends Error {
+  constructor(
+    message: string,
+    readonly code: string | undefined,
+    readonly args: readonly string[],
+  ) {
+    super(message);
+    this.name = "HerdrCliError";
+  }
+}
+
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(new Error("Aborted"));
       return;
     }
-
-    let onAbort: (() => void) | undefined;
-    const cleanup = () => {
-      if (onAbort) signal?.removeEventListener("abort", onAbort);
-    };
-    const timer = setTimeout(() => {
-      cleanup();
-      resolve();
-    }, ms);
-
-    onAbort = () => {
+    const onAbort = () => {
       clearTimeout(timer);
-      cleanup();
       reject(new Error("Aborted"));
     };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
     signal?.addEventListener("abort", onAbort, { once: true });
   });
+}
+
+function redactHerdrArgs(args: readonly string[]): string[] {
+  if (args[0] === "agent" && args[1] === "prompt" && args.length >= 4) {
+    return [...args.slice(0, 3), "<prompt>", ...args.slice(4)];
+  }
+  return [...args];
+}
+
+function parseHerdrError(stderr: string, fallback: string): {
+  code?: string;
+  message: string;
+} {
+  try {
+    const parsed = JSON.parse(stderr) as {
+      error?: { code?: string; message?: string };
+    };
+    if (parsed.error?.message) {
+      return { code: parsed.error.code, message: parsed.error.message };
+    }
+  } catch {
+    // Herdr may also emit a human-readable CLI validation error.
+  }
+  return { message: stderr || fallback };
 }
 
 export function execHerdr(
@@ -47,14 +76,22 @@ export function execHerdr(
     };
 
     const proc = execFile(
-      "herdr",
+      process.env.HERDR_BIN_PATH || "herdr",
       args,
       { signal, maxBuffer: 10 * 1024 * 1024 },
       (error, stdout, stderr) => {
         cleanup();
         if (error) {
-          const message = stderr?.trim() || error.message;
-          reject(new Error(`herdr ${args.join(" ")} failed: ${message}`));
+          const parsed = parseHerdrError(stderr?.trim(), error.message);
+          const safeArgs = redactHerdrArgs(args);
+          const code = parsed.code ? ` [${parsed.code}]` : "";
+          reject(
+            new HerdrCliError(
+              `herdr ${safeArgs.join(" ")} failed${code}: ${parsed.message}`,
+              parsed.code,
+              safeArgs,
+            ),
+          );
           return;
         }
         resolve(stdout);
@@ -131,20 +168,37 @@ export function execHerdrApi(
   });
 }
 
+export async function getSessionSnapshot(
+  signal?: AbortSignal,
+): Promise<HerdrSessionSnapshot> {
+  const output = await execHerdr(["api", "snapshot"], signal);
+  const snapshot = JSON.parse(output)?.result?.snapshot as
+    | HerdrSessionSnapshot
+    | undefined;
+  if (!snapshot || !Array.isArray(snapshot.panes) || !Array.isArray(snapshot.tabs)) {
+    throw new Error("Malformed Herdr api snapshot response.");
+  }
+  return snapshot;
+}
+
 export async function listPanes(signal?: AbortSignal): Promise<PaneInfo[]> {
-  const output = await execHerdr(["pane", "list"], signal);
-  return JSON.parse(output).result.panes as PaneInfo[];
+  return (await getSessionSnapshot(signal)).panes;
 }
 
 export async function getCurrentContext(
   signal?: AbortSignal,
 ): Promise<HerdrContext> {
-  const panes = await listPanes(signal);
+  const snapshot = await getSessionSnapshot(signal);
+  const panes = snapshot.panes;
   const envPaneId = process.env.HERDR_PANE_ID;
   const currentPane =
     (envPaneId
       ? panes.find((pane) => pane.pane_id === envPaneId)
-      : undefined) ?? panes.find((pane) => pane.focused);
+      : undefined) ??
+    (snapshot.focused_pane_id
+      ? panes.find((pane) => pane.pane_id === snapshot.focused_pane_id)
+      : undefined) ??
+    panes.find((pane) => pane.focused);
   if (!currentPane) throw new Error("Could not find current Herdr pane.");
   return {
     panes,
@@ -238,6 +292,9 @@ export function listManagedWorkspaceAgents(
       tabLabel: record.tabLabel ?? pane.label ?? record.agent ?? "Agent",
       paneId: pane.pane_id,
       agent: record.agent ?? pane.agent ?? "pi",
+      ...(record.automationName
+        ? { automationName: record.automationName }
+        : {}),
       status: pane.agent_status ?? "unknown",
       lifecycle: record.lifecycle,
       layout:
@@ -388,59 +445,108 @@ export function listCurrentWorkspaceAgents(
   return agents.sort((a, b) => a.tabLabel.localeCompare(b.tabLabel));
 }
 
-export interface AgentWaitState {
-  sawActive: boolean;
-  requireActiveFirst?: boolean;
-}
-
-export function observeAgentWaitState(
-  pane: PaneInfo,
-  state: AgentWaitState,
-): boolean {
-  if (pane.agent_status === "working" || pane.agent_status === "blocked") {
-    state.sawActive = true;
-  }
-
-  // When reusing an existing pane (a persistent agent getting a new task),
-  // Herdr's reported status can still be `done`/`idle` from the *previous*
-  // task for a moment after the new prompt is sent, because the child Pi
-  // process updates its status asynchronously. Requiring `sawActive` first
-  // in that case prevents mistaking the previous task's leftover `done`
-  // status for completion of the new one.
-  if (pane.agent_status === "done") return state.sawActive || !state.requireActiveFirst;
-
-  // Herdr reports `done` only until the finished pane is observed. After that,
-  // the same completed agent can appear as `idle`, so treat idle as finished
-  // only after this wait loop has seen the agent actually do work.
-  return pane.agent_status === "idle" && state.sawActive;
-}
-
-export async function waitForAgentFinished(
+export async function startAgent(
+  name: string,
   paneId: string,
+  piArgs: string[],
+  signal?: AbortSignal,
+): Promise<void> {
+  const args = [
+    "agent",
+    "start",
+    name,
+    "--kind",
+    "pi",
+    "--pane",
+    paneId,
+    "--timeout",
+    "30000",
+    "--",
+    ...piArgs,
+  ];
+  const shellReadyDeadline = Date.now() + 5000;
+
+  while (true) {
+    try {
+      await execHerdr(args, signal);
+      return;
+    } catch (error) {
+      if (
+        !(error instanceof HerdrCliError) ||
+        error.code !== "agent_pane_busy" ||
+        Date.now() >= shellReadyDeadline
+      ) {
+        throw error;
+      }
+      await delay(100, signal);
+    }
+  }
+}
+
+export function buildAgentPromptArgs(
+  target: string,
+  prompt: string,
+  options: { wait: boolean; timeoutMs: number },
+): string[] {
+  const args = ["agent", "prompt", target, prompt];
+  if (options.wait) {
+    args.push(
+      "--wait",
+      "--until",
+      "idle",
+      "--until",
+      "done",
+      "--timeout",
+      String(options.timeoutMs),
+    );
+  }
+  return args;
+}
+
+export async function promptAgent(
+  target: string,
+  prompt: string,
+  options: { wait: boolean; timeoutMs: number },
+  signal?: AbortSignal,
+): Promise<void> {
+  await execHerdr(buildAgentPromptArgs(target, prompt, options), signal);
+}
+
+export async function waitForAgent(
+  target: string,
   timeoutMs: number,
   signal?: AbortSignal,
-  options?: { requireActiveFirst?: boolean },
-): Promise<PaneInfo> {
-  const startedAt = Date.now();
-  const state: AgentWaitState = {
-    sawActive: false,
-    requireActiveFirst: options?.requireActiveFirst ?? false,
-  };
+): Promise<void> {
+  await execHerdr(
+    [
+      "agent",
+      "wait",
+      target,
+      "--until",
+      "idle",
+      "--until",
+      "done",
+      "--timeout",
+      String(timeoutMs),
+    ],
+    signal,
+  );
+}
 
-  while (Date.now() - startedAt < timeoutMs) {
-    const pane = (await listPanes(signal)).find(
-      (item) => item.pane_id === paneId,
-    );
-    if (!pane) {
-      throw new Error(`Herdr pane disappeared while waiting: ${paneId}`);
-    }
-
-    if (observeAgentWaitState(pane, state)) return pane;
-
-    await sleep(500, signal);
-  }
-
-  throw new Error(
-    `Timed out waiting for Herdr agent pane ${paneId} after ${timeoutMs}ms`,
+export function readAgent(
+  target: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  return execHerdr(
+    [
+      "agent",
+      "read",
+      target,
+      "--source",
+      "recent-unwrapped",
+      "--lines",
+      "180",
+    ],
+    signal,
   );
 }

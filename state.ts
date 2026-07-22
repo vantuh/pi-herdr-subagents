@@ -11,6 +11,8 @@ export interface HerdrAgentStateRecord {
   lifecycle: HerdrAgentLifecycle;
   tabLabel?: string;
   agent?: string;
+  automationName?: string;
+  resultFile?: string;
   layout?: HerdrAgentLayout;
   updatedAt: string;
 }
@@ -102,6 +104,12 @@ export async function loadHerdrAgentsState(
       lifecycle: record.lifecycle,
       ...(typeof record.tabLabel === "string" ? { tabLabel: record.tabLabel } : {}),
       ...(typeof record.agent === "string" ? { agent: record.agent } : {}),
+      ...(typeof record.automationName === "string"
+        ? { automationName: record.automationName }
+        : {}),
+      ...(typeof record.resultFile === "string"
+        ? { resultFile: record.resultFile }
+        : {}),
       ...(isLayout(record.layout) ? { layout: record.layout } : {}),
       updatedAt:
         typeof record.updatedAt === "string"
@@ -165,6 +173,8 @@ export async function recordAgentLifecycle(
   metadata: {
     tabLabel?: string;
     agent?: string;
+    automationName?: string;
+    resultFile?: string;
     layout?: HerdrAgentLayout;
   } = {},
   filePath = getHerdrAgentsStatePath(),

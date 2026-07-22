@@ -2,7 +2,7 @@
 
 `herdr-agents` is a Pi extension that turns Herdr into a one-shot or persistent delegation layer.
 
-It registers a `herdr_agent` tool. The tool creates Herdr panes by default, starts Pi agents in them, gives them role-specific prompts from `~/.pi/agent/agents/*.md`, waits for their result, and returns the visible output to the Orchestrator. One-shot agents close after a successful result; persistent agents stay open and are reused for matching follow-up tasks. Set `HERDR_AGENTS_LAYOUT=tab` before starting Pi to restore the legacy tab layout; layout is intentionally absent from the tool schema.
+It registers a `herdr_agent` tool. The tool creates Herdr panes by default, starts named Pi agents through Herdr's agent automation API, gives them role-specific prompts from `~/.pi/agent/agents/*.md`, waits atomically for their result, and returns a persisted result artifact (or terminal output fallback) to the Orchestrator. One-shot agents close after a successful result; persistent agents stay open and are reused for matching follow-up tasks. Set `HERDR_AGENTS_LAYOUT=tab` before starting Pi to restore the legacy tab layout; layout is intentionally absent from the tool schema.
 
 ## Why this exists
 
@@ -12,9 +12,9 @@ This extension moves that workflow into a tool:
 
 - less prompt boilerplate;
 - fewer raw `herdr` CLI calls from the model;
-- consistent tab naming and child protocol;
+- consistent target naming and child protocol;
 - fresh context for one-shot delegated agents;
-- persistent Herdr tabs when a role should remain inspectable and reusable.
+- persistent Herdr panes or tabs when a role should remain inspectable and reusable.
 
 ## Delegation policy
 
@@ -40,9 +40,9 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Thi
 
 **Lifecycle examples:**
 
-- One-shot scout: `{ "agent": "scout", "task": "...", "lifecycle": "oneshot" }` — tab closes after result.
+- One-shot scout: `{ "agent": "scout", "task": "...", "lifecycle": "oneshot" }` — managed target closes after result.
 - Persistent scout: `{ "agent": "scout", "tabLabel": "Scout — message-bus", "task": "...", "lifecycle": "persistent" }` — follow-up reuses the same label.
-- Re-wait after timeout: `{ "tabLabel": "Scout — message-bus" }` with no `task`.
+- Re-wait after timeout: `{ "agent": "scout", "tabLabel": "Scout — message-bus" }` with no `task`.
 
 ## Main concepts
 
@@ -56,7 +56,7 @@ On first use, the extension renames the current Herdr tab to `Orchestrator`.
 
 A child Pi process launched in a managed Herdr pane or tab.
 
-The internal layout defaults to `pane`: the first agent splits the Orchestrator pane to the right at 60/40, and additional agents split the largest managed pane downward in the right column. After spawn or close, the extension rebalances that column to equal heights (for example, three agents use thirds). Short placement operations are serialized so parallel tool calls preserve that structure. `HERDR_AGENTS_LAYOUT=tab` selects the legacy one-tab-per-agent behavior.
+The internal layout defaults to `pane`: the first agent splits the Orchestrator pane to the right at 60/40, and additional agents split the largest managed pane downward in the right column. After spawn or close, the extension rebalances that column to equal heights (for example, three agents use thirds). For new pane agents, placement is serialized through successful `agent start`, managed-state recording, and rebalancing so parallel tool calls preserve that structure. `HERDR_AGENTS_LAYOUT=tab` selects the legacy one-tab-per-agent behavior.
 
 Lifecycle modes are independent of layout:
 
@@ -99,7 +99,7 @@ The extension uses:
 - `index.ts` — registers the Pi extension hook and `herdr_agent` tool.
 - `constants.ts` — global injected instruction and child protocol text.
 - `agents.ts` — profile discovery and frontmatter parsing.
-- `herdr.ts` — Herdr CLI calls, tab/pane lookup, completion waiting.
+- `herdr.ts` — Herdr CLI calls, session snapshot discovery, named-agent lifecycle, and server-owned waits.
 - `schema.ts` — TypeBox tool parameter schema.
 - `utils.ts` — shell-safe command building and temp prompt files.
 - `types.ts` — shared interfaces.
@@ -141,7 +141,7 @@ Use `pane` or remove the variable to return to the default. Restart Pi after cha
 ```ts
 {
   agent: string;
-  task: string;
+  task?: string;
   tabLabel?: string;
   wait?: boolean;
   timeoutMs?: number;
@@ -179,12 +179,16 @@ Typical tool call:
 - One-shot targets are closed only after successful completion and output read; timeout/error/abort leaves them open for debugging.
 - `lifecycle: "persistent"` reuses an existing managed agent by exact label. Pane mode searches the Orchestrator tab; legacy tab mode searches sibling tabs.
 - Fresh context is preferred over forked conversation context for newly created agents.
-- Child agents are prevented from recursively registering `herdr_agent` by `HERDR_AGENT_CHILD=1`.
+- Child agents are prevented from recursively registering `herdr_agent` by `HERDR_AGENT_CHILD=1`; child mode only retains the result-artifact writer.
+- Herdr 0.7.5 or newer is required for `agent start`, atomic `agent prompt --wait`, `agent wait`, `agent read`, and `api snapshot`.
+- Human-readable labels remain the persistent reuse key. A separate generated Herdr automation name is the stable command target; legacy agents fall back to pane IDs.
+- Completion output is persisted in a per-agent artifact that is overwritten by assistant messages, so large results do not depend on terminal scrollback. Terminal reading remains a compatibility fallback. A reused persistent agent can still expose stale artifact content if a new turn produces no non-empty assistant text; see the migration document's known follow-up.
 - The Orchestrator must synthesize child results. Child output should not be blindly forwarded.
 - Raw Herdr CLI remains useful for diagnostics, but normal delegation should go through `herdr_agent`.
 
 See also:
 
+- [`herdr-0.7-agent-api-migration.md`](./herdr-0.7-agent-api-migration.md) — migration to Herdr's named-agent automation API, compatibility findings, and verification results.
 - [`flow.md`](./flow.md) — detailed lifecycle.
 - [`session-findings.md`](./session-findings.md) — development findings and bug history.
 - [`composer-cursor-sdk-compatibility.md`](./composer-cursor-sdk-compatibility.md) — Composer tool-name adaptation and tool/skill boundary tuning.

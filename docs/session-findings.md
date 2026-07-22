@@ -1,263 +1,230 @@
 # Development session findings
 
-This file records the important findings from the session that created and debugged `herdr-agents`.
+This file records the important findings from creating and debugging `herdr-agents`. It is a historical companion to the current runtime description in [`flow.md`](./flow.md) and the Herdr 0.7 migration record in [`herdr-0.7-agent-api-migration.md`](./herdr-0.7-agent-api-migration.md).
 
-## 1. Why a tool was created
+## 1. Delegation belongs behind a tool
 
-Initial idea: encode a Herdr delegation workflow in global `AGENTS.md`.
+The initial workflow lived as prose in global `AGENTS.md`: inspect Herdr, create a target, launch Pi, wait, read output, and clean up.
 
-Problem: prose instructions made the model manually call raw Herdr CLI commands:
+That made the model reconstruct low-level CLI orchestration for every delegation. Registering `herdr_agent` moved those mechanics into code while keeping the model responsible for deciding when delegation is useful and for synthesizing child results.
 
-- check `HERDR_ENV`;
-- call `herdr pane list`;
-- create tabs;
-- run Pi;
-- wait and read output.
+Global `agents/.agents/AGENTS.md` therefore remains generic. The extension injects concise Herdr-specific guidance through `before_agent_start`.
 
-That worked but was too fragile and verbose.
+## 2. Existing Pi agent profiles are the configuration source
 
-Final direction: register a Pi tool named `herdr_agent` and inject a short global instruction:
-
-```md
-When isolated context helps, use the `herdr_agent` tool instead of raw Herdr CLI commands.
-```
-
-This lets the model delegate with a direct tool call instead of reconstructing the workflow.
-
-## 2. `AGENTS.md` was intentionally cleaned up
-
-The old Herdr instructions were removed from `agents/.agents/AGENTS.md`.
-
-Reason: Herdr-specific behavior now belongs to the extension. The shared `AGENTS.md` should stay generic and portable.
-
-The extension injects Herdr guidance through `before_agent_start`.
-
-## 3. Pi extension API supports this cleanly
-
-The relevant Pi extension capabilities:
-
-- `pi.registerTool(...)` registers `herdr_agent`.
-- `pi.on("before_agent_start", ...)` appends Orchestrator instructions.
-- `pi.events.emit(...)` communicates with Herdr's installed state extension.
-
-## 4. Agent profiles are reused
-
-Existing profiles live in:
+Profiles continue to live in:
 
 ```text
 ~/.pi/agent/agents/*.md
 ```
 
-Examples:
+A profile supplies its name, description, optional model, optional tool allowlist, and role prompt. Project profiles under `<repo>/.pi/agents/*.md` can override user profiles with the same name.
 
-- `researcher.md`
-- `scout.md`
-- `planner.md`
-- `reviewer.md`
-- `worker.md`
+No second agent configuration format was introduced.
 
-The extension reads these profiles instead of inventing another agent config format.
+## 3. Fresh context is intentional
 
-Each profile provides:
+New children are fresh Pi processes and do not inherit the Orchestrator conversation. Every delegated task must therefore be self-contained.
 
-- `name`;
-- `description`;
-- optional `tools`;
-- optional `model`;
-- role prompt body.
+Persistent agents retain their own Pi context across follow-up turns when the Orchestrator reuses the exact managed `tabLabel`.
 
-## 5. Fresh context is intentional
+## 4. Child mode disables recursion but keeps result capture
 
-Child agents are started as fresh Pi processes.
+Child panes receive:
 
-They do not inherit the Orchestrator conversation. The Orchestrator must send a self-contained task.
-
-This avoids context pollution for newly created agents. Persistent agents can still accumulate context across follow-up tasks when `lifecycle: "persistent"` reuses their tab.
-
-## 6. Child agents must not recursively register the extension
-
-Child Pi processes are launched with:
-
-```bash
+```text
 HERDR_AGENT_CHILD=1
 ```
 
-At extension load time:
+In child mode, the extension does not register `herdr_agent` or inject Orchestrator delegation guidance. It only registers the result-writer hook required to persist assistant output.
 
-```ts
-if (process.env.HERDR_AGENT_CHILD === "1") return;
-```
+This prevents accidental recursive delegation while preserving reliable output collection.
 
-This prevents children from:
+## 5. `HERDR_PANE_ID` is more reliable than focus
 
-- registering `herdr_agent` again;
-- receiving Orchestrator-only Herdr delegation guidance;
-- recursively spawning more agents unless explicitly implemented later.
+Focus can move while a tool call is running. The focused pane in a later Herdr snapshot may therefore belong to something the user clicked, not to the Pi process executing the extension.
 
-## 7. `HERDR_PANE_ID` is more reliable than focused pane
+The extension prefers:
 
-Early versions used the focused pane from `herdr pane list`.
-
-Finding: focus can move while a tool is running. If the user clicks another tab/pane, "focused" no longer identifies the Orchestrator.
-
-Herdr sets:
-
-```bash
+```text
 HERDR_PANE_ID
 ```
 
-The extension now prefers that env var and only falls back to focused pane if needed.
+and falls back to snapshot focus only when that environment value is unavailable.
 
-## 8. Herdr already has a Pi state integration
+## 6. Herdr's Pi integration owns lifecycle state
 
-Herdr installs:
+Herdr installs the Pi lifecycle integration at:
 
 ```text
 ~/.pi/agent/extensions/herdr-agent-state.ts
 ```
 
-It reports Pi state over the Herdr socket:
-
-- `working`
-- `idle`
-- `blocked`
-
-It also listens for:
+It reports `working`, `idle`, and `blocked`, and consumes:
 
 ```ts
 pi.events.on("herdr:blocked", ...)
 ```
 
-The extension emits this event while waiting for child agents so the Orchestrator pane appears blocked/waiting in Herdr UI.
+The delegation extension emits that event while the Orchestrator waits for a child, allowing Herdr UI to display the Orchestrator as blocked/waiting.
 
-## 9. `done` is not the only finished state
+The official integration v6 is tracked in the dotfiles repository and symlinked into Pi so upstream changes appear in Git. A temporary custom lifecycle patch used during diagnosis was fully removed.
 
-Observed bug:
+## 7. Old Pi executables can invalidate lifecycle diagnosis
 
-- child `Worker apply review fixes` pane finished;
-- Herdr showed it as `idle`;
-- Orchestrator stayed stuck on `Waiting for Herdr agent Worker apply review fixes`.
+Some child shells initially resolved an old Bun-installed Pi rather than the current installation. Herdr then failed to observe lifecycle behavior expected from the current Pi integration.
 
-Cause: the extension waited only for `agent_status=done`.
+After PATH correction, child panes were verified to use Pi 0.81.1 and the official Herdr Pi integration v6 behaved correctly.
 
-Finding: Herdr can show a completed child as `idle`, especially after the pane has been observed.
+When lifecycle behavior looks impossible, verify the executable and version from inside a newly created Herdr child shell before patching Herdr or Pi integration code.
 
-Fix: custom polling now treats:
+## 8. Manual polling had two completion races
 
-- `done` as finished;
-- `idle` as finished after Pi has appeared in the pane and the pane was active, or after startup grace time.
+Before Herdr 0.7 named-agent automation, the extension launched children through `pane run` and polled pane status.
 
-## 9a. Reusing a persistent tab can read the *previous* task's output (stale-result race)
+Two failures were observed:
 
-Observed bug (seen live in a `notification-service` Orchestrator session): after sending a new
-task to an already-existing persistent tab (`lifecycle: "persistent"`, tab reused), the
-`herdr_agent` tool call returned in under 100ms with output that was clearly from the *previous*
-task (e.g. husky/lint-staged setup instead of the newly requested `.env.example` consolidation).
-The Orchestrator had to notice the mismatch and re-prompt the worker ("It looks like your last
-response repeated the previous task's summary...").
+1. completed children could finish as `idle`, while custom code waited only for `done`;
+2. a reused persistent child could still expose its previous `idle`/`done` status, causing the poller to return old output before the new prompt entered `working`.
 
-Root cause: for a reused pane, `pane run <pane_id> <task-file>` only injects the new prompt into
-the already-running child Pi's terminal. Herdr's `agent_status` for that pane is still whatever it
-was at the end of the *previous* task (`done`, then possibly `idle`) until the child Pi process
-asynchronously reports a new state. `waitForAgentFinished` starts polling immediately after
-`pane run`, so the very first `pane list` poll can still observe the stale `done`/`idle` status
-from before the new prompt was even processed. Since `observeAgentWaitState` treated `done` as an
-unconditional finish signal, the wait loop returned immediately and the tool read+returned the
-old terminal output.
+Temporary polling guards handled those cases, including requiring an active state before accepting completion on reused targets.
 
-This is a race in the extension's polling, not a model behavior issue — the child Pi had not yet
-received/processed the new prompt when the "finished" output was read.
+Those guards no longer exist. Herdr 0.7.5 now owns prompt submission and completion atomically through:
 
-Fix: `waitForAgentFinished` accepts `{ requireActiveFirst: boolean }`. When reusing an existing
-tab (`reused === true`), the extension passes `requireActiveFirst: true`, which requires the wait
-loop to observe `working`/`blocked` at least once before any `done`/`idle` status is accepted as
-completion of the *new* task. Freshly created tabs (`reused === false`) keep the original
-immediate-`done` behavior, since there is no previous task whose stale status could leak through.
+```text
+agent prompt --wait --until idle --until done
+```
 
-## 10. Global prompt integration
+Re-wait uses `agent wait` and never resends the task.
 
-A global `/parallel-review` Pi prompt uses this extension's `herdr_agent` tool. The prompt itself is maintained outside this extension.
+## 9. Complete results should not depend on terminal scrollback
 
-## 11. Runtime smoke test for tool visibility
+Terminal reads can lose long output or alternate-screen content. Each managed child therefore receives a private result path under:
 
-Useful command:
+```text
+/tmp/herdr-agent-*/result.md
+```
+
+A child Pi hook overwrites that file on each non-empty finalized assistant message. After Herdr reports completion, the parent reads the artifact and falls back to `agent read` when it is absent.
+
+Known edge case: a persistent child reuses the same artifact path. If a new turn produces no non-empty assistant text, the previous turn's output can remain. The intended minimal fix is to clear the artifact immediately before each new prompt.
+
+## 10. Re-wait must not resend work
+
+A large child task can outlive the Orchestrator tool call timeout. Treating the timeout as task failure and submitting the task again can duplicate work or corrupt child input.
+
+Calling `herdr_agent` with the same `agent` and `tabLabel`, but no `task`, enters re-wait mode:
+
+- find the existing managed pane or tab;
+- send no prompt;
+- call `herdr agent wait --until idle --until done`;
+- read artifact or terminal fallback;
+- close a recovered one-shot target after successful result collection.
+
+## 11. Kiro's terminal wrapper can hide the shell
+
+Kiro shell integration can replace a child login shell with a process shown as:
+
+```text
+zsh (kiro-cli-term)
+```
+
+Herdr 0.7.5 does not accept that wrapper as an available shell for `agent start`. Child panes therefore receive:
+
+```text
+PROCESS_LAUNCHED_BY_Q=1
+```
+
+This disables the wrapper only inside delegated panes; normal user terminals keep their Kiro integration.
+
+## 12. New shells need a bounded readiness retry
+
+`pane split` and `tab create` can return before the shell is ready. Immediate `agent start` then returns structured `agent_pane_busy`.
+
+The extension retries only that error every 100 ms for up to five seconds. Tests showed retries were required in 4/10 tab starts and 4/5 split starts, with no final failures.
+
+A separate 500 ms delay after successful `agent start` was tested and removed. With the correct Pi executable, immediate prompt submission passed 5/5 tab tests and 5/5 pane-split tests.
+
+## 13. Parallel pane placement must remain serialized through registration
+
+Originally, the placement lock was released immediately after `pane split`. During parallel tool calls, the next call could run before the previous pane completed `agent start` and entered managed state. Every call then believed it was creating the first child and split `right`, producing multiple side-by-side columns.
+
+The lock is now held through:
+
+```text
+pane split
+→ agent start
+→ managed-state record
+→ equal-height rebalance
+→ release lock
+```
+
+A three-agent parallel smoke test confirmed one 60/40 outer `right` split and three equal-height `down` splits in the agent column.
+
+## 14. Shared zsh history must respect child isolation
+
+Child panes receive:
+
+```text
+HISTFILE=/dev/null
+```
+
+The global history configuration uses an environment-aware default:
+
+```zsh
+HISTFILE=${HISTFILE:-$HOME/.zsh_history}
+```
+
+This preserves normal history while preventing delegated child commands from entering the shared file.
+
+## 15. Stow must expose every extension file
+
+After the extension was split into multiple modules, Pi initially failed to resolve sibling imports because only the old entrypoint was linked.
+
+The `pi` Stow package now exposes the complete extension tree. After adding files, use:
+
+```bash
+stow --restow --no-folding pi
+```
+
+The official `herdr-agent-state.ts` is also repo-managed through this Stow layout.
+
+## Current known limitations
+
+- Clear a persistent agent's result artifact before each new prompt to prevent stale output when a turn has no non-empty assistant message.
+- Temp directories under `/tmp/herdr-agent-*` are not explicitly removed.
+- Herdr JSON responses use targeted shape checks rather than full runtime schema validation.
+- State-file locking prevents same-process lost updates but intentionally does not coordinate multiple independent Pi processes.
+- Legacy agents without a saved automation name fall back to their current pane ID.
+
+## Possible future cleanup
+
+- Reuse one private temp directory for both `system.md` and `result.md`.
+- Remove one-shot temp directories after successful cleanup.
+- Remove the legacy pane-ID fallback after all pre-migration persistent agents are gone.
+- Add stronger runtime validation only where malformed Herdr output has produced a real failure.
+
+## Validation references
+
+Useful checks:
+
+```bash
+cd pi/.pi/agent/extensions/herdr-agents
+bun test
+
+bun build index.ts \
+  --target node \
+  --outfile /tmp/herdr-agents-check.js \
+  --external @earendil-works/pi-coding-agent \
+  --external @earendil-works/pi-tui \
+  --external typebox
+```
+
+Tool visibility in a fresh Pi process:
 
 ```bash
 PI_OFFLINE=1 pi --no-context-files --no-skills --no-prompt-templates --no-themes \
   -p 'List exact tool names available. Do not use tools.'
 ```
 
-Expected output includes:
-
-```text
-herdr_agent
-```
-
-If `herdr_agent` is missing, check:
-
-- symlinks under `~/.pi/agent/extensions/herdr-agents`;
-- whether `HERDR_AGENT_CHILD=1` is accidentally set in the parent environment;
-- extension load errors on Pi startup.
-
-## 12. Stow/symlink issue after splitting files
-
-After the extension was refactored from one `index.ts` into multiple files, Pi failed with:
-
-```text
-Cannot find module './agents.ts'
-```
-
-Cause: `~/.pi/agent/extensions/herdr-agents/index.ts` was symlinked, but new sibling files were not yet linked.
-
-Fix:
-
-```bash
-cd ~/dotfiles && stow pi
-```
-
-or otherwise ensure every file in `pi/.pi/agent/extensions/herdr-agents/` exists under `~/.pi/agent/extensions/herdr-agents/`.
-
-## 13. Current known rough edges
-
-These are known but not currently fixed:
-
-- Temp prompt directories under `/tmp/herdr-agent-*` are not cleaned up.
-- Herdr CLI JSON responses are parsed with light assumptions rather than full runtime validation.
-- Reusing a persistent tab sends `@task-file` into that pane; this assumes the child Pi is ready to accept a new prompt.
-- Child agents do not inherit Orchestrator context by design, so poor task prompts lead to poor child results.
-
-## 14. Desired future improvements
-
-Potential future work:
-
-- Add a `herdr_agent_list` tool to list known persistent agents/tabs.
-- Add temp file cleanup after child startup.
-- Add stronger Herdr response validation with clearer error messages.
-- Add a small test harness or documented smoke-test script.
-- Consider optional result extraction that returns only the `HERDR_RESULT` block plus recent context.
-
-## 15. Re-waiting on a timed-out call without re-sending the task
-
-Observed (in a `notification-service` Orchestrator session): a `herdr_agent` call delegated a large
-task (21 OpenSpec tasks, testcontainers-based e2e setup) and hit the default 600000ms wait timeout
-while the child was still legitimately `working` (container pulls + test iteration). The Orchestrator
-correctly diagnosed this via `herdr pane list`/`herdr pane read` instead of assuming failure, but had
-no tool-level way to keep waiting on the same pane — it fell back to a raw
-`herdr wait agent-status <pane> --status done --timeout ...` bash command.
-
-That raw-CLI fallback works but bypasses the extension entirely (no `herdr:blocked` event, no
-lifecycle bookkeeping, no consistent output formatting), and models can misinterpret a timeout as
-"the agent failed" and try to resend the task into a still-busy pane, which is a different bug (see
-§ 9a) since it corrupts the pane's input.
-
-Fix: `herdr_agent` now accepts a call with `task` omitted. When `task` is omitted:
-
-- `tabLabel` is required and is used to find an existing tab by exact label (any lifecycle, not
-  just `persistent` — a timed-out `oneshot` tab is never auto-closed, so it can still be re-waited
-  on);
-- no `pane run` is sent, so the pane's input is never touched;
-- the tool waits (respecting `wait`/`timeoutMs`) and returns the pane's current output, exactly like
-  a normal wait.
-
-`GLOBAL_INSTRUCTIONS` and the tool's `promptGuidelines` now tell the Orchestrator to use this
-re-wait call instead of raw Herdr CLI commands when a wait times out but the tab is still running.
+Expected output includes `herdr_agent` (or provider-visible `pi__herdr_agent` for Composer through the compatibility adapter).

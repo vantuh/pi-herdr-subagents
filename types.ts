@@ -36,6 +36,7 @@ export interface HerdrAgentInfo {
   tabLabel: string;
   paneId: string;
   agent: string;
+  automationName?: string;
   status: string;
   lifecycle?: HerdrAgentLifecycle;
   layout?: HerdrAgentLayout;
@@ -45,6 +46,16 @@ export interface HerdrAgentInfo {
 export interface ReusableAgentTab {
   tab: TabInfo;
   pane: PaneInfo;
+}
+
+export interface HerdrSessionSnapshot {
+  panes: PaneInfo[];
+  tabs: TabInfo[];
+  focused_pane_id?: string;
+  focused_tab_id?: string;
+  focused_workspace_id?: string;
+  protocol?: number;
+  version?: string;
 }
 
 export interface HerdrContext {

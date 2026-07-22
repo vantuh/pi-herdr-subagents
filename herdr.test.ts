@@ -1,80 +1,47 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildAgentPromptArgs,
   buildEqualAgentSplitRatios,
   chooseAgentColumnSplitTarget,
   findReusableAgentPane,
   findReusableAgentTab,
   listCurrentWorkspaceAgents,
   listManagedWorkspaceAgents,
-  observeAgentWaitState,
 } from "./herdr.ts";
-import type { AgentWaitState } from "./herdr.ts";
 import { emptyHerdrAgentsState } from "./state.ts";
 import type { HerdrContext, PaneInfo, TabInfo } from "./types.ts";
 
-function pane(agent_status: string): PaneInfo {
-  return {
-    pane_id: "pane-1",
-    tab_id: "tab-1",
-    workspace_id: "workspace-1",
-    agent: "pi",
-    agent_status,
-  };
-}
-
-test("does not finish on initial idle", () => {
-  const state: AgentWaitState = { sawActive: false };
-
-  assert.equal(observeAgentWaitState(pane("idle"), state), false);
-  assert.equal(state.sawActive, false);
+test("builds an atomic prompt-and-wait command without treating blocked as completion", () => {
+  assert.deepEqual(
+    buildAgentPromptArgs("reviewer_ab12", "Review", {
+      wait: true,
+      timeoutMs: 120000,
+    }),
+    [
+      "agent",
+      "prompt",
+      "reviewer_ab12",
+      "Review",
+      "--wait",
+      "--until",
+      "idle",
+      "--until",
+      "done",
+      "--timeout",
+      "120000",
+    ],
+  );
 });
 
-test("finishes on idle after working", () => {
-  const state: AgentWaitState = { sawActive: false };
-
-  assert.equal(observeAgentWaitState(pane("working"), state), false);
-  assert.equal(state.sawActive, true);
-  assert.equal(observeAgentWaitState(pane("idle"), state), true);
-});
-
-test("finishes on idle after blocked", () => {
-  const state: AgentWaitState = { sawActive: false };
-
-  assert.equal(observeAgentWaitState(pane("blocked"), state), false);
-  assert.equal(state.sawActive, true);
-  assert.equal(observeAgentWaitState(pane("idle"), state), true);
-});
-
-test("finishes immediately on done", () => {
-  const state: AgentWaitState = { sawActive: false };
-
-  assert.equal(observeAgentWaitState(pane("done"), state), true);
-});
-
-test("keeps waiting on unknown", () => {
-  const state: AgentWaitState = { sawActive: false };
-
-  assert.equal(observeAgentWaitState(pane("unknown"), state), false);
-  assert.equal(state.sawActive, false);
-});
-
-test("requireActiveFirst: does not finish on stale done from a reused pane", () => {
-  const state: AgentWaitState = { sawActive: false, requireActiveFirst: true };
-
-  // A reused persistent pane can still report `done` from its *previous*
-  // task for a moment after a new prompt is sent. That stale `done` must
-  // not be treated as completion of the new task.
-  assert.equal(observeAgentWaitState(pane("done"), state), false);
-  assert.equal(state.sawActive, false);
-});
-
-test("requireActiveFirst: finishes on done once the pane has been seen active", () => {
-  const state: AgentWaitState = { sawActive: false, requireActiveFirst: true };
-
-  assert.equal(observeAgentWaitState(pane("working"), state), false);
-  assert.equal(state.sawActive, true);
-  assert.equal(observeAgentWaitState(pane("done"), state), true);
+test("builds a non-blocking prompt command", () => {
+  assert.deepEqual(
+    buildAgentPromptArgs("worker_ab12", "Implement", {
+      wait: false,
+      timeoutMs: 120000,
+    }),
+    ["agent", "prompt", "worker_ab12", "Implement"],
+  );
 });
 
 test("lists agent tabs in the current workspace except the orchestrator", () => {
@@ -408,6 +375,7 @@ test("finds a reusable managed pane by exact label in the orchestrator tab", () 
     layout: "pane",
     tabLabel: "Worker",
     agent: "worker",
+    automationName: "worker_ab12cd34",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
 
@@ -418,6 +386,7 @@ test("finds a reusable managed pane by exact label in the orchestrator tab", () 
       tabLabel: "Worker",
       paneId: "pane-worker",
       agent: "worker",
+      automationName: "worker_ab12cd34",
       status: "idle",
       lifecycle: "persistent",
       layout: "pane",

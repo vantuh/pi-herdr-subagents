@@ -35,26 +35,35 @@ import {
   listManagedWorkspaceAgents,
   listPanes,
   listTabs,
+  promptAgent,
+  readAgent,
   setLayoutSplitRatio,
+  startAgent,
   uniqueLabel,
-  waitForAgentFinished,
+  waitForAgent,
 } from "./herdr.ts";
 import { HerdrAgentParams } from "./schema.ts";
 import {
   deleteAgentLifecycle,
   emptyHerdrAgentsState,
   loadHerdrAgentsState,
+  paneStateKey,
   pruneHerdrAgentsState,
   recordAgentLifecycle,
   saveHerdrAgentsState,
 } from "./state.ts";
 import type { HerdrAgentInfo, HerdrAgentLifecycle, PaneInfo } from "./types.ts";
 import {
+  assistantText,
+  createResultFile,
+  findResultFileMarker,
   formatAgentOutput,
-  shellJoin,
-  shellQuote,
+  makeHerdrAgentName,
+  readAgentResult,
+  RESULT_FILE_MARKER,
   shouldCloseTab,
   titleCase,
+  writeAgentResult,
   writeTempFile,
 } from "./utils.ts";
 
@@ -274,8 +283,25 @@ async function acquirePanePlacementLock(): Promise<() => void> {
   return release;
 }
 
+function registerChildResultWriter(pi: ExtensionAPI): void {
+  let resultFile: string | undefined;
+
+  pi.on("before_agent_start", async (event) => {
+    resultFile = findResultFileMarker(event.prompt);
+  });
+
+  pi.on("message_end", async (event) => {
+    if (!resultFile || event.message.role !== "assistant") return;
+    const output = assistantText(event.message);
+    if (output.trim()) await writeAgentResult(resultFile, output);
+  });
+}
+
 export default function herdrAgentsExtension(pi: ExtensionAPI) {
-  if (process.env.HERDR_AGENT_CHILD === "1") return;
+  if (process.env.HERDR_AGENT_CHILD === "1") {
+    registerChildResultWriter(pi);
+    return;
+  }
 
   pi.on("before_agent_start", async (event) => {
     let instructions = GLOBAL_INSTRUCTIONS;
@@ -389,8 +415,8 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       if (params.task === undefined) {
         // Re-wait mode: no new task, just reconnect to an existing tab that is
         // (expected to be) still running — e.g. after a previous call to this
-        // tool timed out while the agent kept working. Skips `pane run`
-        // entirely so it never re-sends a prompt into a busy pane.
+        // tool timed out while the agent kept working. It only invokes the
+        // server-owned agent wait, so no prompt is re-sent into a busy pane.
         if (!params.tabLabel?.trim()) {
           return {
             content: [
@@ -419,7 +445,10 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
         const pane = reusableTab?.pane ?? reusablePane;
         const tabId = reusableTab?.tab.tab_id ?? reusablePane?.tab_id;
         const label = reusableTab?.tab.label ?? baseLabel;
-        if (!pane || !tabId) {
+        const stateKey = pane ? paneStateKey(pane) : undefined;
+        const record = stateKey ? state.agents[stateKey] : undefined;
+        const target = record?.automationName ?? pane?.pane_id;
+        if (!pane || !tabId || !target) {
           return {
             content: [
               {
@@ -462,12 +491,29 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
         const blockedLabel = `waiting for ${label}`;
         pi.events.emit("herdr:blocked", { active: true, label: blockedLabel });
         try {
-          await waitForAgentFinished(pane.pane_id, timeoutMs, signal);
-          const output = await execHerdr(
-            ["pane", "read", pane.pane_id, "--source", "recent-unwrapped", "--lines", "180"],
-            signal,
-          );
-          const text = formatAgentOutput(output, label);
+          await waitForAgent(target, timeoutMs, signal);
+          const artifact = await readAgentResult(record?.resultFile);
+          const output = artifact ?? (await readAgent(target, signal));
+          let closed = false;
+          let closeError: string | undefined;
+          if (record?.lifecycle === "oneshot") {
+            try {
+              await execHerdr(
+                record.layout === "tab"
+                  ? ["tab", "close", tabId]
+                  : ["pane", "close", pane.pane_id],
+                signal,
+              );
+              await bestEffort(undefined, () => deleteAgentLifecycle(pane));
+              if (record.layout !== "tab") {
+                await bestEffort(undefined, () => rebalanceCurrentPaneAgents(signal));
+              }
+              closed = true;
+            } catch (error) {
+              closeError = error instanceof Error ? error.message : String(error);
+            }
+          }
+          const text = formatAgentOutput(output, label, closeError);
           return {
             content: [{ type: "text", text }],
             details: {
@@ -476,6 +522,8 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
               tabLabel: label,
               agent,
               waited: true,
+              closed,
+              closeError,
             },
           };
         } finally {
@@ -508,6 +556,8 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       let tabId: string | undefined;
       let paneId: string | undefined;
       let agentPane: PaneInfo | undefined;
+      let automationName: string | undefined;
+      let resultFile: string | undefined;
       let reused = false;
       const releasePlacement = layout === "pane"
         ? await acquirePanePlacementLock()
@@ -539,6 +589,10 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
             tabLabel = reusable.tab.label;
             paneId = reusable.pane.pane_id;
             agentPane = reusable.pane;
+            const key = paneStateKey(reusable.pane);
+            const record = key ? state.agents[key] : undefined;
+            automationName = record?.automationName;
+            resultFile = record?.resultFile;
           }
         } else {
           const reusable = findReusableAgentPane(current, state, baseLabel);
@@ -547,6 +601,10 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
             tabId = reusable.tab_id;
             paneId = reusable.pane_id;
             agentPane = reusable;
+            const key = paneStateKey(reusable);
+            const record = key ? state.agents[key] : undefined;
+            automationName = record?.automationName;
+            resultFile = record?.resultFile;
           }
         }
       }
@@ -561,6 +619,14 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
             current.workspaceId,
             "--label",
             tabLabel,
+            "--cwd",
+            ctx.cwd,
+            "--env",
+            "HERDR_AGENT_CHILD=1",
+            "--env",
+            "HISTFILE=/dev/null",
+            "--env",
+            "PROCESS_LAUNCHED_BY_Q=1",
             "--no-focus",
           ],
           signal,
@@ -627,6 +693,12 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
             splitTarget ? "0.5" : "0.6",
             "--cwd",
             ctx.cwd,
+            "--env",
+            "HERDR_AGENT_CHILD=1",
+            "--env",
+            "HISTFILE=/dev/null",
+            "--env",
+            "PROCESS_LAUNCHED_BY_Q=1",
             "--no-focus",
           ],
           signal,
@@ -657,56 +729,23 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
         }
 
         if (!agentPane?.terminal_id) {
-          // terminal_id is required to key lifecycle state (state.ts paneStateKey).
-          // If it's still missing after this lookup, lifecycle won't be persisted
-          // for this pane, which is a best-effort miss, not a fatal error.
           agentPane = (await listPanes(signal)).find(
             (pane) => pane.pane_id === paneId,
           );
         }
-        if (agentPane) {
-          await bestEffort(undefined, () =>
-            recordAgentLifecycle(agentPane!, lifecycle, {
-              tabLabel,
-              agent: agent.name,
-              layout,
-            }),
-          );
-        }
-        if (layout === "pane") {
-          await bestEffort(undefined, () => rebalanceCurrentPaneAgents(signal));
-        }
 
-        const taskPrompt = [
-          `You are the ${agent.name} Herdr agent.`,
-          "",
-          "Task from Orchestrator:",
-          task,
-        ].join("\n");
-        const taskPath = await writeTempFile("task", taskPrompt);
-
-        if (reused) {
-          onUpdate?.({
-            content: [
-              {
-                type: "text",
-                text: `Sending task to existing Herdr agent ${tabLabel} (${paneId})...`,
-              },
-            ],
-            details: { tabId, paneId, tabLabel, lifecycle, reused, agent },
-          });
-          await execHerdr(["pane", "run", paneId, `@${taskPath}`], signal);
-        } else {
+        resultFile ??= await createResultFile();
+        if (!reused) {
+          automationName = makeHerdrAgentName(agent.name);
           const profilePrompt = [agent.systemPrompt, CHILD_PROTOCOL]
             .filter(Boolean)
             .join("\n\n");
           const promptPath = await writeTempFile("system", profilePrompt);
-          const piArgs = ["pi", "--name", tabLabel];
+          const piArgs = ["--name", tabLabel];
           if (agent.model) piArgs.push("--model", agent.model);
           if (agent.tools?.length) piArgs.push("--tools", agent.tools.join(","));
-          piArgs.push("--append-system-prompt", promptPath, `@${taskPath}`);
+          piArgs.push("--append-system-prompt", promptPath);
 
-          const command = `cd ${shellQuote(ctx.cwd)} && HERDR_AGENT_CHILD=1 ${shellJoin(piArgs)}`;
           onUpdate?.({
             content: [
               {
@@ -716,52 +755,85 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
             ],
             details: { tabId, paneId, tabLabel, lifecycle, reused, agent },
           });
-          await execHerdr(["pane", "run", paneId, command], signal);
+          await startAgent(automationName, paneId, piArgs, signal);
+          agentPane = (await listPanes(signal)).find(
+            (pane) => pane.pane_id === paneId,
+          ) ?? agentPane;
+        }
+
+        if (agentPane) {
+          await bestEffort(undefined, () =>
+            recordAgentLifecycle(agentPane!, lifecycle, {
+              tabLabel,
+              agent: agent.name,
+              automationName,
+              resultFile,
+              layout,
+            }),
+          );
+        }
+        if (layout === "pane") {
+          await bestEffort(undefined, () => rebalanceCurrentPaneAgents(signal));
         }
       } finally {
         releasePlacement();
       }
 
-      if (!wait) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Herdr agent ${tabLabel} started (${paneId}).`,
-            },
-          ],
-          details: { tabId, paneId, tabLabel, lifecycle, reused, agent, waited: false },
-        };
+      if (!tabId || !paneId) {
+        throw new Error(`Could not identify Herdr tab or pane for ${tabLabel}.`);
       }
+
+      const target = automationName ?? paneId;
+
+      const taskPrompt = [
+        `You are the ${agent.name} Herdr agent.`,
+        "",
+        "Task from Orchestrator:",
+        task,
+        "",
+        "Your final assistant response is captured as the structured result artifact.",
+        `${RESULT_FILE_MARKER} ${resultFile}`,
+      ].join("\n");
 
       onUpdate?.({
         content: [
           {
             type: "text",
-            text: `Waiting for Herdr agent ${tabLabel} (${paneId})...`,
+            text: `${reused ? "Sending task to" : "Waiting for"} Herdr agent ${tabLabel} (${paneId})...`,
           },
         ],
         details: { tabId, paneId, tabLabel, lifecycle, reused, agent },
       });
 
       const blockedLabel = `waiting for ${tabLabel}`;
-      pi.events.emit("herdr:blocked", { active: true, label: blockedLabel });
+      if (wait) {
+        pi.events.emit("herdr:blocked", { active: true, label: blockedLabel });
+      }
       try {
-        await waitForAgentFinished(paneId, timeoutMs, signal, {
-          requireActiveFirst: reused,
-        });
-        const output = await execHerdr(
-          [
-            "pane",
-            "read",
-            paneId,
-            "--source",
-            "recent-unwrapped",
-            "--lines",
-            "180",
-          ],
-          signal,
-        );
+        await promptAgent(target, taskPrompt, { wait, timeoutMs }, signal);
+
+        if (!wait) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Herdr agent ${tabLabel} started (${paneId}).`,
+              },
+            ],
+            details: {
+              tabId,
+              paneId,
+              tabLabel,
+              lifecycle,
+              reused,
+              agent,
+              waited: false,
+            },
+          };
+        }
+
+        const artifact = await readAgentResult(resultFile);
+        const output = artifact ?? (await readAgent(target, signal));
 
         let closed = false;
         let closeError: string | undefined;
@@ -809,7 +881,9 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
           },
         };
       } finally {
-        pi.events.emit("herdr:blocked", { active: false, label: blockedLabel });
+        if (wait) {
+          pi.events.emit("herdr:blocked", { active: false, label: blockedLabel });
+        }
       }
     },
   });

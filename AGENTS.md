@@ -32,22 +32,22 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 
 - `index.ts` — Pi extension entrypoint and `herdr_agent` tool registration.
 - `agents.ts` — loads agent profiles from user/project Pi agent directories.
-- `herdr.ts` — Herdr CLI wrappers and pane/tab wait helpers.
+- `herdr.ts` — Herdr CLI/API wrappers, snapshot discovery, layout helpers, and named-agent lifecycle commands.
 - `schema.ts` — TypeBox schema for tool parameters.
 - `constants.ts` — injected Orchestrator instructions and child-agent protocol.
-- `utils.ts` — shell quoting, title casing, temp prompt files.
+- `utils.ts` — agent-name generation, title casing, result artifacts, and temp prompt files.
 - `types.ts` — shared TypeScript interfaces.
 - `docs/` — detailed implementation and session notes.
 
 ## Important behavior
 
-- `HERDR_AGENT_CHILD=1` disables this extension inside child Pi processes. This prevents recursive tool registration and duplicate Orchestrator instructions in delegated panes.
+- Child panes start with `HERDR_AGENT_CHILD=1`, `HISTFILE=/dev/null`, and `PROCESS_LAUNCHED_BY_Q=1`: delegation tools stay disabled, final responses are persisted, launch commands do not pollute shared history, and Kiro's terminal wrapper cannot hide the real shell from `herdr agent start`.
 - `HERDR_PANE_ID` is preferred over focused pane detection. Focus can move while a tool is running.
-- Waiting treats both `done` and certain `idle` states as finished. Herdr may show a completed agent as `idle` after the pane has been observed.
-- `lifecycle: "oneshot"` requires `wait: true`, because the Orchestrator must wait before closing the one-shot tab.
+- New agents start through `herdr agent start`; prompts use atomic `herdr agent prompt --wait --until idle --until done`. Re-wait uses `herdr agent wait`, so completion is server-owned and event-driven rather than extension polling.
+- `lifecycle: "oneshot"` requires `wait: true`, because the Orchestrator must wait before closing the one-shot pane or tab.
 - Layout defaults to `pane`. Set `HERDR_AGENTS_LAYOUT=tab` before starting Pi to use the legacy tab layout; the model receives no layout parameter.
-- Pane mode splits the Orchestrator 60/40 on the first spawn and stacks additional agents down the right column. Placement is serialized so parallel calls cannot create competing right columns.
-- Persistent agent reuse is label-based: the default label is the title-cased agent profile name unless `tabLabel` is provided. Reuse requires an exact managed-agent label match.
+- Pane mode splits the Orchestrator 60/40 on the first spawn and stacks additional agents down the right column. The placement lock is held through `agent start`, managed-state recording, and rebalancing so parallel calls cannot create competing right columns.
+- Persistent agent reuse is label-based: the default label is the title-cased agent profile name unless `tabLabel` is provided. Reuse requires an exact managed-agent label match. Managed agents also receive a short unique Herdr automation name; legacy panes fall back to pane IDs.
 - While waiting, the extension emits `pi.events.emit("herdr:blocked", ...)` so Herdr can mark the Orchestrator pane as blocked/waiting.
 
 ## Loading

@@ -10,25 +10,17 @@ Pi loads the extension from the symlinked extension directory:
 ~/.pi/agent/extensions/herdr-agents/index.ts
 ```
 
-`index.ts` runs unless `HERDR_AGENT_CHILD=1` is set.
-
-If this is a child process, the extension returns early:
-
-```ts
-if (process.env.HERDR_AGENT_CHILD === "1") return;
-```
-
-This prevents recursive delegation tools inside child panes.
+`index.ts` runs in Orchestrator or child mode. `HERDR_AGENT_CHILD=1` prevents recursive delegation tools inside child panes, but child mode still registers a small result-writer hook. On each assistant `message_end`, that hook writes the latest finalized response to the result artifact named in the task prompt.
 
 ## 2. The Orchestrator receives global guidance
 
-The extension appends a short system instruction through `before_agent_start`:
+The extension appends Orchestrator guidance from `constants.ts` through `before_agent_start` (abridged here):
 
 ```md
 When isolated context helps, use the `herdr_agent` tool instead of raw Herdr CLI commands.
 Pick the smallest suitable agent profile.
 Use `lifecycle: "oneshot"` for one-off tasks that should close after completion; this is the default.
-Use `lifecycle: "persistent"` when a role should stay available for follow-up tasks or accumulate context. The tool reuses a matching persistent tab automatically.
+Use `lifecycle: "persistent"` when a role should stay available for follow-up tasks or accumulate context. The tool reuses a matching managed target automatically.
 The current tab is Orchestrator.
 Synthesize Herdr agent results yourself; do not blindly forward output.
 ```
@@ -69,13 +61,13 @@ The profile supplies:
 
 ## 5. The extension identifies the Orchestrator pane
 
-`herdr.ts` calls:
+`herdr.ts` bootstraps discovery with one machine-readable snapshot:
 
 ```bash
-herdr pane list
+herdr api snapshot
 ```
 
-It prefers `HERDR_PANE_ID` over the focused pane.
+The snapshot contains panes, tabs, agents, focused IDs, layout metadata, and protocol/version information. The extension prefers `HERDR_PANE_ID` over the snapshot's focused pane.
 
 Reason: focus can move while a tool is running. `HERDR_PANE_ID` identifies the actual pane running the Orchestrator Pi process.
 
@@ -95,7 +87,7 @@ In default pane mode, the first agent splits the Orchestrator pane to the right 
 herdr pane split <orchestrator-pane> --direction right --ratio 0.6 --no-focus
 ```
 
-Additional agents split the largest managed pane downward, keeping them in the right column. The extension then uses `layout.set_split_ratio` to give every managed agent equal height, and repeats that rebalance after an agent closes. Placement and label allocation are serialized across parallel tool calls.
+Additional agents split the largest managed pane downward, keeping them in the right column. The extension then uses `layout.set_split_ratio` to give every managed agent equal height, and repeats that rebalance after an agent closes. For new pane agents, the placement lock remains held through `agent start`, managed-state recording, and rebalancing; this ensures parallel calls see previously created agents before choosing a split direction or label.
 
 Legacy tab mode creates a sibling tab as before:
 
@@ -105,12 +97,9 @@ herdr tab create --workspace <workspace-id> --label <label> --no-focus
 
 `lifecycle: "oneshot"` always creates a fresh target. `lifecycle: "persistent"` first looks for a managed agent with the exact requested `tabLabel`; pane mode searches the Orchestrator tab and tab mode searches sibling tabs. The default label is the title-cased profile name. Duplicate fresh labels receive `#2`, `#3`, etc.
 
-## 7. The extension writes temporary prompt files
+## 7. The extension prepares prompts and a result artifact
 
-Two temp files are written under `/tmp/herdr-agent-*`:
-
-1. `system.md` — agent profile body plus the Herdr child protocol;
-2. `task.md` — the self-contained task from the Orchestrator.
+The extension writes `system.md` and reserves `result.md` under private `/tmp/herdr-agent-*` directories. The task is submitted directly through the Herdr agent API and includes the result path marker. Child mode overwrites that file on each non-empty finalized assistant message without requiring the profile to have a `write` tool. A persistent agent reuses its artifact across turns; until the file is cleared before each prompt, a turn with no non-empty assistant text can leave stale content from the previous turn.
 
 The child protocol requires a final report:
 
@@ -125,36 +114,30 @@ HERDR_RESULT:
 
 ## 8. The extension starts child Pi
 
-For a fresh tab, the extension runs a command like:
+The new pane/tab shell is created with `HERDR_AGENT_CHILD=1`, `HISTFILE=/dev/null`, and `PROCESS_LAUNCHED_BY_Q=1`. The last variable prevents Kiro CLI's nested terminal wrapper from replacing the real shell, which keeps the pane compatible with `herdr agent start`. A fresh Pi is then started through Herdr's agent lifecycle API:
 
 ```bash
-cd '<cwd>' && HERDR_AGENT_CHILD=1 pi \
+herdr agent start <short-unique-name> --kind pi --pane <pane-id> -- \
   --name '<tab-label>' \
   --model '<profile-model>' \
   --tools '<profile-tools>' \
-  --append-system-prompt '<system.md>' \
-  '@<task.md>'
+  --append-system-prompt '<system.md>'
 ```
 
-Important details:
-
-- `HERDR_AGENT_CHILD=1` disables this extension in the child.
-- `--append-system-prompt` preserves the normal Pi system prompt and adds the role prompt.
-- `@<task.md>` sends the task file as the initial user prompt.
-- The command is shell-quoted before being sent to Herdr.
-
-For a reused tab, the extension sends `@<task.md>` to the existing pane.
+`agent start` waits until Herdr detects Pi and it is ready for input. The short automation name matches `[a-z][a-z0-9_-]{0,31}` and is persisted separately from the human-readable label. Existing legacy agents without such a name fall back to their pane ID.
 
 ## 9. The Orchestrator waits
 
-If `wait` is false, the tool returns after starting/sending the task. This is only valid for `lifecycle: "persistent"`; `lifecycle: "oneshot"` requires waiting so the extension can close the tab.
+If `wait` is false, the tool returns after starting/sending the task. This is only valid for `lifecycle: "persistent"`; `lifecycle: "oneshot"` requires waiting so the extension can close the managed target.
 
-If `wait` is true, the extension:
+Every task is submitted through `herdr agent prompt`. If `wait` is true, prompt submission and waiting happen atomically:
 
-1. emits `pi.events.emit("herdr:blocked", { active: true, label })`;
-2. waits for the child pane to finish;
-3. reads recent unwrapped output;
-4. emits `pi.events.emit("herdr:blocked", { active: false, label })`.
+```bash
+herdr agent prompt <name-or-pane> '<task>' \
+  --wait --until idle --until done --timeout <ms>
+```
+
+The extension emits `herdr:blocked` around that call. Herdr owns the event-driven wait and returns structured failures such as `agent_prompt_stalled`, `agent_not_running`, `timeout`, and `not_found`. `blocked` is deliberately not a completion state because it usually means the child needs approval or an answer.
 
 The `herdr:blocked` event is consumed by Herdr's installed Pi state extension. It lets the Herdr UI show that the Orchestrator is blocked while waiting for a child.
 
@@ -164,72 +147,42 @@ The `herdr:blocked` event is consumed by Herdr's installed Pi state extension. I
 lifetime. A large delegated task (e.g. spinning up testcontainers and iterating on e2e tests) can
 legitimately still be `working` when the tool call times out.
 
-To continue waiting on the same tab without starting a new one or re-sending the task, call
+To continue waiting on the same managed target without starting a new one or re-sending the task, call
 `herdr_agent` again with the same `tabLabel` and `task` omitted. This re-wait mode:
 
-- looks up the existing tab by exact `tabLabel` (any lifecycle, not just persistent);
-- does not call `pane run` — it never sends a new prompt into the pane;
-- waits (respecting `wait`/`timeoutMs` as usual) and returns the pane's current output.
+- looks up the existing managed pane or tab by exact `tabLabel` (any lifecycle, not just persistent);
+- does not send a new prompt into the pane;
+- calls `herdr agent wait --until idle --until done` against the saved automation name (or legacy pane ID);
+- returns the saved result artifact, with terminal output as fallback;
+- closes a successfully recovered one-shot target.
 
 This avoids two bad alternatives: assuming the timeout means failure, or falling back to raw
 `herdr wait agent-status`/`herdr pane read` bash commands to poll the same pane manually.
 
 ## 10. Completion detection
 
-Herdr has these relevant agent states:
-
-- `working`;
-- `blocked`;
-- `done`;
-- `idle`;
-- `unknown`.
-
-Originally the extension waited only for `done`:
-
-```bash
-herdr wait agent-status <pane> --status done
-```
-
-That caused a hang when the child had finished but Herdr showed it as `idle` instead of `done`.
-
-Current behavior:
-
-- return immediately on `done`;
-- also treat `idle` as finished after a Pi agent has appeared in the pane and either:
-  - it was previously `working` or `blocked`; or
-  - enough time has passed for startup to complete.
-
-This matches Herdr's behavior where `done` can become `idle` after the completed pane is observed.
-
-For a **reused** persistent tab, an extra safeguard applies: `waitForAgentFinished` is called with
-`requireActiveFirst: true`. Sending a new task to an already-running pane (`pane run`) does not
-immediately change Herdr's reported `agent_status` — it can still show `done`/`idle` from the
-*previous* task for a moment, before the child Pi process picks up the new prompt and reports
-`working`. With `requireActiveFirst: true`, the wait loop ignores `done`/`idle` until it has
-observed `working`/`blocked` at least once, so it can't mistake the previous task's leftover
-status for completion of the new one. Freshly created tabs don't need this, since there is no
-previous task whose status could leak through.
+Completion detection is delegated to Herdr 0.7.5's server-owned agent waits. Atomic `agent prompt --wait` prevents a reused agent's previous `idle`/`done` state from satisfying a newly submitted prompt. Standalone `agent wait` pins the current pane occupant, so a replacement process cannot accidentally satisfy a re-wait.
 
 ## 11. The extension reads child output
 
-After completion:
+After completion, the extension first reads the agent's `result.md` artifact. This avoids terminal scrollback limits and alternate-screen loss. If the artifact is absent—for example, for a legacy child started before this feature—it falls back to:
 
 ```bash
-herdr pane read <pane-id> --source recent-unwrapped --lines 180
+herdr agent read <name-or-pane> --source recent-unwrapped --lines 180
 ```
 
 The tool returns that text to the Orchestrator.
 
 The Orchestrator is expected to synthesize the result, not blindly forward it.
 
-## 12. The extension keeps or closes the tab
+## 12. The extension keeps or closes the target
 
 For `lifecycle: "persistent"`, the extension leaves the managed pane or tab open after completion.
 
 This is intentional:
 
 - the user can inspect child reasoning/output;
-- the Orchestrator can reuse a tab later;
+- the Orchestrator can reuse the managed target later;
 - Herdr works as a visible persistent workspace, not a hidden subprocess runner.
 
 For `lifecycle: "oneshot"`, the extension closes only the target created by the current tool call after it has successfully waited and read output: `pane close` in pane mode or `tab close` in tab mode.

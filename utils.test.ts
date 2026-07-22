@@ -1,6 +1,40 @@
 import assert from "node:assert/strict";
+import { promises as fs } from "node:fs";
 import test from "node:test";
-import { formatAgentOutput, normalizeTools, shouldCloseTab } from "./utils.ts";
+import {
+  createResultFile,
+  findResultFileMarker,
+  formatAgentOutput,
+  makeHerdrAgentName,
+  normalizeTools,
+  readAgentResult,
+  shouldCloseTab,
+  writeAgentResult,
+} from "./utils.ts";
+
+test("generates valid unique Herdr automation names", () => {
+  const first = makeHerdrAgentName("Code Reviewer");
+  const second = makeHerdrAgentName("Code Reviewer");
+
+  assert.match(first, /^[a-z][a-z0-9_-]{0,31}$/);
+  assert.notEqual(first, second);
+});
+
+test("writes and reads a managed result artifact", async () => {
+  const filePath = await createResultFile();
+  await writeAgentResult(filePath, "HERDR_RESULT:\n- status: done\n");
+
+  assert.equal(
+    await readAgentResult(filePath),
+    "HERDR_RESULT:\n- status: done",
+  );
+  assert.equal(findResultFileMarker(`task\nHERDR_RESULT_FILE: ${filePath}`), filePath);
+  await fs.rm(filePath, { force: true });
+});
+
+test("rejects result markers outside managed temp directories", () => {
+  assert.equal(findResultFileMarker("HERDR_RESULT_FILE: /tmp/result.md"), undefined);
+});
 
 test("normalizes comma-separated tools", () => {
   assert.deepEqual(normalizeTools("read, grep, bash"), [
