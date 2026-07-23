@@ -55,16 +55,18 @@ import {
 import type { HerdrAgentInfo, HerdrAgentLifecycle, PaneInfo } from "./types.ts";
 import {
   assistantText,
+  clearAgentResult,
+  createAgentTempFiles,
   createResultFile,
   findResultFileMarker,
   formatAgentOutput,
   makeHerdrAgentName,
   readAgentResult,
+  removeAgentTempFiles,
   RESULT_FILE_MARKER,
   shouldCloseTab,
   titleCase,
   writeAgentResult,
-  writeTempFile,
 } from "./utils.ts";
 
 function formatLifecycle(lifecycle?: HerdrAgentLifecycle): string {
@@ -261,6 +263,9 @@ async function showHerdrAgentsManager(
       selected.agent.layout === "pane"
         ? ["pane", "close", selected.agent.paneId]
         : ["tab", "close", selected.agent.tabId],
+    );
+    await bestEffort(undefined, () =>
+      removeAgentTempFiles(selected.agent.resultFile),
     );
     if (selected.agent.layout === "pane") {
       await bestEffort(undefined, () => rebalanceCurrentPaneAgents());
@@ -505,6 +510,9 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
                 signal,
               );
               await bestEffort(undefined, () => deleteAgentLifecycle(pane));
+              await bestEffort(undefined, () =>
+                removeAgentTempFiles(record.resultFile),
+              );
               if (record.layout !== "tab") {
                 await bestEffort(undefined, () => rebalanceCurrentPaneAgents(signal));
               }
@@ -624,8 +632,6 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
             "--env",
             "HERDR_AGENT_CHILD=1",
             "--env",
-            "HISTFILE=/dev/null",
-            "--env",
             "PROCESS_LAUNCHED_BY_Q=1",
             "--no-focus",
           ],
@@ -696,8 +702,6 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
             "--env",
             "HERDR_AGENT_CHILD=1",
             "--env",
-            "HISTFILE=/dev/null",
-            "--env",
             "PROCESS_LAUNCHED_BY_Q=1",
             "--no-focus",
           ],
@@ -734,17 +738,17 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
           );
         }
 
-        resultFile ??= await createResultFile();
         if (!reused) {
           automationName = makeHerdrAgentName(agent.name);
           const profilePrompt = [agent.systemPrompt, CHILD_PROTOCOL]
             .filter(Boolean)
             .join("\n\n");
-          const promptPath = await writeTempFile("system", profilePrompt);
+          const tempFiles = await createAgentTempFiles(profilePrompt);
+          resultFile = tempFiles.resultFile;
           const piArgs = ["--name", tabLabel];
           if (agent.model) piArgs.push("--model", agent.model);
           if (agent.tools?.length) piArgs.push("--tools", agent.tools.join(","));
-          piArgs.push("--append-system-prompt", promptPath);
+          piArgs.push("--append-system-prompt", tempFiles.systemFile);
 
           onUpdate?.({
             content: [
@@ -759,6 +763,8 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
           agentPane = (await listPanes(signal)).find(
             (pane) => pane.pane_id === paneId,
           ) ?? agentPane;
+        } else {
+          resultFile ??= await createResultFile();
         }
 
         if (agentPane) {
@@ -794,6 +800,8 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
         "Your final assistant response is captured as the structured result artifact.",
         `${RESULT_FILE_MARKER} ${resultFile}`,
       ].join("\n");
+
+      await clearAgentResult(resultFile);
 
       onUpdate?.({
         content: [
@@ -848,6 +856,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
             if (agentPane) {
               await bestEffort(undefined, () => deleteAgentLifecycle(agentPane!));
             }
+            await bestEffort(undefined, () => removeAgentTempFiles(resultFile));
             if (layout === "pane") {
               await bestEffort(undefined, () =>
                 rebalanceCurrentPaneAgents(signal),

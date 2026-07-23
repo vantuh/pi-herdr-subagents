@@ -37,6 +37,7 @@ export interface HerdrAgentInfo {
   paneId: string;
   agent: string;
   automationName?: string;
+  resultFile?: string;
   status: string;
   lifecycle?: HerdrAgentLifecycle;
   layout?: HerdrAgentLayout;

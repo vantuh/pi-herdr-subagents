@@ -102,12 +102,12 @@ Re-wait uses `agent wait` and never resends the task.
 Terminal reads can lose long output or alternate-screen content. Each managed child therefore receives a private result path under:
 
 ```text
-/tmp/herdr-agent-*/result.md
+${TMPDIR}/herdr-agent-*/result.md
 ```
 
-A child Pi hook overwrites that file on each non-empty finalized assistant message. After Herdr reports completion, the parent reads the artifact and falls back to `agent read` when it is absent.
+A child Pi hook overwrites that file on each non-empty finalized assistant message. Before submitting a new prompt, the parent removes any previous artifact content. After Herdr reports completion, it reads the new artifact and falls back to `agent read` when none was written.
 
-Known edge case: a persistent child reuses the same artifact path. If a new turn produces no non-empty assistant text, the previous turn's output can remain. The intended minimal fix is to clear the artifact immediately before each new prompt.
+`system.md` and `result.md` share one private `os.tmpdir()` directory. Successful one-shot cleanup removes that directory; persistent agents keep it while reusable, and `/herdr-agents` removes it when closing a managed persistent target.
 
 ## 10. Re-wait must not resend work
 
@@ -163,16 +163,14 @@ A three-agent parallel smoke test confirmed one 60/40 outer `right` split and th
 
 ## 14. Shared zsh history must respect child isolation
 
-Child panes receive:
-
-```text
-HISTFILE=/dev/null
-```
-
-The global history configuration uses an environment-aware default:
+`HISTFILE` is a special zsh parameter and is not reliably imported from the process environment, so passing `--env HISTFILE=/dev/null` to Herdr did not work. The global history configuration instead derives it from the ordinary child marker:
 
 ```zsh
-HISTFILE=${HISTFILE:-$HOME/.zsh_history}
+if [[ ${HERDR_AGENT_CHILD:-} == 1 ]]; then
+  HISTFILE=/dev/null
+else
+  HISTFILE=${HISTFILE:-$HOME/.zsh_history}
+fi
 ```
 
 This preserves normal history while preventing delegated child commands from entering the shared file.
@@ -191,16 +189,14 @@ The official `herdr-agent-state.ts` is also repo-managed through this Stow layou
 
 ## Current known limitations
 
-- Clear a persistent agent's result artifact before each new prompt to prevent stale output when a turn has no non-empty assistant message.
-- Temp directories under `/tmp/herdr-agent-*` are not explicitly removed.
+- Temp directories can remain after startup/prompt failures or when panes are closed outside the extension; the operating system eventually cleans its temp root.
 - Herdr JSON responses use targeted shape checks rather than full runtime schema validation.
 - State-file locking prevents same-process lost updates but intentionally does not coordinate multiple independent Pi processes.
 - Legacy agents without a saved automation name fall back to their current pane ID.
 
 ## Possible future cleanup
 
-- Reuse one private temp directory for both `system.md` and `result.md`.
-- Remove one-shot temp directories after successful cleanup.
+- Remove orphan temp directories after failed startup without deleting files still needed for debugging.
 - Remove the legacy pane-ID fallback after all pre-migration persistent agents are gone.
 - Add stronger runtime validation only where malformed Herdr output has produced a real failure.
 

@@ -99,7 +99,7 @@ herdr tab create --workspace <workspace-id> --label <label> --no-focus
 
 ## 7. The extension prepares prompts and a result artifact
 
-The extension writes `system.md` and reserves `result.md` under private `/tmp/herdr-agent-*` directories. The task is submitted directly through the Herdr agent API and includes the result path marker. Child mode overwrites that file on each non-empty finalized assistant message without requiring the profile to have a `write` tool. A persistent agent reuses its artifact across turns; until the file is cleared before each prompt, a turn with no non-empty assistant text can leave stale content from the previous turn.
+The extension writes `system.md` and reserves `result.md` in one private `${TMPDIR}/herdr-agent-*` directory (`os.tmpdir()` in Node). The task is submitted directly through the Herdr agent API and includes the result path marker. Before every prompt, the parent removes any previous `result.md`; child mode then writes each non-empty finalized assistant message without requiring the profile to have a `write` tool. If a turn produces no artifact, result collection falls back to terminal output instead of returning stale persistent-agent content.
 
 The child protocol requires a final report:
 
@@ -114,7 +114,7 @@ HERDR_RESULT:
 
 ## 8. The extension starts child Pi
 
-The new pane/tab shell is created with `HERDR_AGENT_CHILD=1`, `HISTFILE=/dev/null`, and `PROCESS_LAUNCHED_BY_Q=1`. The last variable prevents Kiro CLI's nested terminal wrapper from replacing the real shell, which keeps the pane compatible with `herdr agent start`. A fresh Pi is then started through Herdr's agent lifecycle API:
+The new pane/tab shell is created with `HERDR_AGENT_CHILD=1` and `PROCESS_LAUNCHED_BY_Q=1`. The child marker makes the zsh history configuration select `HISTFILE=/dev/null`; setting `HISTFILE` through `--env` is insufficient because zsh initializes that special parameter itself. `PROCESS_LAUNCHED_BY_Q` prevents Kiro CLI's nested terminal wrapper from replacing the real shell, which keeps the pane compatible with `herdr agent start`. A fresh Pi is then started through Herdr's agent lifecycle API:
 
 ```bash
 herdr agent start <short-unique-name> --kind pi --pane <pane-id> -- \
@@ -177,7 +177,7 @@ The Orchestrator is expected to synthesize the result, not blindly forward it.
 
 ## 12. The extension keeps or closes the target
 
-For `lifecycle: "persistent"`, the extension leaves the managed pane or tab open after completion.
+For `lifecycle: "persistent"`, the extension leaves the managed pane or tab and its temp directory available after completion.
 
 This is intentional:
 
@@ -185,7 +185,7 @@ This is intentional:
 - the Orchestrator can reuse the managed target later;
 - Herdr works as a visible persistent workspace, not a hidden subprocess runner.
 
-For `lifecycle: "oneshot"`, the extension closes only the target created by the current tool call after it has successfully waited and read output: `pane close` in pane mode or `tab close` in tab mode.
+For `lifecycle: "oneshot"`, the extension closes only the target created by the current tool call after it has successfully waited and read output: `pane close` in pane mode or `tab close` in tab mode. After a successful close, it removes that agent's temp directory. Closing a managed persistent agent through `/herdr-agents` also removes its temp directory.
 
 Timeout, abort, or execution errors leave the one-shot target open for debugging.
 

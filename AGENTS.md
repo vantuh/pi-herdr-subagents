@@ -41,7 +41,7 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 
 ## Important behavior
 
-- Child panes start with `HERDR_AGENT_CHILD=1`, `HISTFILE=/dev/null`, and `PROCESS_LAUNCHED_BY_Q=1`: delegation tools stay disabled, final responses are persisted, launch commands do not pollute shared history, and Kiro's terminal wrapper cannot hide the real shell from `herdr agent start`.
+- Child panes start with `HERDR_AGENT_CHILD=1` and `PROCESS_LAUNCHED_BY_Q=1`: delegation tools stay disabled, final responses are persisted, zsh selects `HISTFILE=/dev/null` from the child marker, and Kiro's terminal wrapper cannot hide the real shell from `herdr agent start`.
 - `HERDR_PANE_ID` is preferred over focused pane detection. Focus can move while a tool is running.
 - New agents start through `herdr agent start`; prompts use atomic `herdr agent prompt --wait --until idle --until done`. Re-wait uses `herdr agent wait`, so completion is server-owned and event-driven rather than extension polling.
 - `lifecycle: "oneshot"` requires `wait: true`, because the Orchestrator must wait before closing the one-shot pane or tab.

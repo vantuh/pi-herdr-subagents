@@ -117,10 +117,10 @@ Terminal scrollback is not a reliable transport for complete agent output:
 The extension therefore creates a private result path:
 
 ```text
-/tmp/herdr-agent-*/result.md
+${TMPDIR}/herdr-agent-*/result.md
 ```
 
-Child mode keeps the delegation tool disabled but registers a small Pi event hook that overwrites this artifact on each non-empty finalized assistant message. The parent reads it after Herdr reports completion and falls back to `agent read` when the artifact is unavailable, including compatibility with agents started before this migration. Persistent agents currently reuse the same artifact path across turns, which is why clearing it before a new prompt remains a known follow-up.
+Child mode keeps the delegation tool disabled but registers a small Pi event hook that overwrites this artifact on each non-empty finalized assistant message. Before every prompt, the parent removes previous artifact content. It reads the new artifact after Herdr reports completion and falls back to `agent read` when no artifact was written, including compatibility with agents started before this migration.
 
 Plugin state now stores:
 
@@ -208,25 +208,17 @@ Herdr's documented `agent start` readiness guarantee is therefore used directly.
 
 The old `pane run` workflow inserted long child-launch commands into shared zsh history.
 
-Child panes now receive:
-
-```text
-HISTFILE=/dev/null
-```
-
-The zsh history configuration was changed from an unconditional assignment:
+Passing `HISTFILE=/dev/null` through Herdr's child environment was tested but proved ineffective because `HISTFILE` is a special zsh parameter and zsh initializes it independently. The zsh history configuration now uses the ordinary `HERDR_AGENT_CHILD` environment marker:
 
 ```zsh
-HISTFILE=~/.zsh_history
+if [[ ${HERDR_AGENT_CHILD:-} == 1 ]]; then
+  HISTFILE=/dev/null
+else
+  HISTFILE=${HISTFILE:-$HOME/.zsh_history}
+fi
 ```
 
-to an environment-aware default:
-
-```zsh
-HISTFILE=${HISTFILE:-$HOME/.zsh_history}
-```
-
-Normal shells continue to use `~/.zsh_history`; delegated child shells do not persist commands. A smoke test confirmed that no child launch entry appeared in the shared history.
+Normal shells continue to use `~/.zsh_history`; delegated child shells do not persist commands.
 
 ## Pi and Herdr integration compatibility
 
@@ -295,7 +287,7 @@ Agents without a saved automation name fall back to their current pane ID. New a
 ### Automated checks
 
 ```text
-57 tests passed
+59 tests passed
 0 failed
 ```
 
@@ -346,15 +338,13 @@ Split workflow: 1/5 first-try starts, 4/5 retried, 0 failures
 - One-shot cleanup and pane rebalancing remain automatic.
 - The implementation is smaller conceptually: layout belongs to pane APIs, lifecycle belongs to agent APIs, and complete output belongs to the result artifact.
 
-## Known follow-up
+## Result-artifact follow-up completed
 
-Before prompting a reused persistent agent, clear its existing `result.md`. Without that reset, a turn that produces no final text could leave the previous turn's artifact in place and return stale output. Clearing the file allows the existing terminal fallback to handle that edge case safely.
+`system.md` and `result.md` now share one private `${TMPDIR}/herdr-agent-*` directory. The parent clears `result.md` before each prompt, preventing stale persistent-agent output, and removes the directory after successful one-shot cleanup or when `/herdr-agents` closes a managed persistent target.
 
 Optional low-priority cleanup:
 
-- reuse one temp directory for `system.md` and `result.md`;
-- remove temp directories after successful one-shot cleanup;
-- trim superseded detail from `session-findings.md`;
+- clean orphan temp directories after failed starts without removing files needed for debugging;
 - remove the legacy pane-ID fallback after all pre-migration persistent agents are gone.
 
 ## References

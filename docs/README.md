@@ -182,7 +182,7 @@ Typical tool call:
 - Child agents are prevented from recursively registering `herdr_agent` by `HERDR_AGENT_CHILD=1`; child mode only retains the result-artifact writer.
 - Herdr 0.7.5 or newer is required for `agent start`, atomic `agent prompt --wait`, `agent wait`, `agent read`, and `api snapshot`.
 - Human-readable labels remain the persistent reuse key. A separate generated Herdr automation name is the stable command target; legacy agents fall back to pane IDs.
-- Completion output is persisted in a per-agent artifact that is overwritten by assistant messages, so large results do not depend on terminal scrollback. Terminal reading remains a compatibility fallback. A reused persistent agent can still expose stale artifact content if a new turn produces no non-empty assistant text; see the migration document's known follow-up.
+- Completion output is persisted in a per-agent artifact, so large results do not depend on terminal scrollback. The artifact is cleared before each prompt to prevent stale persistent-agent output; terminal reading remains the fallback when no new artifact is written.
 - The Orchestrator must synthesize child results. Child output should not be blindly forwarded.
 - Raw Herdr CLI remains useful for diagnostics, but normal delegation should go through `herdr_agent`.
 

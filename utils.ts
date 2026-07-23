@@ -51,14 +51,13 @@ export function formatAgentOutput(
     : text;
 }
 
-export async function writeTempFile(
-  prefix: string,
-  content: string,
-): Promise<string> {
+export async function createAgentTempFiles(
+  systemPrompt: string,
+): Promise<{ systemFile: string; resultFile: string }> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "herdr-agent-"));
-  const filePath = path.join(dir, `${prefix}.md`);
-  await fs.writeFile(filePath, content, { encoding: "utf8", mode: 0o600 });
-  return filePath;
+  const systemFile = path.join(dir, "system.md");
+  await fs.writeFile(systemFile, systemPrompt, { encoding: "utf8", mode: 0o600 });
+  return { systemFile, resultFile: path.join(dir, "result.md") };
 }
 
 export async function createResultFile(): Promise<string> {
@@ -105,6 +104,20 @@ export async function writeAgentResult(
   if (!isManagedResultFile(filePath)) return;
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, output, { encoding: "utf8", mode: 0o600 });
+}
+
+export async function clearAgentResult(
+  filePath: string | undefined,
+): Promise<void> {
+  if (!filePath || !isManagedResultFile(filePath)) return;
+  await fs.rm(filePath, { force: true });
+}
+
+export async function removeAgentTempFiles(
+  resultFile: string | undefined,
+): Promise<void> {
+  if (!resultFile || !isManagedResultFile(resultFile)) return;
+  await fs.rm(path.dirname(resultFile), { recursive: true, force: true });
 }
 
 export async function readAgentResult(

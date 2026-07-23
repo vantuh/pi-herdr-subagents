@@ -295,6 +295,7 @@ export function listManagedWorkspaceAgents(
       ...(record.automationName
         ? { automationName: record.automationName }
         : {}),
+      ...(record.resultFile ? { resultFile: record.resultFile } : {}),
       status: pane.agent_status ?? "unknown",
       lifecycle: record.lifecycle,
       layout:
