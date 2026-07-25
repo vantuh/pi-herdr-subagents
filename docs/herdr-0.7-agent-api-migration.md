@@ -26,7 +26,7 @@ pane split / tab create
     ↓
 agent start
     ↓
-agent prompt --wait
+agent prompt (no --wait) → wait for working → wait idle/done
     ↓
 read result artifact (agent read as fallback)
     ↓
@@ -34,6 +34,8 @@ close one-shot target
 ```
 
 Persistent follow-up tasks reuse the named agent and submit another atomic prompt. Re-wait calls use `agent wait` without resending the task.
+
+Later note: `agent prompt --wait` hardcodes a 5s lifecycle gate (`agent_prompt_stalled`). The extension now submits without `--wait` and owns the acceptance wait (including one `send-keys enter` recovery) so slow Pi transitions do not strand pasted prompts.
 
 ## Herdr APIs adopted
 

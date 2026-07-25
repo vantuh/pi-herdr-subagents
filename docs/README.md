@@ -180,7 +180,7 @@ Typical tool call:
 - `lifecycle: "persistent"` reuses an existing managed agent by exact label. Pane mode searches the Orchestrator tab; legacy tab mode searches sibling tabs.
 - Fresh context is preferred over forked conversation context for newly created agents.
 - Child agents are prevented from recursively registering `herdr_agent` by `HERDR_AGENT_CHILD=1`; child mode only retains the result-artifact writer.
-- Herdr 0.7.5 or newer is required for `agent start`, atomic `agent prompt --wait`, `agent wait`, `agent read`, and `api snapshot`.
+- Herdr 0.7.5 or newer is required for `agent start`, atomic `agent prompt`, `agent wait`, `agent send-keys`, `agent read`, and `api snapshot`.
 - Human-readable labels remain the persistent reuse key. A separate generated Herdr automation name is the stable command target; legacy agents fall back to pane IDs.
 - Completion output is persisted in a per-agent artifact, so large results do not depend on terminal scrollback. The artifact is cleared before each prompt to prevent stale persistent-agent output; terminal reading remains the fallback when no new artifact is written.
 - The Orchestrator must synthesize child results. Child output should not be blindly forwarded.

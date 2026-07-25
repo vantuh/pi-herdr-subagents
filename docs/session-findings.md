@@ -89,11 +89,7 @@ Two failures were observed:
 
 Temporary polling guards handled those cases, including requiring an active state before accepting completion on reused targets.
 
-Those guards no longer exist. Herdr 0.7.5 now owns prompt submission and completion atomically through:
-
-```text
-agent prompt --wait --until idle --until done
-```
+Those guards no longer exist. Prompt submission uses atomic `agent prompt` without `--wait` (Herdr's `--wait` hardcodes a 5s lifecycle gate that stalls on slow Pi transitions). The extension then requires an observed `working`/`blocked` state — or a newer settled `state_change_seq` — before `agent wait --until idle --until done`. After 5s with no change it nudges Enter once via `agent send-keys`.
 
 Re-wait uses `agent wait` and never resends the task.
 

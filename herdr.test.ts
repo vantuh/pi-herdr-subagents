@@ -2,45 +2,96 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildAgentPromptArgs,
+  buildAgentWaitArgs,
   buildEqualAgentSplitRatios,
   chooseAgentColumnSplitTarget,
   findReusableAgentPane,
   findReusableAgentTab,
   listCurrentWorkspaceAgents,
   listManagedWorkspaceAgents,
+  parseAgentSnapshot,
+  promptAcceptanceObserved,
 } from "./herdr.ts";
 import { emptyHerdrAgentsState } from "./state.ts";
 import type { HerdrContext, PaneInfo, TabInfo } from "./types.ts";
 
-test("builds an atomic prompt-and-wait command without treating blocked as completion", () => {
+test("builds an atomic prompt submit without the hardcoded --wait stall gate", () => {
+  assert.deepEqual(buildAgentPromptArgs("reviewer_ab12", "Review"), [
+    "agent",
+    "prompt",
+    "reviewer_ab12",
+    "Review",
+  ]);
+});
+
+test("builds a completion wait that ignores blocked", () => {
+  assert.deepEqual(buildAgentWaitArgs("worker_ab12", 120000, ["idle", "done"]), [
+    "agent",
+    "wait",
+    "worker_ab12",
+    "--until",
+    "idle",
+    "--until",
+    "done",
+    "--timeout",
+    "120000",
+  ]);
+});
+
+test("parses agent get snapshots used for prompt acceptance", () => {
   assert.deepEqual(
-    buildAgentPromptArgs("reviewer_ab12", "Review", {
-      wait: true,
-      timeoutMs: 120000,
-    }),
-    [
-      "agent",
-      "prompt",
-      "reviewer_ab12",
-      "Review",
-      "--wait",
-      "--until",
-      "idle",
-      "--until",
-      "done",
-      "--timeout",
-      "120000",
-    ],
+    parseAgentSnapshot(
+      JSON.stringify({
+        result: {
+          agent: {
+            agent_status: "idle",
+            state_change_seq: 12,
+            interactive_ready: true,
+          },
+        },
+      }),
+    ),
+    { status: "idle", stateChangeSeq: 12, interactiveReady: true },
   );
 });
 
-test("builds a non-blocking prompt command", () => {
-  assert.deepEqual(
-    buildAgentPromptArgs("worker_ab12", "Implement", {
-      wait: false,
-      timeoutMs: 120000,
+test("prompt acceptance requires working or a newer settled seq", () => {
+  const before = {
+    status: "idle",
+    stateChangeSeq: 10,
+    interactiveReady: true,
+  };
+  assert.equal(
+    promptAcceptanceObserved(before, {
+      status: "working",
+      stateChangeSeq: 10,
+      interactiveReady: true,
     }),
-    ["agent", "prompt", "worker_ab12", "Implement"],
+    "working",
+  );
+  assert.equal(
+    promptAcceptanceObserved(before, {
+      status: "blocked",
+      stateChangeSeq: 11,
+      interactiveReady: true,
+    }),
+    "working",
+  );
+  assert.equal(
+    promptAcceptanceObserved(before, {
+      status: "idle",
+      stateChangeSeq: 11,
+      interactiveReady: true,
+    }),
+    "settled",
+  );
+  assert.equal(
+    promptAcceptanceObserved(before, {
+      status: "idle",
+      stateChangeSeq: 10,
+      interactiveReady: true,
+    }),
+    null,
   );
 });
 
