@@ -137,13 +137,15 @@ If `wait` is true, the extension instead:
 ```bash
 herdr agent get <name-or-pane>          # snapshot state_change_seq
 herdr agent prompt <name-or-pane> '<task>'
-# poll up to 30s for working/blocked, or a newer idle/done seq;
-# after 5s with no change, nudge once: herdr agent send-keys <target> enter
+# poll up to 30s for a newer state_change_seq with working/blocked,
+# or a newer idle/done seq (same-seq working from a prior turn is ignored);
+# after 5s still idle+interactive_ready, nudge once:
+#   herdr agent send-keys <target> enter
 herdr agent wait <name-or-pane> \
   --until idle --until done --timeout <ms>
 ```
 
-Waiting for `working` (or a newer settled `state_change_seq`) before accepting `idle`/`done` preserves the no-stale-completion guarantee that atomic `--wait` used to provide. The extension emits `herdr:blocked` around that wait. `blocked` is deliberately not a completion state because it usually means the child needs approval or an answer.
+Acceptance requires an increased `state_change_seq`, so a reused agent still `working` from a previous turn cannot satisfy a newly submitted prompt. The Enter nudge only fires while the composer is idle and `interactive_ready`. The extension emits `herdr:blocked` around that wait. `blocked` is deliberately not a completion state because it usually means the child needs approval or an answer.
 
 The `herdr:blocked` event is consumed by Herdr's installed Pi state extension. It lets the Herdr UI show that the Orchestrator is blocked while waiting for a child.
 
@@ -167,7 +169,7 @@ This avoids two bad alternatives: assuming the timeout means failure, or falling
 
 ## 10. Completion detection
 
-Completion detection is delegated to Herdr 0.7.5's server-owned agent waits. Prompt acceptance requires an observed `working`/`blocked` state (or an increased `state_change_seq` that lands on `idle`/`done`) so a reused agent's previous settled state cannot satisfy a newly submitted prompt. Standalone `agent wait` pins the current pane occupant, so a replacement process cannot accidentally satisfy a re-wait.
+Completion detection is delegated to Herdr 0.7.5's server-owned agent waits. Prompt acceptance requires an increased `state_change_seq` that lands on `working`/`blocked` or settled `idle`/`done`, so a reused agent's previous turn (including still-`working`) cannot satisfy a newly submitted prompt. Standalone `agent wait` pins the current pane occupant, so a replacement process cannot accidentally satisfy a re-wait.
 
 ## 11. The extension reads child output
 

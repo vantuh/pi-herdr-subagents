@@ -55,16 +55,32 @@ test("parses agent get snapshots used for prompt acceptance", () => {
   );
 });
 
-test("prompt acceptance requires working or a newer settled seq", () => {
+test("prompt acceptance requires a newer seq for working or settled", () => {
   const before = {
     status: "idle",
     stateChangeSeq: 10,
     interactiveReady: true,
   };
+  // Same seq while still working: prior turn, not this prompt.
   assert.equal(
     promptAcceptanceObserved(before, {
       status: "working",
       stateChangeSeq: 10,
+      interactiveReady: true,
+    }),
+    null,
+  );
+  assert.equal(
+    promptAcceptanceObserved(
+      { status: "working", stateChangeSeq: 10, interactiveReady: true },
+      { status: "working", stateChangeSeq: 10, interactiveReady: true },
+    ),
+    null,
+  );
+  assert.equal(
+    promptAcceptanceObserved(before, {
+      status: "working",
+      stateChangeSeq: 11,
       interactiveReady: true,
     }),
     "working",

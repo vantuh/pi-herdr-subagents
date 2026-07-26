@@ -551,13 +551,15 @@ export function promptAcceptanceObserved(
   before: HerdrAgentSnapshot,
   current: HerdrAgentSnapshot,
 ): "working" | "settled" | null {
+  // Require a newer seq so a reused agent still working from a prior turn
+  // is not mistaken for acceptance of the just-submitted prompt.
+  if (current.stateChangeSeq <= before.stateChangeSeq) {
+    return null;
+  }
   if (current.status === "working" || current.status === "blocked") {
     return "working";
   }
-  if (
-    current.stateChangeSeq > before.stateChangeSeq &&
-    (current.status === "idle" || current.status === "done")
-  ) {
+  if (current.status === "idle" || current.status === "done") {
     // Finished so quickly that `working` was never observed.
     return "settled";
   }
@@ -586,8 +588,15 @@ async function waitForPromptAcceptance(
     if (observed) return observed;
 
     const now = Date.now();
-    if (!enterSent && now - startedAt >= PROMPT_ENTER_RETRY_AT) {
-      // Text often lands in the composer while Enter does not. Nudge once.
+    if (
+      !enterSent &&
+      now - startedAt >= PROMPT_ENTER_RETRY_AT &&
+      current.status === "idle" &&
+      current.interactiveReady
+    ) {
+      // Text often lands in the composer while Enter does not. Nudge once,
+      // but only while the composer is still accepting input — never into a
+      // live turn or approval UI that lifecycle detection has not yet shown.
       await execHerdr(["agent", "send-keys", target, "enter"], signal);
       enterSent = true;
     }
