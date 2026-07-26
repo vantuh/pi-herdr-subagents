@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildAgentPromptArgs,
+  buildAgentRenameArgs,
   buildAgentWaitArgs,
   buildEqualAgentSplitRatios,
   chooseAgentColumnSplitTarget,
@@ -10,7 +11,9 @@ import {
   listCurrentWorkspaceAgents,
   listManagedWorkspaceAgents,
   parseAgentSnapshot,
+  parseStartedAgentSnapshot,
   promptAcceptanceObserved,
+  startedAgentReady,
 } from "./herdr.ts";
 import { emptyHerdrAgentsState } from "./state.ts";
 import type { HerdrContext, PaneInfo, TabInfo } from "./types.ts";
@@ -36,6 +39,32 @@ test("builds a completion wait that ignores blocked", () => {
     "--timeout",
     "120000",
   ]);
+});
+
+test("reassigns the requested automation name after startup recovery", () => {
+  assert.deepEqual(buildAgentRenameArgs("w1:p2", "scout_ab12"), [
+    "agent",
+    "rename",
+    "w1:p2",
+    "scout_ab12",
+  ]);
+});
+
+test("recognizes Pi after a transient startup kind mismatch", () => {
+  const kiro = parseStartedAgentSnapshot(
+    JSON.stringify({
+      result: { agent: { agent: "kiro", agent_status: "working" } },
+    }),
+  );
+  const pi = parseStartedAgentSnapshot(
+    JSON.stringify({
+      result: { agent: { agent: "pi", agent_status: "idle" } },
+    }),
+  );
+
+  assert.equal(startedAgentReady(kiro, "pi"), false);
+  assert.equal(startedAgentReady(pi, "pi"), true);
+  assert.equal(startedAgentReady({ agent: "pi", status: "working" }, "pi"), false);
 });
 
 test("parses agent get snapshots used for prompt acceptance", () => {

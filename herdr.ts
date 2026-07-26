@@ -446,6 +446,75 @@ export function listCurrentWorkspaceAgents(
   return agents.sort((a, b) => a.tabLabel.localeCompare(b.tabLabel));
 }
 
+type StartedAgentSnapshot = {
+  agent: string;
+  status: string;
+};
+
+export function parseStartedAgentSnapshot(output: string): StartedAgentSnapshot {
+  let parsed: {
+    result?: { agent?: { agent?: unknown; agent_status?: unknown } };
+  };
+  try {
+    parsed = JSON.parse(output);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Malformed herdr agent get output: ${message}`);
+  }
+
+  const agent = parsed.result?.agent?.agent;
+  const status = parsed.result?.agent?.agent_status;
+  if (typeof agent !== "string" || typeof status !== "string") {
+    throw new Error(
+      "Malformed herdr agent get output: expected result.agent.agent and agent_status.",
+    );
+  }
+  return { agent, status };
+}
+
+export function buildAgentRenameArgs(
+  target: string,
+  name: string,
+): string[] {
+  return ["agent", "rename", target, name];
+}
+
+export function startedAgentReady(
+  snapshot: StartedAgentSnapshot,
+  expectedAgent: string,
+): boolean {
+  return (
+    snapshot.agent === expectedAgent &&
+    (snapshot.status === "idle" || snapshot.status === "done")
+  );
+}
+
+async function waitForStartedAgent(
+  paneId: string,
+  expectedAgent: string,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    try {
+      const snapshot = parseStartedAgentSnapshot(
+        await execHerdr(["agent", "get", paneId], signal),
+      );
+      if (startedAgentReady(snapshot, expectedAgent)) return;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+    }
+
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `Herdr did not settle on ${expectedAgent} in pane ${paneId} within ${timeoutMs}ms.`,
+      );
+    }
+    await delay(100, signal);
+  }
+}
+
 export async function startAgent(
   name: string,
   paneId: string,
@@ -472,6 +541,23 @@ export async function startAgent(
       await execHerdr(args, signal);
       return;
     } catch (error) {
+      if (
+        error instanceof HerdrCliError &&
+        error.code === "agent_kind_mismatch"
+      ) {
+        // Pi using a Kiro ACP model can briefly expose its provider child as
+        // the foreground agent before Pi's lifecycle hook claims the pane.
+        // The launch already happened, so wait for Pi instead of starting it twice.
+        try {
+          await waitForStartedAgent(paneId, "pi", 30_000, signal);
+          // The failed start does not assign its requested automation name.
+          await execHerdr(buildAgentRenameArgs(paneId, name), signal);
+          return;
+        } catch (settleError) {
+          if (signal?.aborted) throw settleError;
+          throw error;
+        }
+      }
       if (
         !(error instanceof HerdrCliError) ||
         error.code !== "agent_pane_busy" ||

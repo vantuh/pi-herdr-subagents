@@ -187,7 +187,9 @@ This prevents the Kiro wrapper only inside delegated child panes. Normal user te
 
 `pane split` and `tab create` can return before the new shell is ready. `agent start` then returns transient `agent_pane_busy` even though the shell becomes available shortly afterward.
 
-The extension retries only that structured error for up to five seconds with a 100 ms interval. Other errors fail immediately.
+The extension retries only that structured error for up to five seconds with a 100 ms interval.
+
+A second startup race occurs when Pi uses a Kiro ACP model: after the launch, Herdr can briefly detect the provider child as `kiro` before Pi's lifecycle hook claims the pane. If `agent start --kind pi` returns `agent_kind_mismatch`, the extension polls the already-launched pane for up to 30 seconds and continues only after it settles on `pi` in an idle/done state. Because the failed start does not retain its requested automation name, recovery then assigns that name with `agent rename <pane> <name>`. It does not submit the launch command twice. Other errors fail immediately.
 
 This retry is evidence-based:
 
@@ -195,9 +197,9 @@ This retry is evidence-based:
 - pane-split test: 4 of 5 starts required a retry;
 - no final startup failures occurred.
 
-### No post-start delay
+### No unconditional post-start delay
 
-A temporary 500 ms delay after `agent start` was evaluated and removed.
+A temporary unconditional 500 ms delay after `agent start` was evaluated and removed. The Kiro ACP mismatch recovery above runs only after the corresponding structured error.
 
 After correcting the child Pi executable/version, immediate prompt tests passed:
 
