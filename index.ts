@@ -60,12 +60,15 @@ import {
   createResultFile,
   findResultFileMarker,
   formatAgentOutput,
+  formatWaitInterrupted,
+  isRecoverableWaitInterrupt,
   makeHerdrAgentName,
   readAgentResult,
   removeAgentTempFiles,
   RESULT_FILE_MARKER,
   shouldCloseTab,
   titleCase,
+  waitInterruptReason,
   writeAgentResult,
 } from "./utils.ts";
 
@@ -534,6 +537,28 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
               closeError,
             },
           };
+        } catch (error) {
+          if (isRecoverableWaitInterrupt(error)) {
+            const reason = waitInterruptReason(error);
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: formatWaitInterrupted(label, reason),
+                },
+              ],
+              details: {
+                tabId,
+                paneId: pane.pane_id,
+                tabLabel: label,
+                agent,
+                waited: false,
+                interrupted: true,
+                interruptReason: reason,
+              },
+            };
+          }
+          throw error;
         } finally {
           pi.events.emit("herdr:blocked", { active: false, label: blockedLabel });
         }
@@ -889,6 +914,30 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
             waited: true,
           },
         };
+      } catch (error) {
+        if (wait && isRecoverableWaitInterrupt(error)) {
+          const reason = waitInterruptReason(error);
+          return {
+            content: [
+              {
+                type: "text",
+                text: formatWaitInterrupted(tabLabel, reason),
+              },
+            ],
+            details: {
+              tabId,
+              paneId,
+              tabLabel,
+              lifecycle,
+              reused,
+              agent,
+              waited: false,
+              interrupted: true,
+              interruptReason: reason,
+            },
+          };
+        }
+        throw error;
       } finally {
         if (wait) {
           pi.events.emit("herdr:blocked", { active: false, label: blockedLabel });

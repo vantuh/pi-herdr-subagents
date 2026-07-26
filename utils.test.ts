@@ -8,11 +8,14 @@ import {
   createResultFile,
   findResultFileMarker,
   formatAgentOutput,
+  formatWaitInterrupted,
+  isRecoverableWaitInterrupt,
   makeHerdrAgentName,
   normalizeTools,
   readAgentResult,
   removeAgentTempFiles,
   shouldCloseTab,
+  waitInterruptReason,
   writeAgentResult,
 } from "./utils.ts";
 
@@ -105,5 +108,45 @@ test("appends a close warning when closing the agent failed", () => {
   assert.equal(
     formatAgentOutput("done", "Worker", "target not found"),
     "done\n\nWarning: failed to close one-shot Herdr agent Worker: target not found",
+  );
+});
+
+test("treats abort and herdr timeout as recoverable wait interrupts", () => {
+  assert.equal(isRecoverableWaitInterrupt(new Error("Aborted")), true);
+  assert.equal(
+    isRecoverableWaitInterrupt(new Error("The operation was aborted")),
+    true,
+  );
+  const abortErr = new Error("aborted");
+  abortErr.name = "AbortError";
+  assert.equal(isRecoverableWaitInterrupt(abortErr), true);
+  assert.equal(
+    isRecoverableWaitInterrupt(
+      Object.assign(new Error("herdr agent wait x failed [timeout]: timed out"), {
+        code: "timeout",
+      }),
+    ),
+    true,
+  );
+  assert.equal(
+    isRecoverableWaitInterrupt(
+      new Error("herdr agent prompt x failed [agent_prompt_stalled]: no change"),
+    ),
+    false,
+  );
+  assert.equal(waitInterruptReason(new Error("The operation was aborted")), "aborted");
+  assert.equal(
+    waitInterruptReason(
+      Object.assign(new Error("failed [timeout]"), { code: "timeout" }),
+    ),
+    "timeout",
+  );
+  assert.match(
+    formatWaitInterrupted("Reviewer — herdr", "aborted"),
+    /omit task to re-wait/,
+  );
+  assert.match(
+    formatWaitInterrupted("Reviewer — herdr", "aborted"),
+    /Do not resend the task/,
   );
 });

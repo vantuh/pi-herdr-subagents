@@ -149,11 +149,16 @@ Acceptance requires an increased `state_change_seq`, so a reused agent still `wo
 
 The `herdr:blocked` event is consumed by Herdr's installed Pi state extension. It lets the Herdr UI show that the Orchestrator is blocked while waiting for a child.
 
-### Re-waiting after a timeout
+### Re-waiting after a timeout or abort
 
 `timeoutMs` (default 600000ms / 10 minutes) bounds a single tool call's wait, not the child agent's
 lifetime. A large delegated task (e.g. spinning up testcontainers and iterating on e2e tests) can
-legitimately still be `working` when the tool call times out.
+legitimately still be `working` when the tool call times out. Outer layers can also abort sooner
+(for Cursor models: `PI_CURSOR_MCP_TOOL_TIMEOUT_SECONDS` / pi-tool bridge CallTool deadline), which
+surfaces as `The operation was aborted` while the child keeps running.
+
+On recoverable wait interrupt (abort or Herdr `timeout`), the tool returns a soft result — not
+`isError` — with the exact re-wait instructions. Do not treat that as task failure.
 
 To continue waiting on the same managed target without starting a new one or re-sending the task, call
 `herdr_agent` again with the same `tabLabel` and `task` omitted. This re-wait mode:

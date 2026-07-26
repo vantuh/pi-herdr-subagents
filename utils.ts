@@ -51,6 +51,57 @@ export function formatAgentOutput(
     : text;
 }
 
+/** Outer abort / Herdr wait timeout — child may still be running. */
+export function isRecoverableWaitInterrupt(error: unknown): boolean {
+  if (typeof error === "object" && error !== null) {
+    const code = (error as { code?: unknown }).code;
+    if (code === "timeout" || code === "ABORT_ERR") return true;
+    if ((error as { name?: unknown }).name === "AbortError") return true;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  const lower = message.toLowerCase();
+  // Prompt never accepted — re-wait without task will not help.
+  if (lower.includes("agent_prompt_stalled")) return false;
+  return (
+    lower === "aborted" ||
+    lower.includes("operation was aborted") ||
+    lower.includes(" failed [timeout]") ||
+    /\babort(ed)?\b/.test(lower)
+  );
+}
+
+export function waitInterruptReason(error: unknown): "aborted" | "timeout" {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "timeout"
+  ) {
+    return "timeout";
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  const lower = message.toLowerCase();
+  if (lower.includes(" failed [timeout]") || /\[timeout\]/.test(lower)) {
+    return "timeout";
+  }
+  return "aborted";
+}
+
+export function formatWaitInterrupted(
+  tabLabel: string,
+  reason: "aborted" | "timeout" = "aborted",
+): string {
+  const why =
+    reason === "timeout"
+      ? "Wait timed out"
+      : "Wait was aborted (outer tool/session timeout)";
+  return [
+    `${why} while Herdr agent ${tabLabel} is still running.`,
+    "The child was not closed and no new prompt was sent.",
+    `Call herdr_agent again with the same tabLabel "${tabLabel}" and omit task to re-wait.`,
+    "Do not resend the task.",
+  ].join("\n");
+}
+
 export async function createAgentTempFiles(
   systemPrompt: string,
 ): Promise<{ systemFile: string; resultFile: string }> {

@@ -9,7 +9,7 @@ If the user asks to open an agent without a task, do not inspect skills, agent f
 
 Each task must be self-contained: goal, scope, repo paths or source links, constraints, expected output, and read-only vs edit permission.
 
-If a call times out but the agent is still running, call \`herdr_agent\` again with the same \`tabLabel\` and no \`task\` to re-wait — not raw \`herdr wait\` or a new prompt into a busy agent.`;
+If a call times out or was aborted but the agent is still running, call \`herdr_agent\` again with the same \`tabLabel\` and no \`task\` to re-wait — not raw \`herdr wait\` or a new prompt into a busy agent. Soft interrupt tool results include this hint; follow it instead of treating the wait as failure.`;
 
 export function buildRunTurnInstructions(agent?: string): string {
   const profile = agent

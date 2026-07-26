@@ -91,7 +91,7 @@ Temporary polling guards handled those cases, including requiring an active stat
 
 Those guards no longer exist. Prompt submission uses atomic `agent prompt` without `--wait` (Herdr's `--wait` hardcodes a 5s lifecycle gate that stalls on slow Pi transitions). The extension then requires a newer `state_change_seq` with `working`/`blocked` — or settled idle/done — before `agent wait --until idle --until done`. After 5s still idle and `interactive_ready`, it nudges Enter once via `agent send-keys`.
 
-Re-wait uses `agent wait` and never resends the task.
+Re-wait uses `agent wait` and never resends the task. Abort / Herdr wait timeout now returns a soft tool result with the same re-wait instructions instead of a hard error, so the Orchestrator can continue without treating the child as failed.
 
 ## 9. Complete results should not depend on terminal scrollback
 

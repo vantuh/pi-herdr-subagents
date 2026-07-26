@@ -32,6 +32,12 @@ describe("constants", () => {
     expect(GLOBAL_INSTRUCTIONS).not.toContain("Proactively use");
   });
 
+  test("GLOBAL_INSTRUCTIONS covers abort and timeout re-wait", () => {
+    expect(GLOBAL_INSTRUCTIONS).toContain("times out or was aborted");
+    expect(GLOBAL_INSTRUCTIONS).toContain("no `task`");
+    expect(GLOBAL_INSTRUCTIONS).toContain("re-wait");
+  });
+
   test("buildRunTurnInstructions names agent when provided", () => {
     expect(buildRunTurnInstructions("scout")).toContain('agent: "scout"');
     expect(buildRunTurnInstructions()).toContain("smallest suitable");
