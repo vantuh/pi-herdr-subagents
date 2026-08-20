@@ -699,6 +699,18 @@ async function waitForPromptAcceptance(
   }
 }
 
+/** Remap Herdr 0.8.2 `agent_blocked` into an actionable Orchestrator error. */
+export function mapPromptError(error: unknown, target: string): never {
+  if (error instanceof HerdrCliError && error.code === "agent_blocked") {
+    throw new HerdrCliError(
+      `persistent agent "${target}" is waiting at an approval/question dialog; attach with \`herdr agent attach ${target}\` and resolve it before re-prompting`,
+      "agent_blocked",
+      ["agent", "prompt", target, "<prompt>"],
+    );
+  }
+  throw error;
+}
+
 export async function promptAgent(
   target: string,
   prompt: string,
@@ -710,7 +722,11 @@ export async function promptAgent(
   // looks like "text pasted, Enter never pressed". Submit atomically, then
   // wait for working ourselves (with one Enter recovery) before completion.
   const before = await getAgentSnapshot(target, signal);
-  await execHerdr(buildAgentPromptArgs(target, prompt), signal);
+  try {
+    await execHerdr(buildAgentPromptArgs(target, prompt), signal);
+  } catch (error) {
+    mapPromptError(error, target);
+  }
 
   if (!options.wait) return;
 

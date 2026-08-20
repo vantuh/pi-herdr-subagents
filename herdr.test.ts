@@ -8,8 +8,10 @@ import {
   chooseAgentColumnSplitTarget,
   findReusableAgentPane,
   findReusableAgentTab,
+  HerdrCliError,
   listCurrentWorkspaceAgents,
   listManagedWorkspaceAgents,
+  mapPromptError,
   parseAgentSnapshot,
   parseStartedAgentSnapshot,
   promptAcceptanceObserved,
@@ -25,6 +27,50 @@ test("builds an atomic prompt submit without the hardcoded --wait stall gate", (
     "reviewer_ab12",
     "Review",
   ]);
+});
+
+test("maps agent_blocked prompt failures to an actionable orchestrator error", () => {
+  const secret = "SECRET_PROMPT_TEXT";
+  const blocked = new HerdrCliError(
+    `herdr agent prompt worker_ab12 ${secret} failed [agent_blocked]: blocked`,
+    "agent_blocked",
+    ["agent", "prompt", "worker_ab12", secret],
+  );
+
+  assert.throws(
+    () => mapPromptError(blocked, "worker_ab12"),
+    (error: unknown) => {
+      assert.ok(error instanceof HerdrCliError);
+      assert.equal(error.code, "agent_blocked");
+      assert.match(error.message, /attach with `herdr agent attach worker_ab12`/);
+      assert.match(error.message, /resolve it before re-prompting/);
+      assert.deepEqual(error.args, [
+        "agent",
+        "prompt",
+        "worker_ab12",
+        "<prompt>",
+      ]);
+      assert.ok(!error.message.includes(secret));
+      assert.ok(!error.args.includes(secret));
+      return true;
+    },
+  );
+
+  const busy = new HerdrCliError(
+    "herdr agent prompt worker_ab12 <prompt> failed [agent_pane_busy]: busy",
+    "agent_pane_busy",
+    ["agent", "prompt", "worker_ab12", "<prompt>"],
+  );
+  assert.throws(
+    () => mapPromptError(busy, "worker_ab12"),
+    (error: unknown) => error === busy,
+  );
+
+  const plain = new Error("network down");
+  assert.throws(
+    () => mapPromptError(plain, "worker_ab12"),
+    (error: unknown) => error === plain,
+  );
 });
 
 test("builds a completion wait that ignores blocked", () => {
