@@ -48,7 +48,10 @@ function redactHerdrArgs(args: readonly string[]): string[] {
   return [...args];
 }
 
-function parseHerdrError(stderr: string, fallback: string): {
+function parseHerdrError(
+  stderr: string,
+  fallback: string,
+): {
   code?: string;
   message: string;
 } {
@@ -162,7 +165,9 @@ export function execHerdrApi(
       finish(undefined, response.result);
     });
     socket.on("error", (error) => finish(error));
-    socket.on("end", () => finish(new Error(`Herdr socket closed during ${method}.`)));
+    socket.on("end", () =>
+      finish(new Error(`Herdr socket closed during ${method}.`)),
+    );
     signal?.addEventListener("abort", onAbort, { once: true });
     if (signal?.aborted) onAbort();
   });
@@ -173,9 +178,12 @@ export async function getSessionSnapshot(
 ): Promise<HerdrSessionSnapshot> {
   const output = await execHerdr(["api", "snapshot"], signal);
   const snapshot = JSON.parse(output)?.result?.snapshot as
-    | HerdrSessionSnapshot
-    | undefined;
-  if (!snapshot || !Array.isArray(snapshot.panes) || !Array.isArray(snapshot.tabs)) {
+    HerdrSessionSnapshot | undefined;
+  if (
+    !snapshot ||
+    !Array.isArray(snapshot.panes) ||
+    !Array.isArray(snapshot.tabs)
+  ) {
     throw new Error("Malformed Herdr api snapshot response.");
   }
   return snapshot;
@@ -406,8 +414,7 @@ export function chooseAgentColumnSplitTarget(
   );
   return [...panes].sort(
     (a, b) =>
-      (areaByPaneId.get(b.pane_id) ?? 0) -
-      (areaByPaneId.get(a.pane_id) ?? 0),
+      (areaByPaneId.get(b.pane_id) ?? 0) - (areaByPaneId.get(a.pane_id) ?? 0),
   )[0];
 }
 
@@ -451,7 +458,9 @@ type StartedAgentSnapshot = {
   status: string;
 };
 
-export function parseStartedAgentSnapshot(output: string): StartedAgentSnapshot {
+export function parseStartedAgentSnapshot(
+  output: string,
+): StartedAgentSnapshot {
   let parsed: {
     result?: { agent?: { agent?: unknown; agent_status?: unknown } };
   };
@@ -472,10 +481,7 @@ export function parseStartedAgentSnapshot(output: string): StartedAgentSnapshot 
   return { agent, status };
 }
 
-export function buildAgentRenameArgs(
-  target: string,
-  name: string,
-): string[] {
+export function buildAgentRenameArgs(target: string, name: string): string[] {
   return ["agent", "rename", target, name];
 }
 
@@ -581,10 +587,7 @@ export type HerdrAgentSnapshot = {
   interactiveReady: boolean;
 };
 
-export function buildAgentPromptArgs(
-  target: string,
-  prompt: string,
-): string[] {
+export function buildAgentPromptArgs(target: string, prompt: string): string[] {
   return ["agent", "prompt", target, prompt];
 }
 
@@ -752,15 +755,7 @@ export function readAgent(
   signal?: AbortSignal,
 ): Promise<string> {
   return execHerdr(
-    [
-      "agent",
-      "read",
-      target,
-      "--source",
-      "recent-unwrapped",
-      "--lines",
-      "180",
-    ],
+    ["agent", "read", target, "--source", "recent-unwrapped", "--lines", "180"],
     signal,
   );
 }

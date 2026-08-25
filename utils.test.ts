@@ -35,7 +35,10 @@ test("writes and reads a managed result artifact", async () => {
     await readAgentResult(filePath),
     "HERDR_RESULT:\n- status: done",
   );
-  assert.equal(findResultFileMarker(`task\nHERDR_RESULT_FILE: ${filePath}`), filePath);
+  assert.equal(
+    findResultFileMarker(`task\nHERDR_RESULT_FILE: ${filePath}`),
+    filePath,
+  );
   await removeAgentTempFiles(filePath);
 });
 
@@ -59,7 +62,10 @@ test("clears stale result content before a reused-agent prompt", async () => {
 });
 
 test("rejects result markers outside managed temp directories", () => {
-  assert.equal(findResultFileMarker("HERDR_RESULT_FILE: /tmp/result.md"), undefined);
+  assert.equal(
+    findResultFileMarker("HERDR_RESULT_FILE: /tmp/result.md"),
+    undefined,
+  );
 });
 
 test("normalizes comma-separated tools", () => {
@@ -122,19 +128,27 @@ test("treats abort and herdr timeout as recoverable wait interrupts", () => {
   assert.equal(isRecoverableWaitInterrupt(abortErr), true);
   assert.equal(
     isRecoverableWaitInterrupt(
-      Object.assign(new Error("herdr agent wait x failed [timeout]: timed out"), {
-        code: "timeout",
-      }),
+      Object.assign(
+        new Error("herdr agent wait x failed [timeout]: timed out"),
+        {
+          code: "timeout",
+        },
+      ),
     ),
     true,
   );
   assert.equal(
     isRecoverableWaitInterrupt(
-      new Error("herdr agent prompt x failed [agent_prompt_stalled]: no change"),
+      new Error(
+        "herdr agent prompt x failed [agent_prompt_stalled]: no change",
+      ),
     ),
     false,
   );
-  assert.equal(waitInterruptReason(new Error("The operation was aborted")), "aborted");
+  assert.equal(
+    waitInterruptReason(new Error("The operation was aborted")),
+    "aborted",
+  );
   assert.equal(
     waitInterruptReason(
       Object.assign(new Error("failed [timeout]"), { code: "timeout" }),

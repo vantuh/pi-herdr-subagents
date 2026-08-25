@@ -25,7 +25,9 @@ function pane(overrides: Partial<PaneInfo> = {}): PaneInfo {
 }
 
 async function tempStatePath(): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "herdr-agents-state-test-"));
+  const dir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "herdr-agents-state-test-"),
+  );
   return path.join(dir, "state.json");
 }
 
@@ -66,7 +68,10 @@ test("ignores corrupted state files", async () => {
   const filePath = await tempStatePath();
   await fs.writeFile(filePath, "not json", "utf8");
 
-  assert.deepEqual(await loadHerdrAgentsState(filePath), emptyHerdrAgentsState());
+  assert.deepEqual(
+    await loadHerdrAgentsState(filePath),
+    emptyHerdrAgentsState(),
+  );
 });
 
 test("maps known pane lifecycle state by tab id", () => {

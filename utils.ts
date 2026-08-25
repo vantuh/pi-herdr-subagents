@@ -6,11 +6,12 @@ import * as path from "node:path";
 export const RESULT_FILE_MARKER = "HERDR_RESULT_FILE:";
 
 export function makeHerdrAgentName(profileName: string): string {
-  const base = profileName
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/^[^a-z]+/, "")
-    .slice(0, 22) || "agent";
+  const base =
+    profileName
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/^[^a-z]+/, "")
+      .slice(0, 22) || "agent";
   return `${base}_${randomBytes(4).toString("hex")}`;
 }
 
@@ -45,7 +46,8 @@ export function formatAgentOutput(
   closeError?: string,
 ): string {
   const text =
-    output.trim() || `(Herdr agent ${tabLabel} finished with no visible output.)`;
+    output.trim() ||
+    `(Herdr agent ${tabLabel} finished with no visible output.)`;
   return closeError
     ? `${text}\n\nWarning: failed to close one-shot Herdr agent ${tabLabel}: ${closeError}`
     : text;
@@ -107,7 +109,10 @@ export async function createAgentTempFiles(
 ): Promise<{ systemFile: string; resultFile: string }> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "herdr-agent-"));
   const systemFile = path.join(dir, "system.md");
-  await fs.writeFile(systemFile, systemPrompt, { encoding: "utf8", mode: 0o600 });
+  await fs.writeFile(systemFile, systemPrompt, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
   return { systemFile, resultFile: path.join(dir, "result.md") };
 }
 

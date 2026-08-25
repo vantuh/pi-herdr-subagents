@@ -42,7 +42,10 @@ test("maps agent_blocked prompt failures to an actionable orchestrator error", (
     (error: unknown) => {
       assert.ok(error instanceof HerdrCliError);
       assert.equal(error.code, "agent_blocked");
-      assert.match(error.message, /attach with `herdr agent attach worker_ab12`/);
+      assert.match(
+        error.message,
+        /attach with `herdr agent attach worker_ab12`/,
+      );
       assert.match(error.message, /resolve it before re-prompting/);
       assert.deepEqual(error.args, [
         "agent",
@@ -74,17 +77,20 @@ test("maps agent_blocked prompt failures to an actionable orchestrator error", (
 });
 
 test("builds a completion wait that ignores blocked", () => {
-  assert.deepEqual(buildAgentWaitArgs("worker_ab12", 120000, ["idle", "done"]), [
-    "agent",
-    "wait",
-    "worker_ab12",
-    "--until",
-    "idle",
-    "--until",
-    "done",
-    "--timeout",
-    "120000",
-  ]);
+  assert.deepEqual(
+    buildAgentWaitArgs("worker_ab12", 120000, ["idle", "done"]),
+    [
+      "agent",
+      "wait",
+      "worker_ab12",
+      "--until",
+      "idle",
+      "--until",
+      "done",
+      "--timeout",
+      "120000",
+    ],
+  );
 });
 
 test("reassigns the requested automation name after startup recovery", () => {
@@ -110,7 +116,10 @@ test("recognizes Pi after a transient startup kind mismatch", () => {
 
   assert.equal(startedAgentReady(kiro, "pi"), false);
   assert.equal(startedAgentReady(pi, "pi"), true);
-  assert.equal(startedAgentReady({ agent: "pi", status: "working" }, "pi"), false);
+  assert.equal(
+    startedAgentReady({ agent: "pi", status: "working" }, "pi"),
+    false,
+  );
 });
 
 test("parses agent get snapshots used for prompt acceptance", () => {
@@ -476,7 +485,9 @@ test("skips panes with an agent but no matching tab", () => {
       agent_status: "idle",
     },
   ];
-  const tabs: TabInfo[] = [{ tab_id: "tab-orchestrator", label: "Orchestrator" }];
+  const tabs: TabInfo[] = [
+    { tab_id: "tab-orchestrator", label: "Orchestrator" },
+  ];
   const context: HerdrContext = {
     panes,
     currentPane: panes[0]!,
@@ -568,7 +579,10 @@ test("lists a newly created managed pane before Pi agent detection", () => {
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
 
-  assert.equal(listManagedWorkspaceAgents(context, state)[0]?.paneId, "pane-starting");
+  assert.equal(
+    listManagedWorkspaceAgents(context, state)[0]?.paneId,
+    "pane-starting",
+  );
 });
 
 test("reuses a legacy same-tab pane record without a layout field", () => {
@@ -687,10 +701,7 @@ test("does not resize the outer orchestrator split", () => {
     second: { type: "pane" as const, pane_id: "agent" },
   };
 
-  assert.deepEqual(
-    buildEqualAgentSplitRatios(root, new Set(["agent"])),
-    [],
-  );
+  assert.deepEqual(buildEqualAgentSplitRatios(root, new Set(["agent"])), []);
 });
 
 test("splits the largest existing agent pane in the right column", () => {

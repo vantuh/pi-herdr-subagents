@@ -90,9 +90,7 @@ async function bestEffort<T>(fallback: T, task: () => Promise<T>): Promise<T> {
   }
 }
 
-async function rebalanceCurrentPaneAgents(
-  signal?: AbortSignal,
-): Promise<void> {
+async function rebalanceCurrentPaneAgents(signal?: AbortSignal): Promise<void> {
   const current = await getCurrentContext(signal);
   const state = await loadHerdrAgentsState();
   if (pruneHerdrAgentsState(state, current.panes)) {
@@ -113,7 +111,9 @@ async function rebalanceCurrentPaneAgents(
 
 async function loadCurrentAgents(): Promise<HerdrAgentInfo[]> {
   const current = await getCurrentContext();
-  const state = await bestEffort(emptyHerdrAgentsState(), () => loadHerdrAgentsState());
+  const state = await bestEffort(emptyHerdrAgentsState(), () =>
+    loadHerdrAgentsState(),
+  );
   await bestEffort(undefined, async () => {
     if (pruneHerdrAgentsState(state, current.panes)) {
       await saveHerdrAgentsState(state);
@@ -126,17 +126,19 @@ async function showNoAgentsDialog(ctx: ExtensionCommandContext): Promise<void> {
   await ctx.ui.custom<void>(
     (_tui, theme, _kb, done) => {
       const container = new Container();
-      container.addChild(new DynamicBorder((str: string) => theme.fg("accent", str)));
+      container.addChild(
+        new DynamicBorder((str: string) => theme.fg("accent", str)),
+      );
       container.addChild(
         new Text(theme.fg("accent", theme.bold("Herdr Agents")), 1, 0),
       );
       container.addChild(
         new Text("No Herdr agents in the current workspace.", 1, 0),
       );
+      container.addChild(new Text(theme.fg("dim", "enter/esc close"), 1, 0));
       container.addChild(
-        new Text(theme.fg("dim", "enter/esc close"), 1, 0),
+        new DynamicBorder((str: string) => theme.fg("accent", str)),
       );
-      container.addChild(new DynamicBorder((str: string) => theme.fg("accent", str)));
 
       return {
         render: (width: number) => container.render(width),
@@ -157,9 +159,10 @@ async function pickAgentAction(
   ctx: ExtensionCommandContext,
   agents: HerdrAgentInfo[],
 ): Promise<AgentMenuAction | undefined> {
-  const result = await ctx.ui.custom<
-    { action: "focus" | "close"; tabId: string } | null
-  >(
+  const result = await ctx.ui.custom<{
+    action: "focus" | "close";
+    tabId: string;
+  } | null>(
     (tui, theme, _kb, done) => {
       const colorStatus = (status: string) => {
         if (status === "working") return theme.fg("accent", status);
@@ -183,7 +186,9 @@ async function pickAgentAction(
       }));
 
       const container = new Container();
-      container.addChild(new DynamicBorder((str: string) => theme.fg("accent", str)));
+      container.addChild(
+        new DynamicBorder((str: string) => theme.fg("accent", str)),
+      );
       container.addChild(
         new Text(theme.fg("accent", theme.bold("Herdr Agents")), 1, 0),
       );
@@ -195,18 +200,24 @@ async function pickAgentAction(
         scrollInfo: (text) => theme.fg("dim", text),
         noMatch: (text) => theme.fg("warning", text),
       });
-      selectList.onSelect = (item) => done({ action: "focus", tabId: item.value });
+      selectList.onSelect = (item) =>
+        done({ action: "focus", tabId: item.value });
       selectList.onCancel = () => done(null);
 
       container.addChild(selectList);
       container.addChild(
         new Text(
-          theme.fg("dim", "↑↓ navigate • enter focus • d/ctrl+d close • esc close"),
+          theme.fg(
+            "dim",
+            "↑↓ navigate • enter focus • d/ctrl+d close • esc close",
+          ),
           1,
           0,
         ),
       );
-      container.addChild(new DynamicBorder((str: string) => theme.fg("accent", str)));
+      container.addChild(
+        new DynamicBorder((str: string) => theme.fg("accent", str)),
+      );
 
       return {
         render: (width: number) => container.render(width),
@@ -223,7 +234,10 @@ async function pickAgentAction(
         },
       };
     },
-    { overlay: true, overlayOptions: { width: "70%", minWidth: 60, maxHeight: "80%" } },
+    {
+      overlay: true,
+      overlayOptions: { width: "70%", minWidth: 60, maxHeight: "80%" },
+    },
   );
 
   if (!result) return undefined;
@@ -361,7 +375,10 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       }
 
       if (!ctx.isIdle()) {
-        ctx.ui.notify("Agent is busy. Wait for the current turn to finish.", "warning");
+        ctx.ui.notify(
+          "Agent is busy. Wait for the current turn to finish.",
+          "warning",
+        );
         return;
       }
 
@@ -441,15 +458,16 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
         const state = await bestEffort(emptyHerdrAgentsState(), () =>
           loadHerdrAgentsState(),
         );
-        const tabs = layout === "tab"
-          ? await listTabs(current.workspaceId, signal)
-          : [];
-        const reusableTab = layout === "tab"
-          ? findReusableAgentTab(current, tabs, baseLabel)
-          : undefined;
-        const reusablePane = layout === "pane"
-          ? findReusableAgentPane(current, state, baseLabel)
-          : undefined;
+        const tabs =
+          layout === "tab" ? await listTabs(current.workspaceId, signal) : [];
+        const reusableTab =
+          layout === "tab"
+            ? findReusableAgentTab(current, tabs, baseLabel)
+            : undefined;
+        const reusablePane =
+          layout === "pane"
+            ? findReusableAgentPane(current, state, baseLabel)
+            : undefined;
         const pane = reusableTab?.pane ?? reusablePane;
         const tabId = reusableTab?.tab.tab_id ?? reusablePane?.tab_id;
         const label = reusableTab?.tab.label ?? baseLabel;
@@ -517,11 +535,14 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
                 removeAgentTempFiles(record.resultFile),
               );
               if (record.layout !== "tab") {
-                await bestEffort(undefined, () => rebalanceCurrentPaneAgents(signal));
+                await bestEffort(undefined, () =>
+                  rebalanceCurrentPaneAgents(signal),
+                );
               }
               closed = true;
             } catch (error) {
-              closeError = error instanceof Error ? error.message : String(error);
+              closeError =
+                error instanceof Error ? error.message : String(error);
             }
           }
           const text = formatAgentOutput(output, label, closeError);
@@ -560,7 +581,10 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
           }
           throw error;
         } finally {
-          pi.events.emit("herdr:blocked", { active: false, label: blockedLabel });
+          pi.events.emit("herdr:blocked", {
+            active: false,
+            label: blockedLabel,
+          });
         }
       }
 
@@ -592,169 +616,178 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       let automationName: string | undefined;
       let resultFile: string | undefined;
       let reused = false;
-      const releasePlacement = layout === "pane"
-        ? await acquirePanePlacementLock()
-        : () => {};
+      const releasePlacement =
+        layout === "pane" ? await acquirePanePlacementLock() : () => {};
 
       try {
         // Refresh context only after acquiring the short placement lock so
         // parallel calls see panes and labels created by earlier calls.
         const current = await getCurrentContext(signal);
 
-        await execHerdr(
-          ["tab", "rename", current.currentTab, "Orchestrator"],
-          signal,
-        );
+        await execHerdr(["tab", "rename", current.currentTab, "agent"], signal);
 
-        const tabs = layout === "tab"
-          ? await listTabs(current.workspaceId, signal)
-          : [];
+        const tabs =
+          layout === "tab" ? await listTabs(current.workspaceId, signal) : [];
         const state = await bestEffort(emptyHerdrAgentsState(), () =>
           loadHerdrAgentsState(),
         );
 
         if (persistent) {
-        if (layout === "tab") {
-          const reusable = findReusableAgentTab(current, tabs, baseLabel);
-          if (reusable) {
-            reused = true;
-            tabId = reusable.tab.tab_id;
-            tabLabel = reusable.tab.label;
-            paneId = reusable.pane.pane_id;
-            agentPane = reusable.pane;
-            const key = paneStateKey(reusable.pane);
-            const record = key ? state.agents[key] : undefined;
-            automationName = record?.automationName;
-            resultFile = record?.resultFile;
+          if (layout === "tab") {
+            const reusable = findReusableAgentTab(current, tabs, baseLabel);
+            if (reusable) {
+              reused = true;
+              tabId = reusable.tab.tab_id;
+              tabLabel = reusable.tab.label;
+              paneId = reusable.pane.pane_id;
+              agentPane = reusable.pane;
+              const key = paneStateKey(reusable.pane);
+              const record = key ? state.agents[key] : undefined;
+              automationName = record?.automationName;
+              resultFile = record?.resultFile;
+            }
+          } else {
+            const reusable = findReusableAgentPane(current, state, baseLabel);
+            if (reusable) {
+              reused = true;
+              tabId = reusable.tab_id;
+              paneId = reusable.pane_id;
+              agentPane = reusable;
+              const key = paneStateKey(reusable);
+              const record = key ? state.agents[key] : undefined;
+              automationName = record?.automationName;
+              resultFile = record?.resultFile;
+            }
           }
-        } else {
-          const reusable = findReusableAgentPane(current, state, baseLabel);
-          if (reusable) {
-            reused = true;
-            tabId = reusable.tab_id;
-            paneId = reusable.pane_id;
-            agentPane = reusable;
-            const key = paneStateKey(reusable);
-            const record = key ? state.agents[key] : undefined;
-            automationName = record?.automationName;
-            resultFile = record?.resultFile;
-          }
-        }
-      }
-
-      if (!reused && layout === "tab") {
-        tabLabel = uniqueLabel(baseLabel, tabs);
-        const createOutput = await execHerdr(
-          [
-            "tab",
-            "create",
-            "--workspace",
-            current.workspaceId,
-            "--label",
-            tabLabel,
-            "--cwd",
-            ctx.cwd,
-            "--env",
-            "HERDR_AGENT_CHILD=1",
-            "--env",
-            "PROCESS_LAUNCHED_BY_Q=1",
-            "--no-focus",
-          ],
-          signal,
-        );
-        let createResult;
-        try {
-          createResult = JSON.parse(createOutput)?.result;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          throw new Error(
-            `Malformed Herdr tab create output: expected JSON with result.root_pane.pane_id (${message}). Output: ${createOutput}`,
-          );
         }
 
-        const rootPane = createResult?.root_pane as PaneInfo | undefined;
-        if (!rootPane || typeof rootPane.pane_id !== "string") {
-          throw new Error(
-            `Malformed Herdr tab create output: missing result.root_pane.pane_id. Output: ${createOutput}`,
-          );
-        }
-        paneId = rootPane.pane_id;
-        agentPane = rootPane;
-        tabId = typeof rootPane.tab_id === "string" ? rootPane.tab_id : undefined;
-
-        if (!tabId) {
-          const createdTabs = await listTabs(current.workspaceId, signal);
-          tabId = createdTabs.find((tab) => tab.label === tabLabel)?.tab_id;
-        }
-      }
-
-      if (!reused && layout === "pane") {
-        const managedAgents = listManagedWorkspaceAgents(current, state).filter(
-          (item) => item.layout === "pane" && item.tabId === current.currentTab,
-        );
-        tabLabel = uniqueLabel(
-          baseLabel,
-          managedAgents.map((item) => ({
-            tab_id: item.paneId,
-            label: item.tabLabel,
-          })),
-        );
-        const managedPaneIds = new Set(managedAgents.map((item) => item.paneId));
-        const managedPanes = current.panes.filter((pane) =>
-          managedPaneIds.has(pane.pane_id),
-        );
-        let splitTarget = managedPanes[0];
-        if (managedPanes.length > 0) {
-          const layoutOutput = await execHerdr(
-            ["pane", "layout", "--pane", current.currentPane.pane_id],
+        if (!reused && layout === "tab") {
+          tabLabel = uniqueLabel(baseLabel, tabs);
+          const createOutput = await execHerdr(
+            [
+              "tab",
+              "create",
+              "--workspace",
+              current.workspaceId,
+              "--label",
+              tabLabel,
+              "--cwd",
+              ctx.cwd,
+              "--env",
+              "HERDR_AGENT_CHILD=1",
+              "--env",
+              "PROCESS_LAUNCHED_BY_Q=1",
+              "--no-focus",
+            ],
             signal,
           );
-          const paneLayout = JSON.parse(layoutOutput)?.result?.layout;
-          splitTarget = chooseAgentColumnSplitTarget(managedPanes, paneLayout);
+          let createResult;
+          try {
+            createResult = JSON.parse(createOutput)?.result;
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            throw new Error(
+              `Malformed Herdr tab create output: expected JSON with result.root_pane.pane_id (${message}). Output: ${createOutput}`,
+            );
+          }
+
+          const rootPane = createResult?.root_pane as PaneInfo | undefined;
+          if (!rootPane || typeof rootPane.pane_id !== "string") {
+            throw new Error(
+              `Malformed Herdr tab create output: missing result.root_pane.pane_id. Output: ${createOutput}`,
+            );
+          }
+          paneId = rootPane.pane_id;
+          agentPane = rootPane;
+          tabId =
+            typeof rootPane.tab_id === "string" ? rootPane.tab_id : undefined;
+
+          if (!tabId) {
+            const createdTabs = await listTabs(current.workspaceId, signal);
+            tabId = createdTabs.find((tab) => tab.label === tabLabel)?.tab_id;
+          }
         }
 
-        const createOutput = await execHerdr(
-          [
-            "pane",
-            "split",
-            splitTarget?.pane_id ?? current.currentPane.pane_id,
-            "--direction",
-            splitTarget ? "down" : "right",
-            "--ratio",
-            splitTarget ? "0.5" : "0.6",
-            "--cwd",
-            ctx.cwd,
-            "--env",
-            "HERDR_AGENT_CHILD=1",
-            "--env",
-            "PROCESS_LAUNCHED_BY_Q=1",
-            "--no-focus",
-          ],
-          signal,
-        );
-        let createResult;
-        try {
-          createResult = JSON.parse(createOutput)?.result;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          throw new Error(
-            `Malformed Herdr pane split output: expected JSON with result.pane.pane_id (${message}). Output: ${createOutput}`,
+        if (!reused && layout === "pane") {
+          const managedAgents = listManagedWorkspaceAgents(
+            current,
+            state,
+          ).filter(
+            (item) =>
+              item.layout === "pane" && item.tabId === current.currentTab,
           );
-        }
-        const createdPane = createResult?.pane as PaneInfo | undefined;
-        if (!createdPane || typeof createdPane.pane_id !== "string") {
-          throw new Error(
-            `Malformed Herdr pane split output: missing result.pane.pane_id. Output: ${createOutput}`,
+          tabLabel = uniqueLabel(
+            baseLabel,
+            managedAgents.map((item) => ({
+              tab_id: item.paneId,
+              label: item.tabLabel,
+            })),
           );
+          const managedPaneIds = new Set(
+            managedAgents.map((item) => item.paneId),
+          );
+          const managedPanes = current.panes.filter((pane) =>
+            managedPaneIds.has(pane.pane_id),
+          );
+          let splitTarget = managedPanes[0];
+          if (managedPanes.length > 0) {
+            const layoutOutput = await execHerdr(
+              ["pane", "layout", "--pane", current.currentPane.pane_id],
+              signal,
+            );
+            const paneLayout = JSON.parse(layoutOutput)?.result?.layout;
+            splitTarget = chooseAgentColumnSplitTarget(
+              managedPanes,
+              paneLayout,
+            );
+          }
+
+          const createOutput = await execHerdr(
+            [
+              "pane",
+              "split",
+              splitTarget?.pane_id ?? current.currentPane.pane_id,
+              "--direction",
+              splitTarget ? "down" : "right",
+              "--ratio",
+              splitTarget ? "0.5" : "0.6",
+              "--cwd",
+              ctx.cwd,
+              "--env",
+              "HERDR_AGENT_CHILD=1",
+              "--env",
+              "PROCESS_LAUNCHED_BY_Q=1",
+              "--no-focus",
+            ],
+            signal,
+          );
+          let createResult;
+          try {
+            createResult = JSON.parse(createOutput)?.result;
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            throw new Error(
+              `Malformed Herdr pane split output: expected JSON with result.pane.pane_id (${message}). Output: ${createOutput}`,
+            );
+          }
+          const createdPane = createResult?.pane as PaneInfo | undefined;
+          if (!createdPane || typeof createdPane.pane_id !== "string") {
+            throw new Error(
+              `Malformed Herdr pane split output: missing result.pane.pane_id. Output: ${createOutput}`,
+            );
+          }
+          paneId = createdPane.pane_id;
+          tabId = createdPane.tab_id || current.currentTab;
+          agentPane = createdPane;
+          await execHerdr(["pane", "rename", paneId, tabLabel], signal);
         }
-        paneId = createdPane.pane_id;
-        tabId = createdPane.tab_id || current.currentTab;
-        agentPane = createdPane;
-        await execHerdr(["pane", "rename", paneId, tabLabel], signal);
-      }
 
         if (!tabId || !paneId) {
-          throw new Error(`Could not identify Herdr tab or pane for ${tabLabel}.`);
+          throw new Error(
+            `Could not identify Herdr tab or pane for ${tabLabel}.`,
+          );
         }
 
         if (!agentPane?.terminal_id) {
@@ -772,7 +805,8 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
           resultFile = tempFiles.resultFile;
           const piArgs = ["--name", tabLabel];
           if (agent.model) piArgs.push("--model", agent.model);
-          if (agent.tools?.length) piArgs.push("--tools", agent.tools.join(","));
+          if (agent.tools?.length)
+            piArgs.push("--tools", agent.tools.join(","));
           piArgs.push("--append-system-prompt", tempFiles.systemFile);
 
           onUpdate?.({
@@ -785,9 +819,9 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
             details: { tabId, paneId, tabLabel, lifecycle, reused, agent },
           });
           await startAgent(automationName, paneId, piArgs, signal);
-          agentPane = (await listPanes(signal)).find(
-            (pane) => pane.pane_id === paneId,
-          ) ?? agentPane;
+          agentPane =
+            (await listPanes(signal)).find((pane) => pane.pane_id === paneId) ??
+            agentPane;
         } else {
           resultFile ??= await createResultFile();
         }
@@ -811,7 +845,9 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       }
 
       if (!tabId || !paneId) {
-        throw new Error(`Could not identify Herdr tab or pane for ${tabLabel}.`);
+        throw new Error(
+          `Could not identify Herdr tab or pane for ${tabLabel}.`,
+        );
       }
 
       const target = automationName ?? paneId;
@@ -879,7 +915,9 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
               signal,
             );
             if (agentPane) {
-              await bestEffort(undefined, () => deleteAgentLifecycle(agentPane!));
+              await bestEffort(undefined, () =>
+                deleteAgentLifecycle(agentPane!),
+              );
             }
             await bestEffort(undefined, () => removeAgentTempFiles(resultFile));
             if (layout === "pane") {
@@ -940,7 +978,10 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
         throw error;
       } finally {
         if (wait) {
-          pi.events.emit("herdr:blocked", { active: false, label: blockedLabel });
+          pi.events.emit("herdr:blocked", {
+            active: false,
+            label: blockedLabel,
+          });
         }
       }
     },

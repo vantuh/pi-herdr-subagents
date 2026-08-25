@@ -34,7 +34,10 @@ const STATE_PATH_ENV = "HERDR_AGENTS_STATE_PATH";
 // the same process would be an avoidable bug.
 const stateFileQueues = new Map<string, Promise<unknown>>();
 
-function withStateFileLock<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
+function withStateFileLock<T>(
+  filePath: string,
+  fn: () => Promise<T>,
+): Promise<T> {
   const previous = stateFileQueues.get(filePath) ?? Promise.resolve();
   const next = previous.then(fn, fn);
   stateFileQueues.set(
@@ -69,7 +72,9 @@ function isLayout(value: unknown): value is HerdrAgentLayout {
 // terminal_id is used as the durable state key (rather than pane_id/tab_id)
 // because Herdr can recreate panes/tabs with new ids while keeping the same
 // underlying terminal, and we want lifecycle state to survive that.
-export function paneStateKey(pane: Pick<PaneInfo, "terminal_id">): string | undefined {
+export function paneStateKey(
+  pane: Pick<PaneInfo, "terminal_id">,
+): string | undefined {
   return pane.terminal_id ? `terminal:${pane.terminal_id}` : undefined;
 }
 
@@ -102,7 +107,9 @@ export async function loadHerdrAgentsState(
 
     state.agents[key] = {
       lifecycle: record.lifecycle,
-      ...(typeof record.tabLabel === "string" ? { tabLabel: record.tabLabel } : {}),
+      ...(typeof record.tabLabel === "string"
+        ? { tabLabel: record.tabLabel }
+        : {}),
       ...(typeof record.agent === "string" ? { agent: record.agent } : {}),
       ...(typeof record.automationName === "string"
         ? { automationName: record.automationName }
@@ -154,7 +161,9 @@ export function pruneHerdrAgentsState(
   panes: PaneInfo[],
 ): boolean {
   const liveKeys = new Set(
-    panes.map((pane) => paneStateKey(pane)).filter((key): key is string => !!key),
+    panes
+      .map((pane) => paneStateKey(pane))
+      .filter((key): key is string => !!key),
   );
 
   let changed = false;
