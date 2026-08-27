@@ -74,6 +74,17 @@ export interface ChildOutcome {
   stalled?: boolean;
   /** Never leaves `working`, so waits time out or get aborted. */
   neverSettle?: boolean;
+  /** Settle as `done` rather than `idle`. Both mean "finished" to Herdr. */
+  settleStatus?: "idle" | "done";
+  /**
+   * Keep reporting the *previous* turn's status and `state_change_seq` for this
+   * long after the prompt is submitted, before starting the new turn.
+   *
+   * Reproduces the reused-agent race: a persistent child still exposes its
+   * prior settled state, and a poller that accepts any `idle` would collect the
+   * previous turn's output as if it answered the new prompt.
+   */
+  staleWindowMs?: number;
 }
 
 export interface ChildTurn {
@@ -160,6 +171,12 @@ export class FakeHerdr {
   private readonly layouts = new Map<string, LayoutNode>();
   private readonly agents = new Map<string, FakeAgent>();
   private readonly startFailures: string[] = [];
+  /** Fail every `agent start` with this code, ignoring the queue. */
+  private alwaysFailStartWith?: string;
+  /** Pane Herdr reports as focused; the extension should prefer HERDR_PANE_ID. */
+  focusedPaneId = "";
+  private childrenHeld = false;
+  private readonly heldTurns: Array<() => Promise<void>> = [];
   /** Prompts whose Enter never fired, keyed by agent name. */
   private readonly stalledPrompts = new Map<string, () => Promise<void>>();
   private behavior: ChildBehavior = defaultBehavior;
@@ -188,10 +205,33 @@ export class FakeHerdr {
       env: {},
     };
     this.panes.push(this.orchestratorPane);
+    this.focusedPaneId = this.orchestratorPane.pane_id;
     this.layouts.set(tab.tab_id, {
       type: "pane",
       pane_id: this.orchestratorPane.pane_id,
     });
+  }
+
+  /** Keep failing `agent start` with this code until cleared. */
+  failEveryStart(code: string | undefined): void {
+    this.alwaysFailStartWith = code;
+  }
+
+  /**
+   * Accept prompts but do not start the simulated turns yet.
+   *
+   * Lets a test make several children settle at the same moment, which is the
+   * only way to land two detached outcomes in one poller tick.
+   */
+  holdChildren(): void {
+    this.childrenHeld = true;
+  }
+
+  /** Run every held turn to completion, so all of them are settled on return. */
+  async releaseChildren(): Promise<void> {
+    this.childrenHeld = false;
+    const held = this.heldTurns.splice(0);
+    await Promise.all(held.map((run) => run()));
   }
 
   setBehavior(behavior: ChildBehavior): void {
@@ -363,7 +403,7 @@ export class FakeHerdr {
         snapshot: {
           panes: this.panes.map(({ env: _env, ...pane }) => pane),
           tabs: this.tabs,
-          focused_pane_id: this.orchestratorPane.pane_id,
+          focused_pane_id: this.focusedPaneId,
           focused_tab_id: this.orchestratorPane.tab_id,
           focused_workspace_id: this.workspaceId,
         },
@@ -494,7 +534,7 @@ export class FakeHerdr {
 
       const separator = argv.indexOf("--");
       const piArgs = separator >= 0 ? argv.slice(separator + 1) : [];
-      const failure = this.startFailures.shift();
+      const failure = this.alwaysFailStartWith ?? this.startFailures.shift();
 
       if (failure === "agent_kind_mismatch") {
         // A provider child can briefly own the pane before Pi claims it. The
@@ -610,6 +650,9 @@ export class FakeHerdr {
     agent.resultFile = turn.resultFile;
 
     const run = async () => {
+      // Hold the previous turn's status and seq so the extension cannot mistake
+      // them for acceptance of this prompt.
+      if (outcome.staleWindowMs) await this.delay(outcome.staleWindowMs);
       this.setStatus(agent, "working");
       await this.delay(outcome.delayMs ?? DEFAULT_WORKING_MS);
       if (outcome.neverSettle) return;
@@ -627,13 +670,17 @@ export class FakeHerdr {
         }
       }
       agent.transcript = outcome.transcript ?? agent.transcript;
-      this.setStatus(agent, "idle");
+      this.setStatus(agent, outcome.settleStatus ?? "idle");
     };
 
     if (outcome.stalled) {
       // Text is in the composer but the agent never left idle: the extension
       // must notice and send one Enter, which releases this.
       this.stalledPrompts.set(agent.name, run);
+      return;
+    }
+    if (this.childrenHeld) {
+      this.heldTurns.push(run);
       return;
     }
     await run();

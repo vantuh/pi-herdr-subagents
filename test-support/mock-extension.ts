@@ -58,6 +58,12 @@ export function createMockHost(options: {
   cwd: string;
   hasUI?: boolean;
   isIdle?: boolean;
+  /**
+   * Keystrokes to feed the Nth `ctx.ui.custom` overlay, which is how the
+   * `/herdr-agents` manager is driven without a terminal. A call with no entry
+   * left cancels, which is what ends the manager loop.
+   */
+  dialogInputs?: string[][];
 }): MockHost {
   const messages: SentMessage[] = [];
   const userMessages: string[] = [];
@@ -75,6 +81,38 @@ export function createMockHost(options: {
     Array<(event: unknown, ctx: unknown) => unknown>
   >();
 
+  const theme = {
+    fg: (_color: string, text: string) => text,
+    bg: (_color: string, text: string) => text,
+    bold: (text: string) => text,
+  };
+  let dialogCall = 0;
+
+  // Builds the real overlay component and feeds it scripted keystrokes, so the
+  // manager's select/close branches run without a terminal.
+  const custom = async (factory: any) => {
+    const keys = options.dialogInputs?.[dialogCall++];
+    return await new Promise((resolve) => {
+      let settled = false;
+      const done = (value?: unknown) => {
+        if (settled) return;
+        settled = true;
+        resolve(value ?? null);
+      };
+      const component = factory(
+        { requestRender: () => undefined },
+        theme,
+        {},
+        done,
+      );
+      for (const key of keys ?? []) {
+        if (settled) break;
+        component.handleInput?.(key);
+      }
+      done(null);
+    });
+  };
+
   const ctx = {
     cwd: options.cwd,
     hasUI: options.hasUI ?? true,
@@ -82,18 +120,14 @@ export function createMockHost(options: {
     isIdle: () => options.isIdle ?? true,
     signal: undefined,
     ui: {
-      theme: {
-        fg: (_color: string, text: string) => text,
-        bg: (_color: string, text: string) => text,
-        bold: (text: string) => text,
-      },
+      theme,
       setWidget: (id: string, content: unknown) => {
         if (content === undefined) widgets.delete(id);
         else widgets.set(id, content);
       },
       notify: (message: string, level?: string) =>
         notifications.push({ message, level }),
-      custom: async () => null,
+      custom,
     },
   } as unknown as ExtensionContext;
 

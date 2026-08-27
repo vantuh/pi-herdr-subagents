@@ -83,7 +83,10 @@ links `index.ts` cannot be imported.
 Three layers:
 
 - **Unit** (`*.test.ts` next to their module) — pure helpers: arg builders,
-  snapshot parsing, layout ratios, state records, widget rendering.
+  snapshot parsing, layout ratios, state records, widget rendering, profile
+  discovery precedence, and the child-mode contract. `imports.test.ts` walks
+  every module's relative imports, which is the one failure (a dangling sibling
+  import) that breaks Pi at load time without failing any other test.
 - **Integration** (`integration.test.ts`) — the real extension, loaded through a
   mock `ExtensionAPI`, driving a fake Herdr. `HERDR_BIN_PATH` points at
   `test-support/herdr-shim.mjs`, which forwards argv over a socket to the
@@ -113,6 +116,24 @@ re-wait path, detached result and question delivery through the widget poller
 (exactly once), the tab layout, and the injected Orchestrator / `/run`
 instructions.
 
+Regressions from `docs/session-findings.md` that used to be checked by hand and
+now have tests, with the finding they came from:
+
+| Behavior | Finding |
+|---|---|
+| Child mode registers `ask_question` only — never `herdr_agent`, commands, renderers or instruction injection | §4 |
+| Child persists each finalized assistant message to the artifact; ignores blank and non-assistant messages | §4, §9 |
+| `ask_question` refuses to strand the child when no channel exists | §4 |
+| Project profile overrides a user profile of the same name; unusable files are skipped | §2 |
+| Split targets `HERDR_PANE_ID`, not the pane Herdr reports as focused | §5 |
+| A reused agent's previous settled state is not accepted as this turn's result | §8 |
+| A child that finishes as `done` rather than `idle` is still collected | §8 |
+| One-shot cleanup removes the managed temp dir; a persistent agent keeps it | §9 |
+| `agent_pane_busy` retry is bounded and gives up without closing anything | §12 |
+| `/herdr-agents` focuses, closes (with temp cleanup), and reports an empty workspace | §9 |
+| Two detached outcomes in one poller tick arrive as one batch, only the last triggering a turn | index.ts |
+| Every relative import resolves | §15 |
+
 Covered by the e2e layer: a real child produces a real result artifact and its
 pane is really closed; a persistent child keeps its context across two tasks
 (asserted on the model's request history); a real `ask_question` tool call
@@ -120,9 +141,10 @@ travels from a tools-restricted child back to the Orchestrator and the answer
 finishes it; two real agent panes stack into one right column with the
 Orchestrator held at 60%.
 
-Not covered: the TUI manager dialog (`/herdr-agents`), and the Orchestrator's own
-Pi process (the extension is driven directly, not through a real model emitting
-`herdr_agent` tool calls).
+Not covered: the Orchestrator's own Pi process (the extension is driven
+directly, not through a real model emitting `herdr_agent` tool calls), the zsh
+`HISTFILE` child guard (§14, it lives in the `zsh` package), and multi-process
+state-file coordination (intentionally out of scope).
 
 One e2e-specific constraint worth knowing: `MockLlm` stalls ~1.5s before its
 content chunk on purpose. Herdr samples the pane for agent state, so an instant
@@ -141,9 +163,15 @@ await withHarness({}, async (harness) => {
 ```
 
 `FakeHerdr` hooks: `setBehavior` (per-prompt child outcome — `result`,
-`question`, `transcript`, `delayMs`, `stalled`, `neverSettle`),
-`queueStartFailures` (fail the next `agent start` with a Herdr error code),
-`completeAgent`, `callsMatching`, `layoutFor`, `ratioUpdates`.
+`question`, `transcript`, `delayMs`, `stalled`, `neverSettle`, `settleStatus`,
+`staleWindowMs`), `queueStartFailures` / `failEveryStart` (fail `agent start`
+with a Herdr error code), `holdChildren` / `releaseChildren` (settle several
+children at once, for one-tick batching), `focusedPaneId`, `completeAgent`,
+`callsMatching`, `layoutFor`, `ratioUpdates`.
+
+The `/herdr-agents` overlay is driven with `dialogInputs`: keystrokes per
+`ctx.ui.custom` call (`"\r"` selects, `"d"` closes), and a call with no entry
+left cancels, which ends the manager loop.
 
 ## Validation
 

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
+import * as path from "node:path";
 import test from "node:test";
 import type { LayoutNode } from "./test-support/fake-herdr.ts";
 import { type Harness, type HarnessOptions, createHarness } from "./test-support/harness.ts";
@@ -537,5 +538,243 @@ test("injects Orchestrator instructions, and /run instructions for one turn", as
       prompt: "hi",
     })) as { systemPrompt: string };
     assert.doesNotMatch(after.systemPrompt, /\/run delegation/);
+  });
+});
+
+// The scenarios below come from behaviors that were verified by hand during
+// development and recorded in docs/session-findings.md.
+
+test("targets the pane from HERDR_PANE_ID, not whatever Herdr reports as focused", async () => {
+  // §5: focus can move to something the user clicked while a tool is running.
+  await withHarness({}, async (harness) => {
+    // Another pane holds focus; the Orchestrator is elsewhere.
+    harness.fake.panes.push({
+      pane_id: "w1:decoy",
+      tab_id: harness.fake.orchestratorPane.tab_id,
+      workspace_id: harness.fake.workspaceId,
+      terminal_id: "term-decoy",
+      focused: true,
+      agent: "pi",
+      agent_status: "idle",
+      env: {},
+    });
+    harness.fake.focusedPaneId = "w1:decoy";
+
+    await harness.call({ agent: "scout", task: "Find it" });
+
+    const split = harness.fake.callsMatching("pane", "split")[0];
+    assert.equal(split?.[2], harness.fake.orchestratorPane.pane_id);
+  });
+});
+
+test("does not accept a reused agent's previous settled state as this turn's result", async () => {
+  // §8: a persistent child still exposes its prior idle/done status, and the
+  // old artifact is still on disk until this prompt clears it.
+  await withHarness({}, async (harness) => {
+    harness.fake.setBehavior((turn) =>
+      turn.turn === 1
+        ? { result: "FIRST TURN RESULT" }
+        : // Keep reporting the first turn's idle + seq for a while.
+          { result: "SECOND TURN RESULT", staleWindowMs: 400 },
+    );
+
+    await harness.call({
+      agent: "scout",
+      task: "one",
+      lifecycle: "persistent",
+    });
+    const second = await harness.call({
+      agent: "scout",
+      task: "two",
+      lifecycle: "persistent",
+    });
+
+    assert.equal(second.details.reused, true);
+    assert.match(second.content[0].text, /SECOND TURN RESULT/);
+    assert.doesNotMatch(second.content[0].text, /FIRST TURN RESULT/);
+    // It really had to wait it out rather than short-circuit on stale idle.
+    assert.ok(harness.fake.callsMatching("agent", "wait").length >= 2);
+  });
+});
+
+test("collects a child that finishes as done rather than idle", async () => {
+  // §8: completed children can settle as either status.
+  await withHarness({}, async (harness) => {
+    harness.fake.setBehavior(() => ({
+      result: "DONE-STATUS RESULT",
+      settleStatus: "done",
+    }));
+
+    const result = await harness.call({ agent: "scout", task: "Find it" });
+
+    assert.match(result.content[0].text, /DONE-STATUS RESULT/);
+    assert.equal(result.details.closed, true);
+  });
+});
+
+test("removes the managed temp directory with a one-shot but keeps it for a persistent agent", async () => {
+  // §9: system.md and result.md share one private temp dir per agent.
+  await withHarness({}, async (harness) => {
+    await harness.call({
+      agent: "scout",
+      task: "keep me",
+      lifecycle: "persistent",
+    });
+    const persistentRecord = Object.values(
+      (await harness.readState()).agents,
+    )[0];
+    const persistentDir = path.dirname(persistentRecord?.resultFile ?? "");
+    assert.ok(persistentRecord?.resultFile);
+    assert.deepEqual((await fs.readdir(persistentDir)).sort(), [
+      "result.md",
+      "system.md",
+    ]);
+
+    await harness.call({
+      agent: "scout",
+      task: "close me",
+      tabLabel: "Scout Oneshot",
+    });
+    // The one-shot's own directory is gone; the persistent one is untouched.
+    const dirs = await fs.readdir(path.dirname(persistentDir));
+    assert.equal(dirs.filter((name) => name.startsWith("herdr-agent-")).length, 1);
+    assert.ok(await fs.stat(path.join(persistentDir, "result.md")).catch(() => null));
+  });
+});
+
+test("delivers two detached outcomes as one batch with a single turn trigger", async () => {
+  // Two agents asking in parallel used to surface a whole turn apart, because
+  // triggering on the first message made the rest queue behind that turn.
+  await withHarness({ isIdle: false }, async (harness) => {
+    harness.fake.setBehavior((turn) => ({
+      question: `Question from ${turn.agentName}?`,
+    }));
+
+    // Neither child runs until both are spawned, so both settle in the same
+    // poller tick — the condition the batching exists for.
+    harness.fake.holdChildren();
+    await harness.call({
+      agent: "scout",
+      task: "a",
+      wait: false,
+      tabLabel: "Scout A",
+      lifecycle: "persistent",
+    });
+    await harness.call({
+      agent: "scout",
+      task: "b",
+      wait: false,
+      tabLabel: "Scout B",
+      lifecycle: "persistent",
+    });
+    await harness.fake.releaseChildren();
+
+    await harness.waitFor(
+      () => harness.messages.length >= 2,
+      "both detached questions delivered",
+    );
+
+    assert.equal(harness.messages.length, 2);
+    assert.deepEqual(
+      harness.messages.map((message) => message.customType),
+      ["herdr_agent_question", "herdr_agent_question"],
+    );
+    // Only the last message starts a turn; both are steered because the
+    // Orchestrator is mid-turn.
+    assert.deepEqual(
+      harness.messages.map((message) => message.triggerTurn),
+      [undefined, true],
+    );
+    assert.deepEqual(
+      harness.messages.map((message) => message.deliverAs),
+      ["steer", "steer"],
+    );
+    assert.deepEqual(
+      harness.messages.map((message) => message.details.tabLabel).sort(),
+      ["Scout A", "Scout B"],
+    );
+  });
+});
+
+test("gives up on a pane that never frees up, without closing anything", async () => {
+  // §12: the agent_pane_busy retry is bounded to five seconds.
+  await withHarness({}, async (harness) => {
+    harness.fake.failEveryStart("agent_pane_busy");
+
+    await assert.rejects(
+      () => harness.call({ agent: "scout", task: "Find it" }),
+      (error: unknown) => {
+        assert.match(String(error), /agent_pane_busy/);
+        return true;
+      },
+    );
+
+    // It retried rather than failing on the first attempt.
+    assert.ok(harness.fake.callsMatching("agent", "start").length > 5);
+    // The split pane is left for inspection, and no agent was recorded.
+    assert.deepEqual((await harness.readState()).agents, {});
+  });
+});
+
+test("/herdr-agents focuses a managed agent", async () => {
+  await withHarness(
+    // enter selects the single listed agent
+    { dialogInputs: [["\r"]] },
+    async (harness) => {
+      await harness.call({
+        agent: "scout",
+        task: "stay",
+        lifecycle: "persistent",
+      });
+
+      await harness.runCommand("herdr-agents");
+
+      const focus = harness.fake.callsMatching("agent", "focus")[0];
+      assert.ok(focus, `expected an agent focus, calls: ${JSON.stringify(harness.fake.calls.slice(-4))}`);
+      assert.equal(focus[2], harness.fake.paneByLabel("Scout")?.pane_id);
+      assert.match(
+        harness.notifications.at(-1)?.message ?? "",
+        /Focused Herdr agent "Scout"/,
+      );
+      // Focusing must not close the agent.
+      assert.equal(harness.fake.panes.length, 2);
+    },
+  );
+});
+
+test("/herdr-agents closes a managed agent and cleans up its temp directory", async () => {
+  await withHarness(
+    // d closes the selected agent, then the reopened list is cancelled
+    { dialogInputs: [["d"]] },
+    async (harness) => {
+      await harness.call({
+        agent: "scout",
+        task: "stay",
+        lifecycle: "persistent",
+      });
+      const record = Object.values((await harness.readState()).agents)[0];
+      const tempDir = path.dirname(record?.resultFile ?? "");
+      assert.ok(record?.resultFile);
+
+      await harness.runCommand("herdr-agents");
+
+      assert.deepEqual(
+        harness.fake.panes.map((pane) => pane.pane_id),
+        [harness.fake.orchestratorPane.pane_id],
+      );
+      assert.equal(await fs.stat(tempDir).catch(() => null), null);
+      assert.match(
+        harness.notifications.at(-1)?.message ?? "",
+        /Closed Herdr agent "Scout"/,
+      );
+    },
+  );
+});
+
+test("/herdr-agents reports an empty workspace instead of failing", async () => {
+  await withHarness({}, async (harness) => {
+    await harness.runCommand("herdr-agents");
+    assert.deepEqual(harness.notifications, []);
+    assert.deepEqual(harness.fake.callsMatching("pane", "close"), []);
   });
 });

@@ -38,6 +38,10 @@ export interface HarnessOptions {
   layout?: "pane" | "tab";
   hasUI?: boolean;
   isIdle?: boolean;
+  /** Keystrokes per `ctx.ui.custom` overlay, for the `/herdr-agents` manager. */
+  dialogInputs?: string[][];
+  /** Orchestrator pane id reported in HERDR_PANE_ID; defaults to the real one. */
+  paneIdEnv?: string;
 }
 
 export interface Harness {
@@ -58,6 +62,8 @@ export interface Harness {
   ): Promise<any>;
   /** Fire an extension lifecycle event (e.g. `session_start`). */
   fire(event: string, payload?: Record<string, unknown>): Promise<unknown>;
+  /** Run a registered slash command with the mock command context. */
+  runCommand(name: string, args?: string): Promise<void>;
   readState(): Promise<HerdrAgentsState>;
   waitFor(
     predicate: () => boolean | Promise<boolean>,
@@ -93,7 +99,7 @@ export async function createHarness(
     HERDR_BIN_PATH: SHIM_PATH,
     HERDR_FAKE_CLI_SOCKET: cliSocketPath,
     HERDR_SOCKET_PATH: apiSocketPath,
-    HERDR_PANE_ID: fake.orchestratorPane.pane_id,
+    HERDR_PANE_ID: options.paneIdEnv ?? fake.orchestratorPane.pane_id,
     HERDR_AGENTS_STATE_PATH: statePath,
     PI_CODING_AGENT_DIR: agentDir,
     HERDR_AGENTS_LAYOUT: options.layout === "tab" ? "tab" : undefined,
@@ -104,6 +110,7 @@ export async function createHarness(
     cwd,
     hasUI: options.hasUI,
     isIdle: options.isIdle,
+    dialogInputs: options.dialogInputs,
   });
   herdrAgentsExtension(host.pi);
 
@@ -130,6 +137,11 @@ export async function createHarness(
         host.ctx,
       ),
     fire: host.fire,
+    runCommand: async (name, args = "") => {
+      const command = host.commands.get(name);
+      if (!command) throw new Error(`command /${name} is not registered`);
+      await command.handler(args, host.ctx);
+    },
     readState: async () => {
       try {
         return JSON.parse(await fs.readFile(statePath, "utf8"));
