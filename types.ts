@@ -42,6 +42,8 @@ export interface HerdrAgentInfo {
   lifecycle?: HerdrAgentLifecycle;
   layout?: HerdrAgentLayout;
   cwd?: string;
+  /** State-record timestamp: when this agent last received a task. */
+  updatedAt?: string;
 }
 
 export interface ReusableAgentTab {

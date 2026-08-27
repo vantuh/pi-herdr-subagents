@@ -2,6 +2,7 @@ import {
   DynamicBorder,
   type ExtensionAPI,
   type ExtensionCommandContext,
+  type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import {
@@ -71,6 +72,13 @@ import {
   waitInterruptReason,
   writeAgentResult,
 } from "./utils.ts";
+import {
+  AGENTS_WIDGET_ID,
+  AGENTS_WIDGET_TICK_MS,
+  renderAgentWidgetLines,
+  type StatusTone,
+  type WidgetPaint,
+} from "./widget.ts";
 
 function formatLifecycle(lifecycle?: HerdrAgentLifecycle): string {
   if (lifecycle === "oneshot") return "one-shot";
@@ -120,6 +128,77 @@ async function loadCurrentAgents(): Promise<HerdrAgentInfo[]> {
     }
   });
   return listManagedWorkspaceAgents(current, state);
+}
+
+// Unlike loadCurrentAgents(), this deliberately skips prune/save: it runs on a
+// one-second timer, and writing the state file for a read-only display would be
+// wasteful. Stale records are still reconciled by the paths that do prune.
+async function loadAgentsForWidget(): Promise<HerdrAgentInfo[]> {
+  const current = await getCurrentContext();
+  const state = await loadHerdrAgentsState();
+  return listManagedWorkspaceAgents(current, state);
+}
+
+// An extension instance replaced by /reload keeps its interval alive with a
+// stale closure, so the handle lives on globalThis and is cleared on load.
+type WidgetTimerHolder = {
+  __herdrAgentsWidgetTimer?: ReturnType<typeof setInterval> | null;
+};
+
+let widgetTicking = false;
+
+function stopAgentsWidgetPoller(): void {
+  const holder = globalThis as WidgetTimerHolder;
+  if (!holder.__herdrAgentsWidgetTimer) return;
+  clearInterval(holder.__herdrAgentsWidgetTimer);
+  holder.__herdrAgentsWidgetTimer = null;
+}
+
+function themeWidgetPaint(ctx: ExtensionContext): WidgetPaint {
+  const theme = ctx.ui.theme;
+  const toneColor: Record<StatusTone, "accent" | "warning" | "muted"> = {
+    active: "accent",
+    attention: "warning",
+    quiet: "muted",
+  };
+  return {
+    header: (text) => theme.fg("muted", text),
+    elapsed: (text) => theme.fg("dim", text),
+    status: (text, tone) => theme.fg(toneColor[tone], text),
+  };
+}
+
+async function updateAgentsWidget(ctx: ExtensionContext): Promise<void> {
+  if (widgetTicking) return;
+  widgetTicking = true;
+  try {
+    const agents = await bestEffort<HerdrAgentInfo[]>([], loadAgentsForWidget);
+    if (agents.length === 0) {
+      stopAgentsWidgetPoller();
+      ctx.ui.setWidget(AGENTS_WIDGET_ID, undefined);
+      return;
+    }
+    ctx.ui.setWidget(
+      AGENTS_WIDGET_ID,
+      renderAgentWidgetLines(agents, Date.now(), themeWidgetPaint(ctx)),
+      { placement: "aboveEditor" },
+    );
+  } finally {
+    widgetTicking = false;
+  }
+}
+
+function ensureAgentsWidget(ctx: ExtensionContext): void {
+  if (!ctx.hasUI) return;
+  void updateAgentsWidget(ctx);
+
+  const holder = globalThis as WidgetTimerHolder;
+  if (holder.__herdrAgentsWidgetTimer) return;
+  const timer = setInterval(() => {
+    void updateAgentsWidget(ctx);
+  }, AGENTS_WIDGET_TICK_MS);
+  timer.unref?.();
+  holder.__herdrAgentsWidgetTimer = timer;
 }
 
 async function showNoAgentsDialog(ctx: ExtensionCommandContext): Promise<void> {
@@ -324,6 +403,18 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
     registerChildResultWriter(pi);
     return;
   }
+
+  // A /reload leaves the previous instance's poller running with a stale ctx.
+  stopAgentsWidgetPoller();
+
+  pi.on("session_start", async (_event, ctx) => {
+    ensureAgentsWidget(ctx);
+  });
+
+  // Covers quit/new/resume/fork too, not just the reload path above.
+  pi.on("session_shutdown", async () => {
+    stopAgentsWidgetPoller();
+  });
 
   pi.on("before_agent_start", async (event) => {
     let instructions = GLOBAL_INSTRUCTIONS;
@@ -843,6 +934,8 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       } finally {
         releasePlacement();
       }
+
+      ensureAgentsWidget(ctx);
 
       if (!tabId || !paneId) {
         throw new Error(

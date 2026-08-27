@@ -117,15 +117,48 @@
       верхньої межі (висота пейна в 40% колонці).
 - [x] `agents/.agents/AGENTS.md` → *"keep to 4–5 agents"*.
 - [x] `AGENTS.md` плагіна — цифри не містить, синхронізація не потрібна.
-- [ ] Smoke-тест на 5 агентів: один правий стовпець, рівні висоти (`1/5`),
-      усі 5 результатів прочитані, усі one-shot закриті. **Лишається на
-      живу перевірку.**
+- [x] Smoke-тест на 5 агентів пройдено (Herdr 0.8.2, термінал 65×272).
 
-### Gate
+### Результат smoke-тесту
+
+**Стадія 1 — layout на 5 живих агентах.** `herdr api snapshot` показав рівно
+одну структуру, без конкурентних колонок:
+
+```
+split_0_root   right  ratio 0.6        → Orchestrator 163 cols | колонка 109 cols
+split_1_1      down   ratio 0.8        = 4/5
+split_2_10     down   ratio 0.75       = 3/4
+split_3_100    down   ratio 0.6666667  = 2/3
+split_4_1000   down   ratio 0.5        = 1/2
+```
+
+Вкладені ratio `4/5 · 3/4 · 2/3 · 1/2` дають точні п'ятини: усі 5 пейнів
+`height 13` при `y = 1, 14, 27, 40, 53`, сума 65 = повна висота табу. Усі 6
+пейнів (Orchestrator + 5 агентів) в одному табі, колонка одна (`x = 192`).
+
+**13 рядків на агента** — це і є практична межа з розділу вище. Оцінка в плані
+була ~10 рядків на 50-рядковому вікні; на 65-рядковому вийшло 13. Шостий агент
+дав би ~11, сьомий ~9.
+
+**Стадія 2 — повний цикл 5 паралельних one-shot.** Усі 5 повернули
+`HERDR_RESULT: status: done`. Після завершення: у табі лишився тільки
+`w2V:p1X` (Orchestrator), `splits: 0`, жодного залишкового пейна,
+state-файл чистий — `{"version":1,"agents":{}}`.
+
+**Побічна знахідка (не про інфраструктуру).** Три з п'яти агентів дали
+неправильні числа: `utils.ts` 181 замість 190, `agents.ts` 79 замість 87,
+`schema.ts` 41 замість 37. Профіль `scout` працює на
+`kiro-acp/claude-haiku-4.5`, і на точному підрахунку рядків він ненадійний.
+Делегування спрацювало штатно — помилився зміст, не транспорт. Це емпіричне
+підтвердження наявного правила «Orchestrator must synthesize child results,
+not blindly forward them»: перевіряй числа з дитячого звіту, якщо вони
+важливі для рішення.
+
+### Gate — пройдено
 
 П'ять паралельних one-shot агентів проходять повний цикл: спавн → рівний
 layout → 5 результатів → закриття, без осиротілих пейнів і без конкурентних
-колонок. П'ять — саме верхня межа діапазону, тому тестуємо її, а не 4.
+колонок. Перевірено на верхній межі діапазону (5, не 4). Фаза 0 закрита.
 
 ---
 
@@ -172,31 +205,105 @@ Herdr знає — `api snapshot` уже віддає `agent_status` per-agent. 
 
 ### Задачі
 
-- [ ] `types.ts`: `AgentRuntimeInfo { label, agent, automationName, lifecycle, status, startedAt }`.
-- [ ] `state.ts`: зберігати `startedAt` у `HerdrAgentStateRecord` (зараз його нема — без нього не показати тривалість).
-- [ ] `runtime.ts`: `collectAgentRuntime(signal)` — один `api snapshot` на тік, без N викликів `agent get`.
-- [ ] `widget.ts`: `renderAgentWidgetLines(agents, width)` — чисті функції, без I/O.
-- [ ] `index.ts`: старт/стоп поллера у `herdrAgentsExtension`; гард `ctx.hasUI`; `setWidget(id, undefined)` коли список порожній.
-- [ ] Не показувати widget у child-режимі (`HERDR_AGENT_CHILD=1` виходить раніше — перевірити, що поллер не реєструється).
-- [ ] Тести на рендер: 0 / 1 / 3 агенти, довгі label-и (обрізка по width), кожен статус.
+- [x] `types.ts`: `HerdrAgentInfo.updatedAt?: string` (passthrough зі стейту).
+- [x] `herdr.ts`: `listManagedWorkspaceAgents` віддає `updatedAt`.
+- [x] `widget.ts`: чисті `formatElapsed`, `agentStatusView`, `truncateLabel`,
+      `renderAgentWidgetLines` — без I/O.
+- [x] `index.ts`: `loadAgentsForWidget` (без prune/save), `updateAgentsWidget`,
+      `ensureAgentsWidget`, стоп поллера на порожньому списку, гард `ctx.hasUI`,
+      очищення застарілого таймера через `globalThis` при `/reload`.
+- [x] Поллер стартує з `session_start` і після створення пейна в тулзі.
+      `session_start` фаєриться і з `reason: "reload"`, тому `/reload` підіймає
+      widget без нової сесії.
+- [x] `session_shutdown` зупиняє поллер — покриває quit/new/resume/fork, а не
+      лише reload-шлях через `globalThis`. Документований патерн для
+      session-scoped ресурсів.
+- [x] Child-режим не реєструє поллер: `HERDR_AGENT_CHILD=1` виходить із
+      `herdrAgentsExtension` раніше.
+- [x] `widget.test.ts` — 13 тестів: усі статуси, 0/1/2 агенти, обрізка,
+      вирівнювання колонок, відсутній/невалідний `updatedAt`, paint.
+
+### Відхилення від початкового задуму
+
+- **`runtime.ts` не створювався.** `listManagedWorkspaceAgents` +
+  `loadHerdrAgentsState` уже дають готовий `HerdrAgentInfo[]`, тому окремий
+  модуль зведення був би зайвим шаром.
+- **Нове поле `startedAt` не додавалось.** У стейті вже є `updatedAt`, і тулза
+  перезаписує його на кожному спавні *і* на кожному persistent-reuse — це
+  точно та точка відліку, що потрібна («час у поточній задачі», не «вік
+  пейна»).
+- **Без рамки.** Замість box-компонента з `render(width)` — простий
+  `string[]`, який `setWidget` приймає напряму. Ширина не потрібна: labels
+  обрізаються до 28 символів, колонки вирівнюються між рядками.
 
 ### Верифікація
 
-```bash
-cd pi/.pi/agent/extensions/herdr-agents && bun test
-bun build index.ts --target node --outfile /tmp/herdr-agents-check.js \
-  --external @earendil-works/pi-coding-agent \
-  --external @earendil-works/pi-tui --external typebox
+`bun test` — 79 pass / 0 fail (з них 13 нових), `bun build` збирається
+(61 KB), `prettier --check *.ts` чисто.
+
+Живий дата-шлях перевірено на **двох реальних керованих агентах** (спавн через
+`herdr_agent`, `lifecycle: persistent`), семплінг `getCurrentContext` →
+`listManagedWorkspaceAgents` → `renderAgentWidgetLines` раз на 3 с:
+
+```
+Herdr agents · 2 · 1 working
+ 00:03 Widget alpha                  working
+ 00:36 Widget truncation check lon…  done
 ```
 
-Ручна перевірка: `/reload`, спавн двох агентів, widget показує обох, після
-закриття зникає.
+Через кілька секунд, після завершення роботи:
 
-### Gate
+```
+Herdr agents · 2
+ 00:06 Widget alpha                  done
+ 00:39 Widget truncation check lon…  done
+```
 
-Widget оновлюється під час реального `herdr_agent` виклику, зникає після
-закриття всіх агентів, `bun test` зелений, жодного зайвого `herdr` виклику
-частіше ніж раз на тік.
+Підтверджено на живих даних:
+
+- Реальні `agent_status` мапляться: `working` → активний тон + суфікс
+  `· 1 working` у заголовку; `done` → тихий тон, суфікс зникає.
+- Час тікає між семплами (00:13 → 00:16 → 00:19).
+- **`updatedAt` дійсно перезаписується на persistent-reuse:** після повторного
+  промпта в `Widget alpha` відлік скинувся з 00:36 на 00:03. Це емпірично
+  підтверджує вибір `updatedAt` замість нового `startedAt` — показуємо «час у
+  поточній задачі», а не вік пейна.
+- Truncation і вирівнювання колонок на реальних labels.
+- Після `pane close` обох агентів: `0 agents` → `renderAgentWidgetLines`
+  віддає `[]` → `setWidget(id, undefined)` і поллер зупиняється. Таб
+  повернувся до `panes: 1, splits: 0`.
+
+Побічно підтверджено рішення «widget не робить prune»: закриття пейнів в обхід
+плагіна лишило два мертвих записи в state-файлі, але widget показав `0 agents`,
+бо `listManagedWorkspaceAgents` фільтрує по живих пейнах. Наступний
+`pruneHerdrAgentsState` проти живого снапшоту прибрав обидва
+(`before: 2 → after: 0`). Тобто стейл-записи не течуть у відображення і
+підчищаються штатними шляхами.
+
+Не покрито живим прогоном: `blocked` (вимагає агента на approval-діалозі) —
+покритий юніт-тестом; `status` тут прямий проброс `pane.agent_status`.
+
+### Ручна перевірка
+
+`/reload`, спавн двох агентів, widget показує обох з тривалістю і статусом,
+після закриття всіх — зникає.
+
+Дата-шлях цього сценарію відпрацьовано (див. Верифікацію). Лишається тільки
+візуальне підтвердження в TUI — що рамка справді малюється над інпутом і
+кольори теми читабельні; це видно лише людині за терміналом.
+
+### Gate — пройдено (крім візуального)
+
+- [x] Widget оновлюється під час реального `herdr_agent` виклику — статус
+      перейшов `working` → `done`, час тікає між тіками.
+- [x] Зникає після закриття всіх агентів — `0 agents` → `setWidget(undefined)`,
+      поллер стоп.
+- [x] `bun test` зелений (79 pass / 0 fail), `prettier --check` чисто,
+      extension завантажується (`pi -p` без помилок).
+- [x] Жодного зайвого `herdr` виклику частіше ніж раз на тік — `widgetTicking`
+      відсікає накладання тіків, `loadAgentsForWidget` робить один
+      `api snapshot` на тік і не пише стейт.
+- [ ] Візуальна перевірка в TUI (за користувачем).
 
 ### Ризики
 
@@ -376,7 +483,21 @@ reuse промптить агента, який працює за старим �
 
 - Тести: `bun test` у теці extension-а; чисті функції тестуються, I/O — ні.
 - Smoke: `bun build` (команда у фазі 1) — має пройти без помилок.
+- **Новий файл у пакеті вимагає `stow --restow pi` перед reload.** Stow
+  симлінкує пакет `pi` **per-file**, а не директорією, тому свіжий модуль
+  існує в репо, але не в `~/.pi/agent/extensions/herdr-agents/`. Pi падає з
+  `Failed to load extension: Cannot find module './<new>.ts'` і **зникають усі
+  інструменти плагіна** — виглядає як «тулза пропала», а не як помилка
+  компіляції. Кожна наступна фаза додає новий файл, тож послідовність завжди:
+  `stow -d ~/dotfiles -t ~ --restow pi` → перевірка `pi -p "reply with OK only"`
+  → `/reload`.
+- Перевіряти завантаження extension-а треба headless: `pi -p "reply with OK only"`
+  друкує помилку завантаження в stderr. `bun build` її не ловить, бо
+  `@earendil-works/*` — зовнішні host-пакети (`pi-tui` лежить вкладеним у
+  `pi-coding-agent/node_modules`, окремо не встановлений).
 - Після зміни симлінкованих файлів: `/reload` або рестарт Pi.
 - Оновлювати `AGENTS.md` і `docs/README.md` у тому ж коміті, що змінює поведінку.
 - Формат коміта як у історії плагіна: `feat(herdr-agents): …`, `fix(herdr-agents): …`.
-- Prettier, 72 символи в рядку (див. `a4b0d7c`).
+- Prettier зі стандартними налаштуваннями (`printWidth` 80). Комміт `a4b0d7c`
+  у заголовку каже «72-char», але фактично файли чисті саме за дефолтом:
+  `npx prettier@3 --check *.ts`.

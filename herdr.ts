@@ -309,6 +309,7 @@ export function listManagedWorkspaceAgents(
       layout:
         record.layout ?? (pane.tab_id === context.currentTab ? "pane" : "tab"),
       cwd: pane.foreground_cwd ?? pane.cwd,
+      ...(record.updatedAt ? { updatedAt: record.updatedAt } : {}),
     });
   }
 
