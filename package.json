@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "test": "./test-support/link-deps.sh && bun test --timeout 30000 ./*.test.ts",
-    "test:unit": "bun test --timeout 30000 agents.test.ts child.test.ts config.test.ts constants.test.ts herdr.test.ts imports.test.ts run.test.ts state.test.ts utils.test.ts widget.test.ts",
-    "test:integration": "./test-support/link-deps.sh && bun test --timeout 30000 integration.test.ts",
+    "test:unit": "bun test --timeout 30000 agents.test.ts child.test.ts config.test.ts constants.test.ts herdr.test.ts imports.test.ts run.test.ts schema.test.ts state.test.ts utils.test.ts widget.test.ts",
+    "test:integration": "./test-support/link-deps.sh && bun test --timeout 30000 integration.test.ts contract.test.ts",
     "test:e2e": "./test-support/link-deps.sh && bun test --timeout 180000 ./e2e/*.test.ts",
     "test:all": "bun run test && bun run test:e2e"
   },
