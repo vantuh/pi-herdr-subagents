@@ -95,6 +95,12 @@ Three layers:
   `HERDR_SOCKET_PATH` serves `layout.export` / `layout.set_split_ratio`.
   Simulated children write the same `result.md` / `question.md` artifacts a real
   Pi child would.
+- **Contract** (`contract.test.ts`, `schema.test.ts`) — the behavior lock for
+  rewrites. Same harness as the integration layer, but instead of the flows an
+  Orchestrator normally drives it pins the rest of the observable surface: the
+  `details` keys, the exact Herdr argv, every failure path, the widget and
+  command behavior, artifact permissions, and the model-facing parameter schema.
+  Start here when refactoring: if these stay green, callers keep working.
 - **E2E** (`e2e/flow.test.ts`) — a real `herdr server`, real pane splits, and
   real `pi` child processes that load this extension in child mode. Only the
   model and the Orchestrator's own Pi process are simulated: `MockLlm` serves
@@ -134,12 +140,25 @@ now have tests, with the finding they came from:
 | Two detached outcomes in one poller tick arrive as one batch, only the last triggering a turn | index.ts |
 | Every relative import resolves | §15 |
 
+Pinned by the contract layer: the `details` key set and profile payload of a
+successful call; the `agent read` fallback window; a collected result surviving a
+failed pane close (with `closeError`); malformed `pane split` / `tab create` /
+`api snapshot` output; refusing to act when the current pane is unidentifiable;
+the whole flow still completing when the state file is unusable; `wait: false`
+re-wait; detached persistent delivery without closing; a settled detached agent
+with no artifact keeping its claim; tab reuse by label and the `tab list`
+fallback when `tab create` omits the id; widget appear/hide/clear including the
+poller stopping; `/run` busy, empty and completion behavior; `/herdr-agents`
+non-TUI and failure notifications; both message renderers; no layout churn for a
+lone agent; state pruning; and `0600` on the state file and artifacts.
+
 Covered by the e2e layer: a real child produces a real result artifact and its
 pane is really closed; a persistent child keeps its context across two tasks
 (asserted on the model's request history); a real `ask_question` tool call
 travels from a tools-restricted child back to the Orchestrator and the answer
 finishes it; two real agent panes stack into one right column with the
-Orchestrator held at 60%.
+Orchestrator held at 60%; a detached real child is delivered and closed by the
+poller with nobody waiting.
 
 Not covered: the Orchestrator's own Pi process (the extension is driven
 directly, not through a real model emitting `herdr_agent` tool calls), the zsh
@@ -165,9 +184,10 @@ await withHarness({}, async (harness) => {
 `FakeHerdr` hooks: `setBehavior` (per-prompt child outcome — `result`,
 `question`, `transcript`, `delayMs`, `stalled`, `neverSettle`, `settleStatus`,
 `staleWindowMs`), `queueStartFailures` / `failEveryStart` (fail `agent start`
-with a Herdr error code), `holdChildren` / `releaseChildren` (settle several
-children at once, for one-tick batching), `focusedPaneId`, `completeAgent`,
-`callsMatching`, `layoutFor`, `ratioUpdates`.
+with a Herdr error code), `failCommand` / `malformCommand` (fail or corrupt any
+`herdr <group> <command>`), `omitCreatedTabId`, `holdChildren` /
+`releaseChildren` (settle several children at once, for one-tick batching),
+`focusedPaneId`, `completeAgent`, `callsMatching`, `layoutFor`, `ratioUpdates`.
 
 The `/herdr-agents` overlay is driven with `dialogInputs`: keystrokes per
 `ctx.ui.custom` call (`"\r"` selects, `"d"` closes), and a call with no entry
