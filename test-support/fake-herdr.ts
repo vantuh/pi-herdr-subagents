@@ -177,6 +177,12 @@ export class FakeHerdr {
   focusedPaneId = "";
   private childrenHeld = false;
   private readonly heldTurns: Array<() => Promise<void>> = [];
+  private readonly commandFailures = new Map<
+    string,
+    { code: string; times: number }
+  >();
+  private readonly commandMalformed = new Map<string, string>();
+  private omitTabIdOnCreate = false;
   /** Prompts whose Enter never fired, keyed by agent name. */
   private readonly stalledPrompts = new Map<string, () => Promise<void>>();
   private behavior: ChildBehavior = defaultBehavior;
@@ -225,6 +231,31 @@ export class FakeHerdr {
    */
   holdChildren(): void {
     this.childrenHeld = true;
+  }
+
+  /** Fail a `herdr <group> <command>` with a Herdr error code. */
+  failCommand(
+    prefix: string,
+    code: string,
+    options: { times?: number } = {},
+  ): void {
+    this.commandFailures.set(prefix, {
+      code,
+      times: options.times ?? Number.POSITIVE_INFINITY,
+    });
+  }
+
+  /** Return unparseable (or wrongly shaped) stdout for a command. */
+  malformCommand(prefix: string, payload = "this is not json"): void {
+    this.commandMalformed.set(prefix, payload);
+  }
+
+  /**
+   * Create tabs for real but leave `tab_id` out of the response, which is what
+   * the extension's `tab list` lookup by label exists to recover from.
+   */
+  omitCreatedTabId(): void {
+    this.omitTabIdOnCreate = true;
   }
 
   /** Run every held turn to completion, so all of them are settled on return. */
@@ -398,6 +429,16 @@ export class FakeHerdr {
   private async handleCli(argv: string[]): Promise<CliResponse> {
     const [group, command] = argv;
 
+    const key = `${group} ${command}`;
+    const malformed = this.commandMalformed.get(key);
+    if (malformed !== undefined) return { stdout: malformed };
+    const failure = this.commandFailures.get(key);
+    if (failure) {
+      failure.times -= 1;
+      if (failure.times <= 0) this.commandFailures.delete(key);
+      return fail(failure.code, `injected ${failure.code} for ${key}`);
+    }
+
     if (group === "api" && command === "snapshot") {
       return ok({
         snapshot: {
@@ -447,7 +488,13 @@ export class FakeHerdr {
       };
       this.panes.push(pane);
       this.layouts.set(tab.tab_id, { type: "pane", pane_id: pane.pane_id });
-      return ok({ root_pane: { ...pane, env: undefined } });
+      return ok({
+        root_pane: {
+          ...pane,
+          env: undefined,
+          ...(this.omitTabIdOnCreate ? { tab_id: undefined } : {}),
+        },
+      });
     }
 
     if (command === "close") {

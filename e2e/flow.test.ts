@@ -190,3 +190,36 @@ test("stacks two real agent panes into a single right column", async () => {
     );
   });
 });
+
+test("delivers a detached real child's result and closes its pane on its own", async () => {
+  // The only mechanism with no real-process coverage otherwise: nobody waits,
+  // so the widget poller has to notice a real Pi child settling, read its
+  // artifact, push it into the session and close the real pane.
+  await withE2e({}, async (harness) => {
+    const started = await harness.call({
+      agent: "scout",
+      task: "Report the magic word.",
+      wait: false,
+    });
+    assert.equal(started.details.waited, false);
+    assert.equal((await harness.snapshot()).panes.length, 2);
+
+    await harness.waitFor(
+      () => harness.messages.length > 0,
+      "detached delivery from a real child",
+      60000,
+    );
+
+    const [message] = harness.messages;
+    assert.equal(message?.customType, "herdr_agent_result");
+    assert.match(message?.content ?? "", /MOCK_CHILD_OK/);
+    assert.equal(message?.triggerTurn, true);
+
+    await harness.waitFor(
+      async () => (await harness.snapshot()).panes.length === 1,
+      "the one-shot pane to be closed by the poller",
+      15000,
+    );
+    assert.deepEqual((await harness.readState()).agents, {});
+  });
+});
