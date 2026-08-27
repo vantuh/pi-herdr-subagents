@@ -6,6 +6,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import {
+  Box,
   Container,
   Key,
   matchesKey,
@@ -266,6 +267,9 @@ async function deliverDetachedResults(
           agent: agent.agent,
           paneId: agent.paneId,
           lifecycle: agent.lifecycle,
+          // The renderer shows this on its own under a header; `content` keeps
+          // the attribution inline because that is what the model reads.
+          result: `${result}${closeNote}`,
         },
       },
       {
@@ -521,18 +525,42 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
   // A /reload leaves the previous instance's poller running with a stale ctx.
   stopAgentsWidgetPoller();
 
-  // A delivered result is not user input, so it gets its own message type and
-  // renderer rather than being injected via sendUserMessage.
+  // Delivered results arrive outside any turn the user started. With plain text
+  // at the usual output padding they read as a continuation of the assistant's
+  // own output, so they get an explicit bordered block with a header instead.
   pi.registerMessageRenderer(
     AGENT_RESULT_MESSAGE_TYPE,
     (message, options, theme) => {
       const { expanded, outputPad } = options;
-      let text = theme.fg("accent", "[herdr agent] ");
-      text += message.content;
+      const details = message.details as
+        { tabLabel?: string; agent?: string; result?: string } | undefined;
+      const label = details?.tabLabel ?? "agent";
+      const profile = details?.agent ? ` · ${details.agent}` : "";
+      const border = (str: string) => theme.fg("accent", str);
+
+      const box = new Box(outputPad, 0, (t) => theme.bg("customMessageBg", t));
+      box.addChild(new DynamicBorder(border));
+      box.addChild(
+        new Text(
+          theme.fg("accent", theme.bold(`Herdr agent ${label}${profile}`)),
+          1,
+          0,
+        ),
+      );
+      // The header carries the attribution the content also states for the
+      // model's benefit, so display the bare result and avoid repeating it.
+      box.addChild(new Text(details?.result ?? message.content, 1, 0));
       if (expanded && message.details) {
-        text += `\n${theme.fg("dim", JSON.stringify(message.details, null, 2))}`;
+        box.addChild(
+          new Text(
+            theme.fg("dim", JSON.stringify(message.details, null, 2)),
+            1,
+            0,
+          ),
+        );
       }
-      return new Text(text, outputPad, 0);
+      box.addChild(new DynamicBorder(border));
+      return box;
     },
   );
 
