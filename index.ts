@@ -207,16 +207,24 @@ export const AGENT_QUESTION_MESSAGE_TYPE = "herdr_agent_question";
  * it too, so a result is delivered exactly once no matter which path gets there
  * first.
  *
- * Several outcomes in one tick are fine. The first send triggers a turn and the
- * rest go out as `steer`, which by definition lands after the current turn's
- * tool calls finish — verified with two agents asking in parallel, where both
- * questions arrived, the second one turn later.
+ * Outcomes found in one tick are sent as a batch with a single turn trigger on
+ * the last message. Triggering on the first instead starts a turn that the rest
+ * must queue behind as `steer`, and `steer` lands only after that turn's tool
+ * calls finish — observed with two agents asking in parallel, where the second
+ * question surfaced a whole turn later. Batching makes them arrive together.
  */
 async function deliverDetachedOutcomes(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   agents: readonly HerdrAgentInfo[],
 ): Promise<void> {
+  const pending: Array<{
+    customType: string;
+    content: string;
+    display: boolean;
+    details: Record<string, unknown>;
+  }> = [];
+
   for (const agent of agents) {
     if (!agent.detached || !agent.terminalId) continue;
     if (!isSettledAgentStatus(agent.status)) continue;
@@ -236,24 +244,18 @@ async function deliverDetachedOutcomes(
       // The target stays open — including one-shots — and `question.md` stays on
       // disk, which is what keeps a parked one-shot reusable by label. The next
       // prompt clears it.
-      pi.sendMessage(
-        {
-          customType: AGENT_QUESTION_MESSAGE_TYPE,
-          content: formatAgentQuestion(agent.tabLabel, agent.agent, question),
-          display: true,
-          details: {
-            tabLabel: agent.tabLabel,
-            agent: agent.agent,
-            paneId: agent.paneId,
-            lifecycle: agent.lifecycle,
-            question,
-          },
+      pending.push({
+        customType: AGENT_QUESTION_MESSAGE_TYPE,
+        content: formatAgentQuestion(agent.tabLabel, agent.agent, question),
+        display: true,
+        details: {
+          tabLabel: agent.tabLabel,
+          agent: agent.agent,
+          paneId: agent.paneId,
+          lifecycle: agent.lifecycle,
+          question,
         },
-        {
-          triggerTurn: true,
-          deliverAs: ctx.isIdle?.() === false ? "steer" : undefined,
-        },
-      );
+      });
       continue;
     }
 
@@ -295,32 +297,40 @@ async function deliverDetachedOutcomes(
       }
     }
 
-    pi.sendMessage(
-      {
-        customType: AGENT_RESULT_MESSAGE_TYPE,
-        content: [
-          `Herdr agent ${agent.tabLabel} (${agent.agent}) finished on its own:`,
-          "",
-          result,
-          closeNote,
-        ].join("\n"),
-        display: true,
-        details: {
-          tabLabel: agent.tabLabel,
-          agent: agent.agent,
-          paneId: agent.paneId,
-          lifecycle: agent.lifecycle,
-          // The renderer shows this on its own under a header; `content` keeps
-          // the attribution inline because that is what the model reads.
-          result: `${result}${closeNote}`,
-        },
+    pending.push({
+      customType: AGENT_RESULT_MESSAGE_TYPE,
+      content: [
+        `Herdr agent ${agent.tabLabel} (${agent.agent}) finished on its own:`,
+        "",
+        result,
+        closeNote,
+      ].join("\n"),
+      display: true,
+      details: {
+        tabLabel: agent.tabLabel,
+        agent: agent.agent,
+        paneId: agent.paneId,
+        lifecycle: agent.lifecycle,
+        // The renderer shows this on its own under a header; `content` keeps
+        // the attribution inline because that is what the model reads.
+        result: `${result}${closeNote}`,
       },
-      {
-        triggerTurn: true,
-        deliverAs: ctx.isIdle?.() === false ? "steer" : undefined,
-      },
-    );
+    });
   }
+
+  if (pending.length === 0) return;
+
+  // Only the final message triggers a turn. Triggering on the first would start
+  // a turn the rest then have to queue behind as `steer`, which is what pushed a
+  // second parallel question a whole turn later.
+  const deliverAs = ctx.isIdle?.() === false ? "steer" : undefined;
+  pending.forEach((message, index) => {
+    const last = index === pending.length - 1;
+    pi.sendMessage(message, {
+      ...(last ? { triggerTurn: true } : {}),
+      deliverAs,
+    });
+  });
 }
 
 async function updateAgentsWidget(
