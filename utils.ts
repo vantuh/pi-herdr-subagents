@@ -5,6 +5,25 @@ import * as path from "node:path";
 
 export const RESULT_FILE_MARKER = "HERDR_RESULT_FILE:";
 
+export const ASK_QUESTION_TOOL = "ask_question";
+
+/**
+ * `--tools` is a strict allowlist over *all* tools, extension-provided ones
+ * included, and a child cannot re-enable a filtered tool itself: the flag is
+ * applied before the active set is built, so the tool is absent from
+ * `getAllTools()` and `setActiveTools` ignores unknown names. The question
+ * channel therefore has to be named at spawn time.
+ *
+ * Returns undefined when the profile does not restrict tools — then no flag is
+ * passed at all and `ask_question` is available anyway.
+ */
+export function buildChildToolAllowlist(
+  tools: readonly string[] | undefined,
+): string[] | undefined {
+  if (!tools?.length) return undefined;
+  return [...new Set([...tools, ASK_QUESTION_TOOL])];
+}
+
 export function makeHerdrAgentName(profileName: string): string {
   const base =
     profileName
@@ -121,14 +140,63 @@ export async function createResultFile(): Promise<string> {
   return path.join(dir, "result.md");
 }
 
-export function isManagedResultFile(filePath: string): boolean {
+function isManagedAgentFile(filePath: string, fileName: string): boolean {
   const resolved = path.resolve(filePath);
   const relative = path.relative(os.tmpdir(), resolved);
   return (
     !relative.startsWith("..") &&
     relative.split(path.sep)[0]?.startsWith("herdr-agent-") === true &&
-    path.basename(resolved) === "result.md"
+    path.basename(resolved) === fileName
   );
+}
+
+export function isManagedResultFile(filePath: string): boolean {
+  return isManagedAgentFile(filePath, "result.md");
+}
+
+/**
+ * The question lives next to the result file, so the child can derive it from
+ * the single `HERDR_RESULT_FILE:` marker already present in its prompt — no
+ * second marker to keep in sync.
+ */
+export function questionFileFor(
+  resultFile: string | undefined,
+): string | undefined {
+  if (!resultFile || !isManagedResultFile(resultFile)) return undefined;
+  return path.join(path.dirname(path.resolve(resultFile)), "question.md");
+}
+
+export async function writeAgentQuestion(
+  resultFile: string | undefined,
+  question: string,
+): Promise<string | undefined> {
+  const filePath = questionFileFor(resultFile);
+  if (!filePath) return undefined;
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, question, { encoding: "utf8", mode: 0o600 });
+  return filePath;
+}
+
+export async function readAgentQuestion(
+  resultFile: string | undefined,
+): Promise<string | undefined> {
+  const filePath = questionFileFor(resultFile);
+  if (!filePath) return undefined;
+  try {
+    const question = await fs.readFile(filePath, "utf8");
+    return question.trim() || undefined;
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+export async function clearAgentQuestion(
+  resultFile: string | undefined,
+): Promise<void> {
+  const filePath = questionFileFor(resultFile);
+  if (!filePath) return;
+  await fs.rm(filePath, { force: true });
 }
 
 export function findResultFileMarker(prompt: string): string | undefined {

@@ -14,6 +14,7 @@ The intended model behavior:
 - Use `lifecycle: "oneshot"` for one-shot tasks; the extension closes that agent target after a successful result.
 - Use `lifecycle: "persistent"` when a role should stay available for follow-up tasks or accumulate context; the extension reuses a matching target automatically.
 - The Orchestrator waits for the child result, reads it, and synthesizes the answer.
+- A child may instead call `ask_question`, which writes `question.md` beside the result artifact and returns. The child ends its turn and goes idle, the existing wait fires, and the Orchestrator returns the question early while leaving the target open — one-shots included. The answer is a normal `task` with the same `tabLabel`; parked targets are reusable by label whatever their lifecycle.
 
 ## Delegation policy
 

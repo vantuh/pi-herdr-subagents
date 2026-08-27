@@ -3,6 +3,9 @@ import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import test from "node:test";
 import {
+  ASK_QUESTION_TOOL,
+  buildChildToolAllowlist,
+  clearAgentQuestion,
   clearAgentResult,
   createAgentTempFiles,
   createResultFile,
@@ -12,10 +15,13 @@ import {
   isRecoverableWaitInterrupt,
   makeHerdrAgentName,
   normalizeTools,
+  questionFileFor,
+  readAgentQuestion,
   readAgentResult,
   removeAgentTempFiles,
   shouldCloseTab,
   waitInterruptReason,
+  writeAgentQuestion,
   writeAgentResult,
 } from "./utils.ts";
 
@@ -163,4 +169,105 @@ test("treats abort and herdr timeout as recoverable wait interrupts", () => {
     formatWaitInterrupted("Reviewer — herdr", "aborted"),
     /Do not resend the task/,
   );
+});
+
+test("derives the question file next to the result file", async () => {
+  const resultFile = await createResultFile();
+  assert.equal(
+    questionFileFor(resultFile),
+    path.join(path.dirname(resultFile), "question.md"),
+  );
+  await removeAgentTempFiles(resultFile);
+});
+
+test("refuses to derive a question file outside managed temp dirs", () => {
+  assert.equal(questionFileFor(undefined), undefined);
+  assert.equal(questionFileFor("/etc/passwd"), undefined);
+  assert.equal(
+    questionFileFor(path.join(path.sep, "tmp", "result.md")),
+    undefined,
+  );
+});
+
+test("round-trips a question through the managed file", async () => {
+  const resultFile = await createResultFile();
+
+  assert.equal(await readAgentQuestion(resultFile), undefined);
+
+  const written = await writeAgentQuestion(resultFile, "  Which API?  ");
+  assert.equal(written, questionFileFor(resultFile));
+  assert.equal(await readAgentQuestion(resultFile), "Which API?");
+
+  await clearAgentQuestion(resultFile);
+  assert.equal(await readAgentQuestion(resultFile), undefined);
+
+  await removeAgentTempFiles(resultFile);
+});
+
+test("does not write a question without a managed channel", async () => {
+  assert.equal(await writeAgentQuestion(undefined, "hi"), undefined);
+  assert.equal(await writeAgentQuestion("/etc/passwd", "hi"), undefined);
+});
+
+test("treats a whitespace-only question file as no question", async () => {
+  const resultFile = await createResultFile();
+  const questionFile = questionFileFor(resultFile)!;
+  await fs.mkdir(path.dirname(questionFile), { recursive: true });
+  await fs.writeFile(questionFile, "   \n\n");
+
+  assert.equal(await readAgentQuestion(resultFile), undefined);
+
+  await removeAgentTempFiles(resultFile);
+});
+
+test("keeps question and result independent", async () => {
+  const resultFile = await createResultFile();
+
+  await writeAgentResult(resultFile, "done text");
+  await writeAgentQuestion(resultFile, "a question");
+
+  await clearAgentResult(resultFile);
+  assert.equal(await readAgentResult(resultFile), undefined);
+  assert.equal(await readAgentQuestion(resultFile), "a question");
+
+  await removeAgentTempFiles(resultFile);
+});
+
+test("removes the question file with the temp dir", async () => {
+  const resultFile = await createResultFile();
+  await writeAgentQuestion(resultFile, "q");
+  const questionFile = questionFileFor(resultFile)!;
+
+  await removeAgentTempFiles(resultFile);
+
+  await assert.rejects(() => fs.access(questionFile));
+});
+
+test("adds the question channel to a restricted tool profile", () => {
+  assert.deepEqual(buildChildToolAllowlist(["read", "grep"]), [
+    "read",
+    "grep",
+    ASK_QUESTION_TOOL,
+  ]);
+});
+
+test("passes no tool allowlist when the profile does not restrict tools", () => {
+  assert.equal(buildChildToolAllowlist(undefined), undefined);
+  assert.equal(buildChildToolAllowlist([]), undefined);
+});
+
+test("does not duplicate an explicitly listed question tool", () => {
+  assert.deepEqual(buildChildToolAllowlist(["read", ASK_QUESTION_TOOL]), [
+    "read",
+    ASK_QUESTION_TOOL,
+  ]);
+});
+
+test("keeps profile tool order in the allowlist", () => {
+  assert.deepEqual(buildChildToolAllowlist(["bash", "read", "edit"]), [
+    "bash",
+    "read",
+    "edit",
+    ASK_QUESTION_TOOL,
+  ]);
 });

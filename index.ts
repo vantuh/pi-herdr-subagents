@@ -14,10 +14,12 @@ import {
   Text,
 } from "@earendil-works/pi-tui";
 import { discoverAgents } from "./agents.ts";
+import { registerChildMode } from "./child.ts";
 import { getHerdrAgentsLayout } from "./config.ts";
 import {
   buildRunTurnInstructions,
   CHILD_PROTOCOL,
+  formatAgentQuestion,
   GLOBAL_INSTRUCTIONS,
 } from "./constants.ts";
 import {
@@ -55,22 +57,22 @@ import {
 } from "./state.ts";
 import type { HerdrAgentInfo, HerdrAgentLifecycle, PaneInfo } from "./types.ts";
 import {
-  assistantText,
+  buildChildToolAllowlist,
+  clearAgentQuestion,
   clearAgentResult,
   createAgentTempFiles,
   createResultFile,
-  findResultFileMarker,
   formatAgentOutput,
   formatWaitInterrupted,
   isRecoverableWaitInterrupt,
   makeHerdrAgentName,
+  readAgentQuestion,
   readAgentResult,
   removeAgentTempFiles,
   RESULT_FILE_MARKER,
   shouldCloseTab,
   titleCase,
   waitInterruptReason,
-  writeAgentResult,
 } from "./utils.ts";
 import {
   AGENTS_WIDGET_ID,
@@ -412,23 +414,9 @@ async function acquirePanePlacementLock(): Promise<() => void> {
   return release;
 }
 
-function registerChildResultWriter(pi: ExtensionAPI): void {
-  let resultFile: string | undefined;
-
-  pi.on("before_agent_start", async (event) => {
-    resultFile = findResultFileMarker(event.prompt);
-  });
-
-  pi.on("message_end", async (event) => {
-    if (!resultFile || event.message.role !== "assistant") return;
-    const output = assistantText(event.message);
-    if (output.trim()) await writeAgentResult(resultFile, output);
-  });
-}
-
 export default function herdrAgentsExtension(pi: ExtensionAPI) {
   if (process.env.HERDR_AGENT_CHILD === "1") {
-    registerChildResultWriter(pi);
+    registerChildMode(pi);
     return;
   }
 
@@ -638,6 +626,31 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
         beginAwaitingAgent(label);
         try {
           await waitForAgent(target, timeoutMs, signal);
+          const pendingQuestion = await readAgentQuestion(record?.resultFile);
+          if (pendingQuestion) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: formatAgentQuestion(
+                    label,
+                    record?.agent ?? agent.name,
+                    pendingQuestion,
+                  ),
+                },
+              ],
+              details: {
+                tabId,
+                paneId: pane.pane_id,
+                tabLabel: label,
+                lifecycle: record?.lifecycle,
+                closed: false,
+                agent,
+                waited: true,
+                status: "question",
+              },
+            };
+          }
           const artifact = await readAgentResult(record?.resultFile);
           const output = artifact ?? (await readAgent(target, signal));
           let closed = false;
@@ -753,32 +766,40 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
           loadHerdrAgentsState(),
         );
 
-        if (persistent) {
-          if (layout === "tab") {
-            const reusable = findReusableAgentTab(current, tabs, baseLabel);
-            if (reusable) {
-              reused = true;
-              tabId = reusable.tab.tab_id;
-              tabLabel = reusable.tab.label;
-              paneId = reusable.pane.pane_id;
-              agentPane = reusable.pane;
-              const key = paneStateKey(reusable.pane);
-              const record = key ? state.agents[key] : undefined;
-              automationName = record?.automationName;
-              resultFile = record?.resultFile;
-            }
-          } else {
-            const reusable = findReusableAgentPane(current, state, baseLabel);
-            if (reusable) {
-              reused = true;
-              tabId = reusable.tab_id;
-              paneId = reusable.pane_id;
-              agentPane = reusable;
-              const key = paneStateKey(reusable);
-              const record = key ? state.agents[key] : undefined;
-              automationName = record?.automationName;
-              resultFile = record?.resultFile;
-            }
+        // Reuse is normally a persistent-only affordance, but a one-shot parked
+        // on an unanswered question has to be reachable by label too: the
+        // answer arrives as a normal `task`, and without reuse it would spawn a
+        // second agent and orphan the parked one forever.
+        {
+          const candidateTab =
+            layout === "tab"
+              ? findReusableAgentTab(current, tabs, baseLabel)
+              : undefined;
+          const candidatePane =
+            layout === "tab"
+              ? candidateTab?.pane
+              : findReusableAgentPane(current, state, baseLabel);
+          const candidateKey = candidatePane
+            ? paneStateKey(candidatePane)
+            : undefined;
+          const candidateRecord = candidateKey
+            ? state.agents[candidateKey]
+            : undefined;
+          const answeringQuestion =
+            !persistent &&
+            !!candidateRecord &&
+            (await bestEffort(undefined, () =>
+              readAgentQuestion(candidateRecord.resultFile),
+            )) !== undefined;
+
+          if ((persistent || answeringQuestion) && candidatePane) {
+            reused = true;
+            tabId = candidateTab?.tab.tab_id ?? candidatePane.tab_id;
+            if (candidateTab) tabLabel = candidateTab.tab.label;
+            paneId = candidatePane.pane_id;
+            agentPane = candidatePane;
+            automationName = candidateRecord?.automationName;
+            resultFile = candidateRecord?.resultFile;
           }
         }
 
@@ -926,8 +947,8 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
           resultFile = tempFiles.resultFile;
           const piArgs = ["--name", tabLabel];
           if (agent.model) piArgs.push("--model", agent.model);
-          if (agent.tools?.length)
-            piArgs.push("--tools", agent.tools.join(","));
+          const toolAllowlist = buildChildToolAllowlist(agent.tools);
+          if (toolAllowlist) piArgs.push("--tools", toolAllowlist.join(","));
           piArgs.push("--append-system-prompt", tempFiles.systemFile);
 
           onUpdate?.({
@@ -986,6 +1007,9 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       ].join("\n");
 
       await clearAgentResult(resultFile);
+      // A leftover question from the previous turn would otherwise be reported
+      // again as soon as this prompt finishes.
+      await clearAgentQuestion(resultFile);
 
       onUpdate?.({
         content: [
@@ -1021,6 +1045,32 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
               reused,
               agent,
               waited: false,
+            },
+          };
+        }
+
+        // Checked before the result: a child that asked ends its turn without
+        // HERDR_RESULT, so the wait fires on idle exactly like a completion.
+        // The agent stays open — including one-shots — until it really finishes.
+        const question = await readAgentQuestion(resultFile);
+        if (question) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: formatAgentQuestion(tabLabel, agent.name, question),
+              },
+            ],
+            details: {
+              tabId,
+              paneId,
+              tabLabel,
+              lifecycle,
+              reused,
+              closed: false,
+              agent,
+              waited: true,
+              status: "question",
             },
           };
         }

@@ -30,6 +30,13 @@ The Orchestrator decides whether it remains available or closes after completion
 Do not spawn additional agents unless explicitly asked.
 Keep work focused on the assigned task.
 
+If requirements are genuinely ambiguous, or a decision would materially change
+the scope or approach, call \`ask_question\` once with a single specific
+question — then end your turn immediately. Do not emit HERDR_RESULT in that
+turn, do not call other tools, and do not guess and proceed anyway. The
+Orchestrator's answer arrives as your next prompt, and you continue from there.
+Do not ask about trivia you can settle by reading the repo.
+
 When finished, end with this exact format:
 
 HERDR_RESULT:
@@ -38,3 +45,20 @@ HERDR_RESULT:
 - evidence: <files/commands/links inspected>
 - changes: <none | files changed>
 - next: <recommended next step>`;
+
+/** Early tool result when a child asked instead of finishing. */
+export function formatAgentQuestion(
+  tabLabel: string,
+  agent: string,
+  question: string,
+): string {
+  return [
+    `Herdr agent ${tabLabel} (${agent}) asked a question instead of finishing:`,
+    "",
+    question,
+    "",
+    "The agent is still open and waiting. Answer it by calling herdr_agent again",
+    `with tabLabel "${tabLabel}" and task set to your answer.`,
+    "Answer from your own context, or ask the user if the decision is theirs.",
+  ].join("\n");
+}

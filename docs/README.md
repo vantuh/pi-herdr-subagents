@@ -68,7 +68,32 @@ The child receives:
 1. the normal Pi runtime/tooling;
 2. an agent profile prompt from `~/.pi/agent/agents/<name>.md`;
 3. the `HERDR_RESULT` completion protocol;
-4. a self-contained task prompt from the Orchestrator.
+4. a self-contained task prompt from the Orchestrator;
+5. an `ask_question` tool for asking the Orchestrator one clarifying question
+   instead of guessing.
+
+### Question channel
+
+A child that hits genuine ambiguity calls `ask_question`, which writes
+`question.md` next to its result artifact and returns immediately. The child
+then ends its turn, which makes it idle, which satisfies the wait the
+Orchestrator is already sitting in — no extra polling and no new wait states.
+
+The Orchestrator checks `question.md` before the result. When a question is
+present it returns early with the question text and leaves the target open,
+**including one-shots**, which are closed only after a real completion. The
+answer is sent as an ordinary `task` with the same `tabLabel`, so a parked
+target is reusable by label regardless of lifecycle; the stale question is
+cleared before each prompt.
+
+`ask_question` must never block the turn. A session parked on a dialog reports
+`working`, not `blocked` — Herdr's status is published by the Pi state
+extension, which derives `blocked` solely from the Orchestrator's own
+`herdr:blocked` event — so a blocking implementation would hang until timeout.
+
+`--tools` is a strict allowlist over extension tools too, and a child cannot
+re-enable a filtered tool itself, so `ask_question` is appended to the
+allowlist at spawn time whenever a profile restricts `tools`.
 
 ### Agent profile
 
@@ -179,7 +204,7 @@ Typical tool call:
 - One-shot targets are closed only after successful completion and output read; timeout/error/abort leaves them open for debugging.
 - `lifecycle: "persistent"` reuses an existing managed agent by exact label. Pane mode searches the Orchestrator tab; legacy tab mode searches sibling tabs.
 - Fresh context is preferred over forked conversation context for newly created agents.
-- Child agents are prevented from recursively registering `herdr_agent` by `HERDR_AGENT_CHILD=1`; child mode only retains the result-artifact writer.
+- Child agents are prevented from recursively registering `herdr_agent` by `HERDR_AGENT_CHILD=1`; child mode retains the result-artifact writer and the `ask_question` channel (`child.ts`).
 - Herdr 0.7.5 or newer is required for `agent start`, atomic `agent prompt`, `agent wait`, `agent send-keys`, `agent read`, and `api snapshot`.
 - Human-readable labels remain the persistent reuse key. A separate generated Herdr automation name is the stable command target; legacy agents fall back to pane IDs.
 - Completion output is persisted in a per-agent artifact, so large results do not depend on terminal scrollback. The artifact is cleared before each prompt to prevent stale persistent-agent output; terminal reading remains the fallback when no new artifact is written.
