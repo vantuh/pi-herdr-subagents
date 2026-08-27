@@ -72,6 +72,23 @@ The child receives:
 5. an `ask_question` tool for asking the Orchestrator one clarifying question
    instead of guessing.
 
+### Async delivery
+
+With `wait: false` the tool returns as soon as the prompt is accepted and the
+widget poller takes over: once the agent settles (`idle`/`done`) and a result
+artifact exists, the poller delivers it as a `herdr_agent_result` custom message
+with `triggerTurn`, and closes the target if it was a one-shot. This is why
+`oneshot` no longer requires `wait: true` — it still does in headless sessions,
+where no poller runs.
+
+Delivery is exactly-once. The state record carries a `detached` flag, and
+`claimDetachedAgent` reads and clears it inside one locked read-modify-write, so
+overlapping ticks cannot both deliver and the claim survives `/reload`. Any
+synchronous collection — a normal wait or an explicit re-wait — releases the
+claim too, so whichever path reaches the result first owns it. The claim is
+taken before sending, which trades a lost notification on failure for never
+duplicating one; the artifact remains readable via re-wait.
+
 ### Question channel
 
 A child that hits genuine ambiguity calls `ask_question`, which writes

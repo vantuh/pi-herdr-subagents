@@ -47,6 +47,7 @@ import {
 } from "./herdr.ts";
 import { HerdrAgentParams } from "./schema.ts";
 import {
+  claimDetachedAgent,
   deleteAgentLifecycle,
   emptyHerdrAgentsState,
   loadHerdrAgentsState,
@@ -77,6 +78,7 @@ import {
 import {
   AGENTS_WIDGET_ID,
   AGENTS_WIDGET_TICK_MS,
+  isSettledAgentStatus,
   renderAgentWidgetLines,
   type StatusTone,
   visibleWidgetAgents,
@@ -187,11 +189,107 @@ function themeWidgetPaint(ctx: ExtensionContext): WidgetPaint {
   };
 }
 
-async function updateAgentsWidget(ctx: ExtensionContext): Promise<void> {
+export const AGENT_RESULT_MESSAGE_TYPE = "herdr_agent_result";
+
+/**
+ * Deliver results of agents nobody is waiting for.
+ *
+ * This is the half of `wait: false` that was missing: the tool returns
+ * immediately, and from then on nothing watches the child, so an uncollected
+ * result was simply lost. The widget poller is already a per-second watcher
+ * that knows every agent's status, so delivery rides on it rather than adding
+ * another loop.
+ *
+ * The claim is taken *before* sending, and any synchronous collection releases
+ * it too, so a result is delivered exactly once no matter which path gets there
+ * first.
+ */
+async function deliverDetachedResults(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  agents: readonly HerdrAgentInfo[],
+): Promise<void> {
+  for (const agent of agents) {
+    if (!agent.detached || !agent.terminalId) continue;
+    if (!isSettledAgentStatus(agent.status)) continue;
+
+    const result = await bestEffort(undefined, () =>
+      readAgentResult(agent.resultFile),
+    );
+    // Settled without an artifact means the child produced nothing usable;
+    // leave the claim so an explicit re-wait can still read the scrollback.
+    if (!result) continue;
+
+    const claimed = await bestEffort(false, () =>
+      claimDetachedAgent({ terminal_id: agent.terminalId }),
+    );
+    if (!claimed) continue;
+
+    let closeNote = "";
+    if (agent.lifecycle === "oneshot") {
+      // One-shots are closed by whoever collects them. Until now that was
+      // always the waiting tool call, which is why `oneshot` required
+      // `wait: true`.
+      try {
+        await execHerdr(
+          agent.layout === "tab"
+            ? ["tab", "close", agent.tabId]
+            : ["pane", "close", agent.paneId],
+        );
+        await bestEffort(undefined, () =>
+          deleteAgentLifecycle({ terminal_id: agent.terminalId }),
+        );
+        await bestEffort(undefined, () =>
+          removeAgentTempFiles(agent.resultFile),
+        );
+        if (agent.layout !== "tab") {
+          await bestEffort(undefined, () => rebalanceCurrentPaneAgents());
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        closeNote = `\n\nWarning: failed to close one-shot Herdr agent ${agent.tabLabel}: ${message}`;
+      }
+    }
+
+    pi.sendMessage(
+      {
+        customType: AGENT_RESULT_MESSAGE_TYPE,
+        content: [
+          `Herdr agent ${agent.tabLabel} (${agent.agent}) finished on its own:`,
+          "",
+          result,
+          closeNote,
+        ].join("\n"),
+        display: true,
+        details: {
+          tabLabel: agent.tabLabel,
+          agent: agent.agent,
+          paneId: agent.paneId,
+          lifecycle: agent.lifecycle,
+        },
+      },
+      {
+        triggerTurn: true,
+        deliverAs: ctx.isIdle?.() === false ? "steer" : undefined,
+      },
+    );
+  }
+}
+
+async function updateAgentsWidget(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+): Promise<void> {
   if (widgetTicking) return;
   widgetTicking = true;
   try {
     const agents = await bestEffort<HerdrAgentInfo[]>([], loadAgentsForWidget);
+
+    // Runs before the rendering short-circuits below: a detached agent is
+    // hidden from the widget once collected, but its result still has to be
+    // delivered.
+    await bestEffort(undefined, () => deliverDetachedResults(pi, ctx, agents));
+
     if (agents.length === 0) {
       stopAgentsWidgetPoller();
       ctx.ui.setWidget(AGENTS_WIDGET_ID, undefined);
@@ -218,14 +316,14 @@ async function updateAgentsWidget(ctx: ExtensionContext): Promise<void> {
   }
 }
 
-function ensureAgentsWidget(ctx: ExtensionContext): void {
+function ensureAgentsWidget(pi: ExtensionAPI, ctx: ExtensionContext): void {
   if (!ctx.hasUI) return;
-  void updateAgentsWidget(ctx);
+  void updateAgentsWidget(pi, ctx);
 
   const holder = globalThis as WidgetTimerHolder;
   if (holder.__herdrAgentsWidgetTimer) return;
   const timer = setInterval(() => {
-    void updateAgentsWidget(ctx);
+    void updateAgentsWidget(pi, ctx);
   }, AGENTS_WIDGET_TICK_MS);
   timer.unref?.();
   holder.__herdrAgentsWidgetTimer = timer;
@@ -423,8 +521,23 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
   // A /reload leaves the previous instance's poller running with a stale ctx.
   stopAgentsWidgetPoller();
 
+  // A delivered result is not user input, so it gets its own message type and
+  // renderer rather than being injected via sendUserMessage.
+  pi.registerMessageRenderer(
+    AGENT_RESULT_MESSAGE_TYPE,
+    (message, options, theme) => {
+      const { expanded, outputPad } = options;
+      let text = theme.fg("accent", "[herdr agent] ");
+      text += message.content;
+      if (expanded && message.details) {
+        text += `\n${theme.fg("dim", JSON.stringify(message.details, null, 2))}`;
+      }
+      return new Text(text, outputPad, 0);
+    },
+  );
+
   pi.on("session_start", async (_event, ctx) => {
-    ensureAgentsWidget(ctx);
+    ensureAgentsWidget(pi, ctx);
   });
 
   // Covers quit/new/resume/fork too, not just the reload path above.
@@ -653,6 +766,8 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
           }
           const artifact = await readAgentResult(record?.resultFile);
           const output = artifact ?? (await readAgent(target, signal));
+          // An explicit re-wait collects the result, so release the poller's claim.
+          await bestEffort(false, () => claimDetachedAgent(pane));
           let closed = false;
           let closeError: string | undefined;
           if (record?.lifecycle === "oneshot") {
@@ -722,12 +837,14 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
         }
       }
 
-      if (lifecycle === "oneshot" && !wait) {
+      // A detached one-shot is closed by the poller after it delivers the
+      // result, so this only has to stay forbidden where no poller runs.
+      if (lifecycle === "oneshot" && !wait && !ctx.hasUI) {
         return {
           content: [
             {
               type: "text",
-              text: "lifecycle: 'oneshot' requires wait: true so the one-shot agent can be closed after completion.",
+              text: "lifecycle: 'oneshot' requires wait: true in a headless session: without the agents widget poller nothing would deliver the result or close the agent.",
             },
           ],
           details: { lifecycle, waited: false },
@@ -976,6 +1093,8 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
               automationName,
               resultFile,
               layout,
+              // Nobody is waiting for this one, so the poller owns its result.
+              detached: !wait,
             }),
           );
         }
@@ -986,7 +1105,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
         releasePlacement();
       }
 
-      ensureAgentsWidget(ctx);
+      ensureAgentsWidget(pi, ctx);
 
       if (!tabId || !paneId) {
         throw new Error(
@@ -1077,6 +1196,11 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
 
         const artifact = await readAgentResult(resultFile);
         const output = artifact ?? (await readAgent(target, signal));
+        // Whoever collects first owns the result. Releasing the claim here stops
+        // the poller from delivering the same result a second time.
+        if (agentPane) {
+          await bestEffort(false, () => claimDetachedAgent(agentPane!));
+        }
 
         let closed = false;
         let closeError: string | undefined;

@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import test from "node:test";
 import {
+  claimDetachedAgent,
   deleteAgentLifecycle,
   emptyHerdrAgentsState,
   getKnownAgentLifecyclesByTabId,
@@ -160,4 +161,80 @@ test("concurrent record and delete calls for the same terminal don't corrupt sta
   const state = await loadHerdrAgentsState(filePath);
   // The last queued write for the survivor terminal must win.
   assert.equal(state.agents["terminal:term-survivor"]?.agent, "c");
+});
+
+test("claims a detached agent exactly once", async () => {
+  const filePath = await tempStatePath();
+  const target = pane({ terminal_id: "term-async" });
+
+  await recordAgentLifecycle(
+    target,
+    "persistent",
+    { tabLabel: "Async", detached: true },
+    filePath,
+  );
+
+  assert.equal(await claimDetachedAgent(target, filePath), true);
+  assert.equal(await claimDetachedAgent(target, filePath), false);
+
+  const state = await loadHerdrAgentsState(filePath);
+  assert.equal(state.agents["terminal:term-async"]?.detached, undefined);
+  // Only the claim is released; the record itself must survive.
+  assert.equal(state.agents["terminal:term-async"]?.tabLabel, "Async");
+});
+
+test("does not claim an agent that was never detached", async () => {
+  const filePath = await tempStatePath();
+  const target = pane({ terminal_id: "term-sync" });
+
+  await recordAgentLifecycle(target, "oneshot", { tabLabel: "Sync" }, filePath);
+
+  assert.equal(await claimDetachedAgent(target, filePath), false);
+});
+
+test("does not claim an unknown agent", async () => {
+  const filePath = await tempStatePath();
+  assert.equal(
+    await claimDetachedAgent(pane({ terminal_id: "term-missing" }), filePath),
+    false,
+  );
+  assert.equal(
+    await claimDetachedAgent(pane({ terminal_id: undefined }), filePath),
+    false,
+  );
+});
+
+test("serializes concurrent claims so only one wins", async () => {
+  const filePath = await tempStatePath();
+  const target = pane({ terminal_id: "term-race" });
+
+  await recordAgentLifecycle(
+    target,
+    "persistent",
+    { tabLabel: "Race", detached: true },
+    filePath,
+  );
+
+  const results = await Promise.all([
+    claimDetachedAgent(target, filePath),
+    claimDetachedAgent(target, filePath),
+    claimDetachedAgent(target, filePath),
+  ]);
+
+  assert.equal(results.filter(Boolean).length, 1);
+});
+
+test("persists the detached flag across a reload of the state file", async () => {
+  const filePath = await tempStatePath();
+  const target = pane({ terminal_id: "term-reload" });
+
+  await recordAgentLifecycle(
+    target,
+    "persistent",
+    { tabLabel: "Reload", detached: true },
+    filePath,
+  );
+
+  const reloaded = await loadHerdrAgentsState(filePath);
+  assert.equal(reloaded.agents["terminal:term-reload"]?.detached, true);
 });

@@ -545,6 +545,7 @@ test("finds a reusable managed pane by exact label in the orchestrator tab", () 
       layout: "pane",
       cwd: undefined,
       updatedAt: "2026-01-01T00:00:00.000Z",
+      terminalId: "term-worker",
     },
   ]);
 });

@@ -14,6 +14,11 @@ export interface HerdrAgentStateRecord {
   automationName?: string;
   resultFile?: string;
   layout?: HerdrAgentLayout;
+  /**
+   * Spawned with `wait: false` and not yet collected. Lives in the state file
+   * rather than memory so a pending delivery survives `/reload`.
+   */
+  detached?: boolean;
   updatedAt: string;
 }
 
@@ -118,6 +123,7 @@ export async function loadHerdrAgentsState(
         ? { resultFile: record.resultFile }
         : {}),
       ...(isLayout(record.layout) ? { layout: record.layout } : {}),
+      ...(record.detached === true ? { detached: true } : {}),
       updatedAt:
         typeof record.updatedAt === "string"
           ? record.updatedAt
@@ -185,6 +191,7 @@ export async function recordAgentLifecycle(
     automationName?: string;
     resultFile?: string;
     layout?: HerdrAgentLayout;
+    detached?: boolean;
   } = {},
   filePath = getHerdrAgentsStatePath(),
 ): Promise<void> {
@@ -214,5 +221,34 @@ export async function deleteAgentLifecycle(
     if (!state.agents[key]) return;
     delete state.agents[key];
     await saveHerdrAgentsState(state, filePath);
+  });
+}
+
+/**
+ * Atomically take ownership of a pending async delivery.
+ *
+ * Returns true exactly once per detached agent: the flag is read and cleared
+ * inside a single locked read-modify-write, so overlapping poller ticks cannot
+ * both deliver, and because the flag lives in the state file the claim also
+ * holds across `/reload`.
+ *
+ * Claiming before delivering means a failed delivery drops the notification
+ * rather than risking a duplicate — the result artifact still exists and stays
+ * reachable by an explicit re-wait.
+ */
+export async function claimDetachedAgent(
+  pane: Pick<PaneInfo, "terminal_id">,
+  filePath = getHerdrAgentsStatePath(),
+): Promise<boolean> {
+  const key = paneStateKey(pane);
+  if (!key) return false;
+
+  return withStateFileLock(filePath, async () => {
+    const state = await loadHerdrAgentsState(filePath);
+    const record = state.agents[key];
+    if (!record?.detached) return false;
+    delete record.detached;
+    await saveHerdrAgentsState(state, filePath);
+    return true;
   });
 }

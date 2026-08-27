@@ -84,6 +84,16 @@ function elapsedLabel(agent: HerdrAgentInfo, now: number): string {
  * healthy work — it keeps showing the same "Waiting for…" line until timeout.
  * That state is the whole reason the row is worth keeping.
  */
+/**
+ * The same definition of "finished" the blocking path uses: `waitForAgent`
+ * waits `--until idle --until done`. Keeping one definition means async
+ * delivery cannot disagree with a synchronous wait about whether an agent is
+ * done.
+ */
+export function isSettledAgentStatus(status: string): boolean {
+  return status === "idle" || status === "done";
+}
+
 export function visibleWidgetAgents(
   agents: readonly HerdrAgentInfo[],
   awaitedLabels: ReadonlySet<string>,

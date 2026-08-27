@@ -20,7 +20,7 @@ export const HerdrAgentParams = Type.Object({
   wait: Type.Optional(
     Type.Boolean({
       description:
-        "Wait for the Herdr agent to finish and read its result. Default: true. Required (must be true) when lifecycle is 'oneshot', since the agent is only closed after a successful wait.",
+        "Wait for the Herdr agent to finish and read its result. Default: true. With false the tool returns immediately and the result is delivered on its own once the agent finishes.",
     }),
   ),
   timeoutMs: Type.Optional(
@@ -31,7 +31,7 @@ export const HerdrAgentParams = Type.Object({
   lifecycle: Type.Optional(
     Type.Union([Type.Literal("oneshot"), Type.Literal("persistent")], {
       description:
-        "Agent lifecycle. Use 'oneshot' for one-off tasks that close after completion, or 'persistent' to keep/reuse the agent for follow-up tasks. Default: oneshot. 'oneshot' requires wait: true.",
+        "Agent lifecycle. Use 'oneshot' for one-off tasks that close after completion, or 'persistent' to keep/reuse the agent for follow-up tasks. Default: oneshot.",
     }),
   ),
 });

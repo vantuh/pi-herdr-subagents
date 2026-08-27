@@ -44,6 +44,10 @@ export interface HerdrAgentInfo {
   cwd?: string;
   /** State-record timestamp: when this agent last received a task. */
   updatedAt?: string;
+  /** Spawned with `wait: false` and not yet collected. */
+  detached?: boolean;
+  /** Pane terminal id — the state-record key. */
+  terminalId?: string;
 }
 
 export interface ReusableAgentTab {

@@ -4,6 +4,7 @@ import type { HerdrAgentInfo } from "./types.ts";
 import {
   agentStatusView,
   formatElapsed,
+  isSettledAgentStatus,
   renderAgentWidgetLines,
   truncateLabel,
   visibleWidgetAgents,
@@ -193,4 +194,19 @@ test("matches awaited labels exactly, not by prefix", () => {
     visible.map((item) => item.tabLabel),
     ["Scout — auth"],
   );
+});
+
+test("treats only idle and done as settled", () => {
+  assert.equal(isSettledAgentStatus("idle"), true);
+  assert.equal(isSettledAgentStatus("done"), true);
+});
+
+test("does not treat a running or blocked agent as settled", () => {
+  assert.equal(isSettledAgentStatus("working"), false);
+  assert.equal(isSettledAgentStatus("blocked"), false);
+});
+
+test("does not treat an undetected agent as settled", () => {
+  assert.equal(isSettledAgentStatus("unknown"), false);
+  assert.equal(isSettledAgentStatus(""), false);
 });
