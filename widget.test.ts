@@ -6,6 +6,7 @@ import {
   formatElapsed,
   renderAgentWidgetLines,
   truncateLabel,
+  visibleWidgetAgents,
   type WidgetPaint,
 } from "./widget.ts";
 
@@ -149,5 +150,47 @@ test("applies paint per column and tone", () => {
   assert.equal(
     lines[1],
     " E(01:23) Scout  S:attention(blocked · attach to unblock)",
+  );
+});
+
+test("keeps agents nobody is awaiting", () => {
+  const agents = [agent({ tabLabel: "Scout" }), agent({ tabLabel: "Worker" })];
+  const visible = visibleWidgetAgents(agents, new Set());
+  assert.deepEqual(
+    visible.map((item) => item.tabLabel),
+    ["Scout", "Worker"],
+  );
+});
+
+test("hides agents the orchestrator is blocking on", () => {
+  const agents = [agent({ tabLabel: "Scout" }), agent({ tabLabel: "Worker" })];
+  const visible = visibleWidgetAgents(agents, new Set(["Scout"]));
+  assert.deepEqual(
+    visible.map((item) => item.tabLabel),
+    ["Worker"],
+  );
+});
+
+test("keeps an awaited agent once it reports blocked", () => {
+  const agents = [agent({ tabLabel: "Scout", status: "blocked" })];
+  const visible = visibleWidgetAgents(agents, new Set(["Scout"]));
+  assert.deepEqual(
+    visible.map((item) => item.tabLabel),
+    ["Scout"],
+  );
+});
+
+test("hides every agent when all of them are awaited", () => {
+  const agents = [agent({ tabLabel: "Scout" }), agent({ tabLabel: "Worker" })];
+  const visible = visibleWidgetAgents(agents, new Set(["Scout", "Worker"]));
+  assert.deepEqual(visible, []);
+});
+
+test("matches awaited labels exactly, not by prefix", () => {
+  const agents = [agent({ tabLabel: "Scout — auth" })];
+  const visible = visibleWidgetAgents(agents, new Set(["Scout"]));
+  assert.deepEqual(
+    visible.map((item) => item.tabLabel),
+    ["Scout — auth"],
   );
 });

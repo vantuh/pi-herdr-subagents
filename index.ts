@@ -77,6 +77,7 @@ import {
   AGENTS_WIDGET_TICK_MS,
   renderAgentWidgetLines,
   type StatusTone,
+  visibleWidgetAgents,
   type WidgetPaint,
 } from "./widget.ts";
 
@@ -147,6 +148,22 @@ type WidgetTimerHolder = {
 
 let widgetTicking = false;
 
+// Labels the Orchestrator is currently blocked on inside a `wait: true` call.
+// Kept in-process rather than in the state file: it describes this session's
+// call stack, not the agent, and it must stay accurate across the re-wait path
+// too. Deliberately not derived from the `herdr:blocked` event — that payload
+// is a contract consumed by Herdr's own Pi state extension
+// (extensions/herdr-agent-state.ts), so it is left untouched.
+const awaitedAgentLabels = new Set<string>();
+
+function beginAwaitingAgent(label: string): void {
+  awaitedAgentLabels.add(label);
+}
+
+function endAwaitingAgent(label: string): void {
+  awaitedAgentLabels.delete(label);
+}
+
 function stopAgentsWidgetPoller(): void {
   const holder = globalThis as WidgetTimerHolder;
   if (!holder.__herdrAgentsWidgetTimer) return;
@@ -178,9 +195,20 @@ async function updateAgentsWidget(ctx: ExtensionContext): Promise<void> {
       ctx.ui.setWidget(AGENTS_WIDGET_ID, undefined);
       return;
     }
+
+    // Only an empty *managed* set stops the poller. When agents exist but are
+    // all hidden (the Orchestrator is blocking on them), keep ticking: one of
+    // them can still flip to `blocked`, which is exactly the state the widget
+    // must surface.
+    const visible = visibleWidgetAgents(agents, awaitedAgentLabels);
+    if (visible.length === 0) {
+      ctx.ui.setWidget(AGENTS_WIDGET_ID, undefined);
+      return;
+    }
+
     ctx.ui.setWidget(
       AGENTS_WIDGET_ID,
-      renderAgentWidgetLines(agents, Date.now(), themeWidgetPaint(ctx)),
+      renderAgentWidgetLines(visible, Date.now(), themeWidgetPaint(ctx)),
       { placement: "aboveEditor" },
     );
   } finally {
@@ -607,6 +635,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
 
         const blockedLabel = `waiting for ${label}`;
         pi.events.emit("herdr:blocked", { active: true, label: blockedLabel });
+        beginAwaitingAgent(label);
         try {
           await waitForAgent(target, timeoutMs, signal);
           const artifact = await readAgentResult(record?.resultFile);
@@ -672,6 +701,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
           }
           throw error;
         } finally {
+          endAwaitingAgent(label);
           pi.events.emit("herdr:blocked", {
             active: false,
             label: blockedLabel,
@@ -970,6 +1000,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       const blockedLabel = `waiting for ${tabLabel}`;
       if (wait) {
         pi.events.emit("herdr:blocked", { active: true, label: blockedLabel });
+        beginAwaitingAgent(tabLabel);
       }
       try {
         await promptAgent(target, taskPrompt, { wait, timeoutMs }, signal);
@@ -1071,6 +1102,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
         throw error;
       } finally {
         if (wait) {
+          endAwaitingAgent(tabLabel);
           pi.events.emit("herdr:blocked", {
             active: false,
             label: blockedLabel,
