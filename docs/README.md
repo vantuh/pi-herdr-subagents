@@ -237,6 +237,7 @@ See also:
 
 - [`herdr-0.7-agent-api-migration.md`](./herdr-0.7-agent-api-migration.md) — migration to Herdr's named-agent automation API, compatibility findings, and verification results.
 - [`plan-interactive-agents.md`](./plan-interactive-agents.md) — phased plan for the parallel-agent limit, status widget, bidirectional `ask_question` channel, and async result delivery. All shipped; the loadout snapshot phase was deliberately dropped, with reasons recorded there. Also records the measurement mistakes made along the way and the provider ceilings found.
+- [`plan-upstream-parity.md`](./plan-upstream-parity.md) — second wave of upstream comparison: remaining feature gaps against `pi-interactive-subagents`, phased with gates, plus what is deliberately not ported.
 - [`flow.md`](./flow.md) — detailed lifecycle.
 - [`session-findings.md`](./session-findings.md) — development findings and bug history.
 - [`composer-cursor-sdk-compatibility.md`](./composer-cursor-sdk-compatibility.md) — Composer tool-name adaptation and tool/skill boundary tuning.
