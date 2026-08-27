@@ -76,7 +76,7 @@ export function registerChildMode(pi: ExtensionAPI): void {
         content: [
           {
             type: "text",
-            text: "Question sent to the Orchestrator. End your turn now — do not emit HERDR_RESULT. The answer will arrive as your next prompt.",
+            text: "Question sent to the Orchestrator. Reply with one short line saying you are waiting for the answer, then stop — do not emit HERDR_RESULT and do not call other tools. The answer will arrive as your next prompt.",
           },
         ],
         details: { questionFile: written },

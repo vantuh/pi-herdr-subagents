@@ -206,6 +206,11 @@ export const AGENT_QUESTION_MESSAGE_TYPE = "herdr_agent_question";
  * The claim is taken *before* sending, and any synchronous collection releases
  * it too, so a result is delivered exactly once no matter which path gets there
  * first.
+ *
+ * Several outcomes in one tick are fine. The first send triggers a turn and the
+ * rest go out as `steer`, which by definition lands after the current turn's
+ * tool calls finish — verified with two agents asking in parallel, where both
+ * questions arrived, the second one turn later.
  */
 async function deliverDetachedOutcomes(
   pi: ExtensionAPI,
