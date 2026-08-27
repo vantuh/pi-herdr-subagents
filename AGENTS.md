@@ -39,6 +39,8 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 - `constants.ts` — injected Orchestrator instructions and child-agent protocol.
 - `utils.ts` — agent-name generation, title casing, result artifacts, and temp prompt files.
 - `types.ts` — shared TypeScript interfaces.
+- `test-support/` — test harnesses: `mock-extension.ts` (shared mock `ExtensionAPI` host, env and profile fixtures), `fake-herdr.ts` (in-process Herdr simulator), `herdr-shim.mjs` (executable `herdr` stand-in), `harness.ts` (integration harness), `mock-llm.ts` (scripted `openai-completions` server), `e2e-harness.ts` (hermetic real Herdr server), `link-deps.sh` (peer-dep symlinks).
+- `e2e/` — end-to-end scenarios against a real Herdr server and real Pi children.
 - `docs/` — detailed implementation and session notes.
 
 ## Important behavior
@@ -61,6 +63,87 @@ This extension is loaded from the symlinked Pi extension directory:
 ```
 
 A global `/parallel-review` Pi prompt uses this extension's `herdr_agent` tool, but the prompt itself is maintained outside this extension.
+
+## Tests
+
+```bash
+cd pi/.pi/agent/extensions/herdr-agents
+bun run test              # unit + integration (fast, no real Herdr)
+bun run test:unit         # pure helpers only, no subprocesses
+bun run test:integration  # full herdr_agent flow against a fake Herdr
+bun run test:e2e          # real Herdr server + real Pi children (~50s)
+bun run test:all          # everything
+```
+
+`bun run test` first runs `test-support/link-deps.sh`, which symlinks the Pi
+packages from the globally installed `pi` into a local (gitignored)
+`node_modules`. The extension has no install step of its own, so without those
+links `index.ts` cannot be imported.
+
+Three layers:
+
+- **Unit** (`*.test.ts` next to their module) — pure helpers: arg builders,
+  snapshot parsing, layout ratios, state records, widget rendering.
+- **Integration** (`integration.test.ts`) — the real extension, loaded through a
+  mock `ExtensionAPI`, driving a fake Herdr. `HERDR_BIN_PATH` points at
+  `test-support/herdr-shim.mjs`, which forwards argv over a socket to the
+  `FakeHerdr` instance inside the test, so every `herdr` call is a real
+  subprocess against a simulated server with a real pane/tab/layout tree.
+  `HERDR_SOCKET_PATH` serves `layout.export` / `layout.set_split_ratio`.
+  Simulated children write the same `result.md` / `question.md` artifacts a real
+  Pi child would.
+- **E2E** (`e2e/flow.test.ts`) — a real `herdr server`, real pane splits, and
+  real `pi` child processes that load this extension in child mode. Only the
+  model and the Orchestrator's own Pi process are simulated: `MockLlm` serves
+  `openai-completions` from a hermetic `models.json`, and the extension is
+  driven through the same mock `ExtensionAPI`. The server runs with its own
+  `HOME` and `HERDR_SOCKET_PATH`, and children inherit its hermetic
+  `PI_CODING_AGENT_DIR` / `TMPDIR`, so the live session is untouched.
+
+Both harnesses redirect `TMPDIR`, `HERDR_AGENTS_STATE_PATH` and
+`PI_CODING_AGENT_DIR` per test, so the live session, its state file and its temp
+artifacts are never touched.
+
+Covered by the integration layer: one-shot spawn/collect/close, scrollback
+fallback, persistent reuse by label, the `ask_question` round trip (parked
+one-shot answered by label), parallel spawns serialized into one agent column
+with rebalancing, `agent_pane_busy` retry, `agent_kind_mismatch` recovery, the
+single Enter nudge for a stalled prompt, timeout/abort soft re-wait plus the
+re-wait path, detached result and question delivery through the widget poller
+(exactly once), the tab layout, and the injected Orchestrator / `/run`
+instructions.
+
+Covered by the e2e layer: a real child produces a real result artifact and its
+pane is really closed; a persistent child keeps its context across two tasks
+(asserted on the model's request history); a real `ask_question` tool call
+travels from a tools-restricted child back to the Orchestrator and the answer
+finishes it; two real agent panes stack into one right column with the
+Orchestrator held at 60%.
+
+Not covered: the TUI manager dialog (`/herdr-agents`), and the Orchestrator's own
+Pi process (the extension is driven directly, not through a real model emitting
+`herdr_agent` tool calls).
+
+One e2e-specific constraint worth knowing: `MockLlm` stalls ~1.5s before its
+content chunk on purpose. Herdr samples the pane for agent state, so an instant
+reply can start and finish a turn without Herdr ever reporting `working`, and
+the extension's prompt-acceptance wait would never see the lifecycle change.
+
+Writing a scenario:
+
+```ts
+await withHarness({}, async (harness) => {
+  harness.fake.setBehavior((turn) => ({ result: `done ${turn.turn}` }));
+  const result = await harness.call({ agent: "scout", task: "..." });
+  assert.equal(result.details.closed, true);
+  harness.fake.callsMatching("pane", "split"); // recorded argv
+});
+```
+
+`FakeHerdr` hooks: `setBehavior` (per-prompt child outcome — `result`,
+`question`, `transcript`, `delayMs`, `stalled`, `neverSettle`),
+`queueStartFailures` (fail the next `agent start` with a Herdr error code),
+`completeAgent`, `callsMatching`, `layoutFor`, `ratioUpdates`.
 
 ## Validation
 
