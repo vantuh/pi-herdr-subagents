@@ -191,9 +191,11 @@ function themeWidgetPaint(ctx: ExtensionContext): WidgetPaint {
 }
 
 export const AGENT_RESULT_MESSAGE_TYPE = "herdr_agent_result";
+export const AGENT_QUESTION_MESSAGE_TYPE = "herdr_agent_question";
 
 /**
- * Deliver results of agents nobody is waiting for.
+ * Deliver outcomes of agents nobody is waiting for — a finished result, or a
+ * question the child asked instead of finishing.
  *
  * This is the half of `wait: false` that was missing: the tool returns
  * immediately, and from then on nothing watches the child, so an uncollected
@@ -205,7 +207,7 @@ export const AGENT_RESULT_MESSAGE_TYPE = "herdr_agent_result";
  * it too, so a result is delivered exactly once no matter which path gets there
  * first.
  */
-async function deliverDetachedResults(
+async function deliverDetachedOutcomes(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   agents: readonly HerdrAgentInfo[],
@@ -213,6 +215,42 @@ async function deliverDetachedResults(
   for (const agent of agents) {
     if (!agent.detached || !agent.terminalId) continue;
     if (!isSettledAgentStatus(agent.status)) continue;
+
+    // Checked before the result, exactly as the blocking path does: a child that
+    // asked ends its turn without HERDR_RESULT, so it settles like a completion
+    // while the artifact may already hold its assistant text.
+    const question = await bestEffort(undefined, () =>
+      readAgentQuestion(agent.resultFile),
+    );
+    if (question) {
+      const claimedQuestion = await bestEffort(false, () =>
+        claimDetachedAgent({ terminal_id: agent.terminalId }),
+      );
+      if (!claimedQuestion) continue;
+
+      // The target stays open — including one-shots — and `question.md` stays on
+      // disk, which is what keeps a parked one-shot reusable by label. The next
+      // prompt clears it.
+      pi.sendMessage(
+        {
+          customType: AGENT_QUESTION_MESSAGE_TYPE,
+          content: formatAgentQuestion(agent.tabLabel, agent.agent, question),
+          display: true,
+          details: {
+            tabLabel: agent.tabLabel,
+            agent: agent.agent,
+            paneId: agent.paneId,
+            lifecycle: agent.lifecycle,
+            question,
+          },
+        },
+        {
+          triggerTurn: true,
+          deliverAs: ctx.isIdle?.() === false ? "steer" : undefined,
+        },
+      );
+      continue;
+    }
 
     const result = await bestEffort(undefined, () =>
       readAgentResult(agent.resultFile),
@@ -292,7 +330,7 @@ async function updateAgentsWidget(
     // Runs before the rendering short-circuits below: a detached agent is
     // hidden from the widget once collected, but its result still has to be
     // delivered.
-    await bestEffort(undefined, () => deliverDetachedResults(pi, ctx, agents));
+    await bestEffort(undefined, () => deliverDetachedOutcomes(pi, ctx, agents));
 
     if (agents.length === 0) {
       stopAgentsWidgetPoller();
@@ -528,28 +566,39 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
   // Delivered results arrive outside any turn the user started. With plain text
   // at the usual output padding they read as a continuation of the assistant's
   // own output, so they get an explicit bordered block with a header instead.
-  pi.registerMessageRenderer(
-    AGENT_RESULT_MESSAGE_TYPE,
-    (message, options, theme) => {
+  const registerAgentBlockRenderer = (
+    customType: string,
+    suffix: string,
+    tone: "accent" | "warning",
+  ) => {
+    pi.registerMessageRenderer(customType, (message, options, theme) => {
       const { expanded, outputPad } = options;
       const details = message.details as
-        { tabLabel?: string; agent?: string; result?: string } | undefined;
+        | {
+            tabLabel?: string;
+            agent?: string;
+            result?: string;
+            question?: string;
+          }
+        | undefined;
       const label = details?.tabLabel ?? "agent";
       const profile = details?.agent ? ` · ${details.agent}` : "";
-      const border = (str: string) => theme.fg("accent", str);
+      const border = (str: string) => theme.fg(tone, str);
 
       const box = new Box(outputPad, 0, (t) => theme.bg("customMessageBg", t));
       box.addChild(new DynamicBorder(border));
       box.addChild(
         new Text(
-          theme.fg("accent", theme.bold(`Herdr agent ${label}${profile}`)),
+          theme.fg(tone, theme.bold(`Herdr agent ${label}${profile}${suffix}`)),
           1,
           0,
         ),
       );
       // The header carries the attribution the content also states for the
-      // model's benefit, so display the bare result and avoid repeating it.
-      box.addChild(new Text(details?.result ?? message.content, 1, 0));
+      // model's benefit, so display the bare body and avoid repeating it.
+      box.addChild(
+        new Text(details?.result ?? details?.question ?? message.content, 1, 0),
+      );
       if (expanded && message.details) {
         box.addChild(
           new Text(
@@ -561,7 +610,15 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       }
       box.addChild(new DynamicBorder(border));
       return box;
-    },
+    });
+  };
+
+  registerAgentBlockRenderer(AGENT_RESULT_MESSAGE_TYPE, "", "accent");
+  // A question needs the Orchestrator to act, so it is toned apart from a result.
+  registerAgentBlockRenderer(
+    AGENT_QUESTION_MESSAGE_TYPE,
+    " · asked a question",
+    "warning",
   );
 
   pi.on("session_start", async (_event, ctx) => {

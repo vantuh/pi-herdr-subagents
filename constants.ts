@@ -11,7 +11,9 @@ Each task must be self-contained: goal, scope, repo paths or source links, const
 
 If a call times out or was aborted but the agent is still running, call \`herdr_agent\` again with the same \`tabLabel\` and no \`task\` to re-wait — not raw \`herdr wait\` or a new prompt into a busy agent. Soft interrupt tool results include this hint; follow it instead of treating the wait as failure.
 
-With \`wait: false\` the tool returns immediately and the result is delivered to you on its own once the agent finishes — you do not need to re-wait to collect it. Use this when you have unrelated work to continue meanwhile. Do not start the delegated work yourself while a detached agent is still on it; if you need the answer before continuing, use \`wait: true\` instead.`;
+With \`wait: false\` the tool returns immediately and the result is delivered to you on its own once the agent finishes — you do not need to re-wait to collect it. Use this when you have unrelated work to continue meanwhile. Do not start the delegated work yourself while a detached agent is still on it; if you need the answer before continuing, use \`wait: true\` instead.
+
+A detached agent may come back with a question instead of a result. Answer it the same way as a synchronous one: call \`herdr_agent\` with the same \`tabLabel\` and \`task\` set to your answer. The agent stays open until it really finishes.`;
 
 export function buildRunTurnInstructions(agent?: string): string {
   const profile = agent

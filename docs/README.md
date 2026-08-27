@@ -75,11 +75,16 @@ The child receives:
 ### Async delivery
 
 With `wait: false` the tool returns as soon as the prompt is accepted and the
-widget poller takes over: once the agent settles (`idle`/`done`) and a result
-artifact exists, the poller delivers it as a `herdr_agent_result` custom message
-with `triggerTurn`, and closes the target if it was a one-shot. This is why
-`oneshot` no longer requires `wait: true` — it still does in headless sessions,
-where no poller runs.
+widget poller takes over: once the agent settles (`idle`/`done`) the poller
+delivers its outcome and closes the target if it was a one-shot that actually
+finished. This is why `oneshot` no longer requires `wait: true` — it still does
+in headless sessions, where no poller runs.
+
+The poller checks for a question before a result, the same order the blocking
+path uses, and delivers it as `herdr_agent_question` instead. A detached agent
+that asked stays open exactly like a synchronous one, and `question.md` stays on
+disk so the target remains reusable by label; the answer is a normal `task` with
+the same `tabLabel`.
 
 Delivery is exactly-once. The state record carries a `detached` flag, and
 `claimDetachedAgent` reads and clears it inside one locked read-modify-write, so

@@ -14,7 +14,7 @@ The intended model behavior:
 - Use `lifecycle: "oneshot"` for one-shot tasks; the extension closes that agent target after a successful result.
 - Use `lifecycle: "persistent"` when a role should stay available for follow-up tasks or accumulate context; the extension reuses a matching target automatically.
 - The Orchestrator waits for the child result, reads it, and synthesizes the answer.
-- With `wait: false` nobody waits: the record is marked `detached` and the widget poller delivers the result as a `herdr_agent_result` message once the agent settles, closing one-shot targets itself. `claimDetachedAgent` clears the flag in one locked read-modify-write, and synchronous collection releases it too, so delivery happens exactly once.
+- With `wait: false` nobody waits: the record is marked `detached` and the widget poller delivers the outcome once the agent settles — a result as `herdr_agent_result`, or a question as `herdr_agent_question` (checked first, same order as the blocking path). One-shot targets are closed only when they actually finished. `claimDetachedAgent` clears the flag in one locked read-modify-write, and synchronous collection releases it too, so delivery happens exactly once.
 - A child may instead call `ask_question`, which writes `question.md` beside the result artifact and returns. The child ends its turn and goes idle, the existing wait fires, and the Orchestrator returns the question early while leaving the target open — one-shots included. The answer is a normal `task` with the same `tabLabel`; parked targets are reusable by label whatever their lifecycle.
 
 ## Delegation policy
