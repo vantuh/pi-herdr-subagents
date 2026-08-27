@@ -36,7 +36,7 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Thi
 - one-command check (`git status`, single test run)
 - answer is already in the current conversation context
 
-**Negative policy:** no parallel workers with overlapping write areas. Parallelize only independent reads or disjoint write slices (2–3 agents max).
+**Negative policy:** no parallel workers with overlapping write areas. Parallelize only independent reads or disjoint write slices (4–5 agents max). The limit is independence, not count: past 2–3 agents, each additional one must have genuinely independent work. Five is the upper bound because a fifth pane in the 40% agent column is ~1/5 of terminal height.
 
 **Lifecycle examples:**
 
@@ -189,6 +189,7 @@ Typical tool call:
 See also:
 
 - [`herdr-0.7-agent-api-migration.md`](./herdr-0.7-agent-api-migration.md) — migration to Herdr's named-agent automation API, compatibility findings, and verification results.
+- [`plan-interactive-agents.md`](./plan-interactive-agents.md) — phased plan for the status widget, bidirectional `ask_question` channel, loadout snapshot, and optional async delegation.
 - [`flow.md`](./flow.md) — detailed lifecycle.
 - [`session-findings.md`](./session-findings.md) — development findings and bug history.
 - [`composer-cursor-sdk-compatibility.md`](./composer-cursor-sdk-compatibility.md) — Composer tool-name adaptation and tool/skill boundary tuning.
