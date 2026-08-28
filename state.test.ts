@@ -13,6 +13,7 @@ import {
   paneStateKey,
   pruneHerdrAgentsState,
   recordAgentLifecycle,
+  isAgentOwnedBy,
 } from "./state.ts";
 import type { PaneInfo } from "./types.ts";
 
@@ -61,6 +62,7 @@ test("records and loads agent lifecycle state", async () => {
       resultFile: "/tmp/herdr-agent-test/result.md",
       layout: "pane",
       spawnWarnings: ["Skill missing."],
+      ownerTerminalId: "term-orch",
     },
     filePath,
   );
@@ -74,8 +76,63 @@ test("records and loads agent lifecycle state", async () => {
     resultFile: "/tmp/herdr-agent-test/result.md",
     layout: "pane",
     spawnWarnings: ["Skill missing."],
+    ownerTerminalId: "term-orch",
     updatedAt: state.agents["terminal:term-1"]?.updatedAt,
   });
+});
+
+test("preserves owner when a later record omits it", async () => {
+  const filePath = await tempStatePath();
+  const agentPane = pane();
+
+  await recordAgentLifecycle(
+    agentPane,
+    "persistent",
+    { tabLabel: "Scout", ownerTerminalId: "term-orch" },
+    filePath,
+  );
+  await recordAgentLifecycle(
+    agentPane,
+    "persistent",
+    { tabLabel: "Scout", detached: true },
+    filePath,
+  );
+
+  assert.equal(
+    (await loadHerdrAgentsState(filePath)).agents["terminal:term-1"]
+      ?.ownerTerminalId,
+    "term-orch",
+  );
+});
+
+test("treats a stamped record as owned only by that orchestrator", () => {
+  const record = {
+    lifecycle: "persistent" as const,
+    ownerTerminalId: "term-a",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  assert.equal(isAgentOwnedBy(record, "term-a", "tab-b", "tab-a"), true);
+  assert.equal(isAgentOwnedBy(record, "term-b", "tab-b", "tab-a"), false);
+  assert.equal(isAgentOwnedBy(record, undefined, "tab-a", "tab-a"), false);
+});
+
+test("legacy pane records without owner stay in the current tab only", () => {
+  const record = {
+    lifecycle: "oneshot" as const,
+    layout: "pane" as const,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  assert.equal(isAgentOwnedBy(record, "term-a", "tab-a", "tab-a"), true);
+  assert.equal(isAgentOwnedBy(record, "term-a", "tab-b", "tab-a"), false);
+});
+
+test("legacy tab records without owner stay visible until restamped", () => {
+  const record = {
+    lifecycle: "persistent" as const,
+    layout: "tab" as const,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  assert.equal(isAgentOwnedBy(record, "term-b", "tab-worker", "tab-a"), true);
 });
 
 test("clears spawn warnings after a successful collect", async () => {

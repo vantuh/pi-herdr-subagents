@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import { createConnection } from "node:net";
-import type { HerdrAgentsState } from "./state.ts";
-import { paneStateKey } from "./state.ts";
+import { isAgentOwnedBy, paneStateKey, type HerdrAgentsState } from "./state.ts";
 import type {
   HerdrAgentInfo,
   HerdrAgentLifecycle,
@@ -249,6 +248,7 @@ export function findReusableAgentTab(
   context: HerdrContext,
   tabs: TabInfo[],
   baseLabel: string,
+  state: HerdrAgentsState,
 ): ReusableAgentTab | undefined {
   const tab = tabs.find(
     (item) => item.label === baseLabel && item.tab_id !== context.currentTab,
@@ -257,6 +257,19 @@ export function findReusableAgentTab(
 
   const pane = choosePaneForTab(context.panes, tab.tab_id);
   if (!pane || pane.agent !== "pi") return undefined;
+  const key = paneStateKey(pane);
+  const record = key ? state.agents[key] : undefined;
+  if (
+    !record ||
+    !isAgentOwnedBy(
+      record,
+      context.currentPane.terminal_id,
+      pane.tab_id,
+      context.currentTab,
+    )
+  ) {
+    return undefined;
+  }
 
   return { tab, pane };
 }
@@ -274,9 +287,20 @@ export function findReusableAgentPane(
     }
     const key = paneStateKey(pane);
     const record = key ? state.agents[key] : undefined;
+    if (
+      !record ||
+      !isAgentOwnedBy(
+        record,
+        context.currentPane.terminal_id,
+        pane.tab_id,
+        context.currentTab,
+      )
+    ) {
+      return false;
+    }
     return (
-      (record?.layout === "pane" || record?.layout === undefined) &&
-      record?.tabLabel === label
+      (record.layout === "pane" || record.layout === undefined) &&
+      record.tabLabel === label
     );
   });
 }
@@ -294,6 +318,16 @@ export function listManagedWorkspaceAgents(
     const key = paneStateKey(pane);
     const record = key ? state.agents[key] : undefined;
     if (!record) continue;
+    if (
+      !isAgentOwnedBy(
+        record,
+        context.currentPane.terminal_id,
+        pane.tab_id,
+        context.currentTab,
+      )
+    ) {
+      continue;
+    }
 
     agents.push({
       tabId: pane.tab_id,

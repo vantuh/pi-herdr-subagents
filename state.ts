@@ -21,6 +21,12 @@ export interface HerdrAgentStateRecord {
    * rather than memory so a pending delivery survives `/reload`.
    */
   detached?: boolean;
+  /**
+   * Orchestrator pane `terminal_id` that spawned this agent. Widget, reuse,
+   * and detached delivery all key off this so two Orchestrators in one
+   * workspace do not claim each other's children.
+   */
+  ownerTerminalId?: string;
   updatedAt: string;
 }
 
@@ -30,23 +36,65 @@ export interface HerdrAgentsState {
 }
 
 const STATE_PATH_ENV = "HERDR_AGENTS_STATE_PATH";
+const STATE_LOCK_STALE_MS = 8_000;
 
-// Serializes load-mutate-save cycles per state file path so same-process
-// concurrent callers (e.g. parallel herdr_agent invocations) don't race on
-// a read-modify-write of the shared JSON file and clobber each other's
-// writes. This only protects against in-process concurrency; it does not
-// guard against concurrent writers in other processes. State is best-effort
-// (used for lifecycle bookkeeping, not correctness-critical data), so a lost
-// update from a cross-process race is acceptable, but losing entries within
-// the same process would be an avoidable bug.
+// Serializes load-mutate-save cycles per state file path. The in-process
+// queue stops parallel herdr_agent calls in one Pi from clobbering each
+// other; the exclusive lock file stops a second Orchestrator from doing
+// the same to claimDetached / record writes.
 const stateFileQueues = new Map<string, Promise<unknown>>();
+
+async function acquireExclusiveLock(
+  lockPath: string,
+): Promise<() => Promise<void>> {
+  const deadline = Date.now() + STATE_LOCK_STALE_MS;
+  while (true) {
+    try {
+      const handle = await fs.open(lockPath, "wx");
+      return async () => {
+        await handle.close();
+        await fs.unlink(lockPath).catch(() => {});
+      };
+    } catch (error) {
+      if ((error as { code?: string }).code !== "EEXIST") throw error;
+      let stale = Date.now() >= deadline;
+      if (!stale) {
+        try {
+          const stat = await fs.stat(lockPath);
+          stale = Date.now() - stat.mtimeMs >= STATE_LOCK_STALE_MS;
+        } catch {
+          continue;
+        }
+      }
+      if (stale) {
+        await fs.unlink(lockPath).catch(() => {});
+        try {
+          const handle = await fs.open(lockPath, "wx");
+          return async () => {
+            await handle.close();
+            await fs.unlink(lockPath).catch(() => {});
+          };
+        } catch (retryError) {
+          if ((retryError as { code?: string }).code !== "EEXIST") {
+            throw retryError;
+          }
+          throw new Error(`Timed out waiting for ${lockPath}`);
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 15));
+    }
+  }
+}
 
 function withStateFileLock<T>(
   filePath: string,
   fn: () => Promise<T>,
 ): Promise<T> {
   const previous = stateFileQueues.get(filePath) ?? Promise.resolve();
-  const next = previous.then(fn, fn);
+  const next = previous.then(
+    () => runWithExclusiveLock(filePath, fn),
+    () => runWithExclusiveLock(filePath, fn),
+  );
   stateFileQueues.set(
     filePath,
     next.then(
@@ -55,6 +103,18 @@ function withStateFileLock<T>(
     ),
   );
   return next;
+}
+
+async function runWithExclusiveLock<T>(
+  filePath: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const release = await acquireExclusiveLock(`${filePath}.lock`);
+  try {
+    return await fn();
+  } finally {
+    await release();
+  }
 }
 
 export function getHerdrAgentsStatePath(): string {
@@ -133,6 +193,9 @@ export async function loadHerdrAgentsState(
           }
         : {}),
       ...(record.detached === true ? { detached: true } : {}),
+      ...(typeof record.ownerTerminalId === "string"
+        ? { ownerTerminalId: record.ownerTerminalId }
+        : {}),
       updatedAt:
         typeof record.updatedAt === "string"
           ? record.updatedAt
@@ -191,6 +254,27 @@ export function pruneHerdrAgentsState(
   return changed;
 }
 
+/**
+ * Whether this Orchestrator should list, reuse, or collect the record.
+ *
+ * Stamped records match `ownerTerminalId` to this pane's terminal. Legacy
+ * records without an owner stay visible in pane layout only when they live
+ * in the current tab; tab-layout leftovers stay visible until restamped so
+ * persistent agents keep working across `/reload` of this change.
+ */
+export function isAgentOwnedBy(
+  record: HerdrAgentStateRecord,
+  ownerTerminalId: string | undefined,
+  paneTabId: string,
+  currentTab: string,
+): boolean {
+  if (record.ownerTerminalId) {
+    return !!ownerTerminalId && record.ownerTerminalId === ownerTerminalId;
+  }
+  if (record.layout === "tab") return true;
+  return paneTabId === currentTab;
+}
+
 export async function recordAgentLifecycle(
   pane: PaneInfo,
   lifecycle: HerdrAgentLifecycle,
@@ -202,6 +286,7 @@ export async function recordAgentLifecycle(
     layout?: HerdrAgentLayout;
     spawnWarnings?: string[];
     detached?: boolean;
+    ownerTerminalId?: string;
   } = {},
   filePath = getHerdrAgentsStatePath(),
 ): Promise<void> {
@@ -210,9 +295,13 @@ export async function recordAgentLifecycle(
 
   await withStateFileLock(filePath, async () => {
     const state = await loadHerdrAgentsState(filePath);
+    const existing = state.agents[key];
     state.agents[key] = {
       lifecycle,
       ...metadata,
+      ...(!metadata.ownerTerminalId && existing?.ownerTerminalId
+        ? { ownerTerminalId: existing.ownerTerminalId }
+        : {}),
       updatedAt: new Date().toISOString(),
     };
     await saveHerdrAgentsState(state, filePath);
@@ -260,9 +349,10 @@ export async function deleteAgentLifecycle(
  * Atomically take ownership of a pending async delivery.
  *
  * Returns true exactly once per detached agent: the flag is read and cleared
- * inside a single locked read-modify-write, so overlapping poller ticks cannot
- * both deliver, and because the flag lives in the state file the claim also
- * holds across `/reload`.
+ * inside a locked read-modify-write (in-process queue plus an exclusive lock
+ * file), so overlapping poller ticks — including a second Orchestrator —
+ * cannot both deliver, and because the flag lives in the state file the claim
+ * also holds across `/reload`.
  *
  * Claiming before delivering means a failed delivery drops the notification
  * rather than risking a duplicate — the result artifact still exists and stays

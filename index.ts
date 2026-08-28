@@ -848,7 +848,7 @@ function registerHerdrAgentTool(
           layout === "tab" ? await listTabs(current.workspaceId, signal) : [];
         const reusableTab =
           layout === "tab"
-            ? findReusableAgentTab(current, tabs, baseLabel)
+            ? findReusableAgentTab(current, tabs, baseLabel, state)
             : undefined;
         const reusablePane =
           layout === "pane"
@@ -1080,7 +1080,7 @@ function registerHerdrAgentTool(
         {
           const candidateTab =
             layout === "tab"
-              ? findReusableAgentTab(current, tabs, baseLabel)
+              ? findReusableAgentTab(current, tabs, baseLabel, state)
               : undefined;
           const candidatePane =
             layout === "tab"
@@ -1328,6 +1328,9 @@ function registerHerdrAgentTool(
               ...(spawnWarnings.length > 0 ? { spawnWarnings } : {}),
               // Nobody is waiting for this one, so the poller owns its result.
               detached: !wait,
+              ...(current.currentPane.terminal_id
+                ? { ownerTerminalId: current.currentPane.terminal_id }
+                : {}),
             }),
           );
         }
