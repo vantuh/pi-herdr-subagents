@@ -114,7 +114,7 @@ export async function createHarness(
     isIdle: options.isIdle,
     dialogInputs: options.dialogInputs,
   });
-  herdrAgentsExtension(host.pi);
+  await Promise.resolve(herdrAgentsExtension(host.pi));
 
   const tool = host.tools.get("herdr_agent");
   if (!tool) throw new Error("herdr_agent tool was not registered");

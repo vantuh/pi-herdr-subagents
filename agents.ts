@@ -30,15 +30,13 @@ export const VALID_THINKING_LEVELS = [
   "max",
 ] as const;
 
+const THINKING_LEVEL_SET: ReadonlySet<string> = new Set(VALID_THINKING_LEVELS);
+
 /** Unknown levels are ignored at spawn time, not a parse error. */
-export function resolveThinkingLevel(
-  value: string | undefined,
-): string | undefined {
-  if (!value) return undefined;
+export function resolveThinkingLevel(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value) return undefined;
   const level = value.trim().toLowerCase();
-  return (VALID_THINKING_LEVELS as readonly string[]).includes(level)
-    ? level
-    : undefined;
+  return THINKING_LEVEL_SET.has(level) ? level : undefined;
 }
 
 /**
@@ -68,8 +66,9 @@ export async function resolveProfileSkills(
 ): Promise<{
   found: Array<{ name: string; filePath: string }>;
   missing: string[];
+  diagnostics: string[];
 }> {
-  if (names.length === 0) return { found: [], missing: [] };
+  if (names.length === 0) return { found: [], missing: [], diagnostics: [] };
   const agentDir = getAgentDir();
   const settingsManager = SettingsManager.create(cwd, agentDir);
   const packageManager = new DefaultPackageManager({
@@ -83,7 +82,7 @@ export async function resolveProfileSkills(
   const skillPaths = resolved.skills
     .filter((resource) => resource.enabled)
     .map((resource) => resource.path);
-  const { skills } = loadSkills({
+  const { skills, diagnostics: loadedDiagnostics } = loadSkills({
     cwd,
     agentDir,
     skillPaths,
@@ -99,7 +98,27 @@ export async function resolveProfileSkills(
     if (skill) found.push({ name: skill.name, filePath: skill.filePath });
     else missing.push(name);
   }
-  return { found, missing };
+  const requested = new Set(names);
+  const diagnostics: string[] = [];
+  for (const diagnostic of loadedDiagnostics) {
+    const parent = diagnostic.path
+      ? path.basename(path.dirname(diagnostic.path))
+      : "";
+    const relevant =
+      requested.has(parent) ||
+      [...requested].some(
+        (name) =>
+          diagnostic.message.includes(name) ||
+          (diagnostic.path?.includes(name) ?? false),
+      );
+    if (!relevant) continue;
+    diagnostics.push(
+      diagnostic.path
+        ? `${diagnostic.message} (${diagnostic.path})`
+        : diagnostic.message,
+    );
+  }
+  return { found, missing, diagnostics };
 }
 
 function findNearestProjectAgentsDir(cwd: string): string | null {
@@ -138,18 +157,27 @@ async function loadAgentsFromDir(
     }
 
     const { frontmatter, body } = parseFrontmatter<
-      Record<string, string> & {
+      Record<string, unknown> & {
         tools?: string | string[];
         skills?: string | string[];
-        "system-prompt"?: string;
+        "system-prompt"?: unknown;
         "disable-model-invocation"?: string | boolean;
       }
     >(content);
-    if (!frontmatter.name || !frontmatter.description) continue;
+    if (
+      typeof frontmatter.name !== "string" ||
+      typeof frontmatter.description !== "string"
+    ) {
+      continue;
+    }
 
     const tools = normalizeTools(frontmatter.tools);
     const skills = normalizeSkillList(frontmatter.skills);
-    const promptMode = frontmatter["system-prompt"]?.trim().toLowerCase();
+    const rawPromptMode = frontmatter["system-prompt"];
+    const promptMode =
+      typeof rawPromptMode === "string"
+        ? rawPromptMode.trim().toLowerCase()
+        : undefined;
     const disableFlag = frontmatter["disable-model-invocation"];
     const disableModelInvocation =
       disableFlag === true || disableFlag === "true"
@@ -162,8 +190,12 @@ async function loadAgentsFromDir(
       name: frontmatter.name,
       description: frontmatter.description,
       tools,
-      model: frontmatter.model,
-      thinking: frontmatter.thinking,
+      model:
+        typeof frontmatter.model === "string" ? frontmatter.model : undefined,
+      thinking:
+        typeof frontmatter.thinking === "string"
+          ? frontmatter.thinking
+          : undefined,
       skills,
       systemPromptMode:
         promptMode === "replace" || promptMode === "append"

@@ -5,6 +5,7 @@ import * as path from "node:path";
 import test, { after } from "node:test";
 import {
   claimDetachedAgent,
+  clearAgentSpawnWarnings,
   deleteAgentLifecycle,
   emptyHerdrAgentsState,
   getKnownAgentLifecyclesByTabId,
@@ -75,6 +76,25 @@ test("records and loads agent lifecycle state", async () => {
     spawnWarnings: ["Skill missing."],
     updatedAt: state.agents["terminal:term-1"]?.updatedAt,
   });
+});
+
+test("clears spawn warnings after a successful collect", async () => {
+  const filePath = await tempStatePath();
+  const agentPane = pane();
+
+  await recordAgentLifecycle(
+    agentPane,
+    "persistent",
+    { spawnWarnings: ["Skill missing."] },
+    filePath,
+  );
+  await clearAgentSpawnWarnings(agentPane, filePath);
+
+  assert.equal(
+    (await loadHerdrAgentsState(filePath)).agents["terminal:term-1"]
+      ?.spawnWarnings,
+    undefined,
+  );
 });
 
 test("ignores corrupted state files", async () => {

@@ -219,6 +219,28 @@ export async function recordAgentLifecycle(
   });
 }
 
+/**
+ * Spawn warnings belong on the first collection only. Later re-waits and
+ * reused tasks rewrite the record without them; this drops them after a
+ * successful collect so they are not reprinted.
+ */
+export async function clearAgentSpawnWarnings(
+  pane: Pick<PaneInfo, "terminal_id">,
+  filePath = getHerdrAgentsStatePath(),
+): Promise<void> {
+  const key = paneStateKey(pane);
+  if (!key) return;
+
+  await withStateFileLock(filePath, async () => {
+    const state = await loadHerdrAgentsState(filePath);
+    const record = state.agents[key];
+    if (!record?.spawnWarnings?.length) return;
+    const { spawnWarnings: _dropped, ...rest } = record;
+    state.agents[key] = rest;
+    await saveHerdrAgentsState(state, filePath);
+  });
+}
+
 export async function deleteAgentLifecycle(
   pane: PaneInfo,
   filePath = getHerdrAgentsStatePath(),

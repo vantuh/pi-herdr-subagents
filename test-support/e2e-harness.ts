@@ -238,7 +238,7 @@ export async function createE2eHarness(
   });
 
   const host = createMockHost({ cwd });
-  herdrAgentsExtension(host.pi);
+  await Promise.resolve(herdrAgentsExtension(host.pi));
   const tool = host.tools.get("herdr_agent");
   if (!tool) throw new Error("herdr_agent tool was not registered");
 

@@ -15,10 +15,13 @@ export function describeAgentProfiles(
     disableModelInvocation?: boolean;
   }>,
 ): string {
-  const names = profiles
-    .filter((profile) => profile.name && !profile.disableModelInvocation)
-    .map((profile) => profile.name)
-    .filter((name, index, all) => all.indexOf(name) === index);
+  const names = [
+    ...new Set(
+      profiles
+        .filter((profile) => profile.name && !profile.disableModelInvocation)
+        .map((profile) => profile.name),
+    ),
+  ];
 
   const listing = names.length > 0 ? ` Available: ${names.join(", ")}.` : "";
   return `${DEFAULT_AGENT_PARAM_DESCRIPTION}${listing}`;

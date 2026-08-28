@@ -56,6 +56,7 @@ import {
 } from "./schema.ts";
 import {
   claimDetachedAgent,
+  clearAgentSpawnWarnings,
   deleteAgentLifecycle,
   emptyHerdrAgentsState,
   loadHerdrAgentsState,
@@ -243,16 +244,13 @@ async function deliverDetachedOutcomes(
     const question = await bestEffort(undefined, () =>
       readAgentQuestion(agent.resultFile),
     );
-    if (question) {
+      if (question) {
       const claimedQuestion = await bestEffort(false, () =>
         claimDetachedAgent({ terminal_id: agent.terminalId }),
       );
       if (!claimedQuestion) continue;
 
-      const questionWithWarnings = formatSpawnWarnings(
-        question,
-        agent.spawnWarnings ?? [],
-      );
+      const spawnWarnings = agent.spawnWarnings ?? [];
       // The target stays open — including one-shots — and `question.md` stays on
       // disk, which is what keeps a parked one-shot reusable by label. The next
       // prompt clears it.
@@ -260,7 +258,7 @@ async function deliverDetachedOutcomes(
         customType: AGENT_QUESTION_MESSAGE_TYPE,
         content: formatSpawnWarnings(
           formatAgentQuestion(agent.tabLabel, agent.agent, question),
-          agent.spawnWarnings ?? [],
+          spawnWarnings,
         ),
         display: true,
         details: {
@@ -268,9 +266,11 @@ async function deliverDetachedOutcomes(
           agent: agent.agent,
           paneId: agent.paneId,
           lifecycle: agent.lifecycle,
-          question: questionWithWarnings,
+          question,
+          ...spawnWarningDetails(spawnWarnings),
         },
       });
+      await dropCollectedSpawnWarnings({ terminal_id: agent.terminalId });
       continue;
     }
 
@@ -334,6 +334,7 @@ async function deliverDetachedOutcomes(
         result: resultWithWarnings,
       },
     });
+    await dropCollectedSpawnWarnings({ terminal_id: agent.terminalId });
   }
 
   if (pending.length === 0) return;
@@ -593,6 +594,13 @@ function spawnWarningDetails(
   return warnings.length > 0 ? { spawnWarnings: [...warnings] } : {};
 }
 
+async function dropCollectedSpawnWarnings(
+  pane: Pick<PaneInfo, "terminal_id"> | undefined,
+): Promise<void> {
+  if (!pane?.terminal_id) return;
+  await bestEffort(undefined, () => clearAgentSpawnWarnings(pane));
+}
+
 export default function herdrAgentsExtension(pi: ExtensionAPI) {
   if (process.env.HERDR_AGENT_CHILD === "1") {
     registerChildMode(pi);
@@ -666,12 +674,10 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
     // Once profiles are discoverable, refresh the model-facing agent listing:
     // disable-model-invocation profiles keep working by exact name but drop
     // out of the schema description. registerTool replaces by name.
-    try {
-      const agents = await discoverAgents(ctx.cwd);
-      registerHerdrAgentTool(pi, describeAgentProfiles(agents));
-    } catch {
-      // Discovery is best-effort; the static schema description stays.
-    }
+    // `/reload` rebinds extensions then emits session_start with reason
+    // "reload", which is what restores Available after the load-time
+    // static schema.
+    await refreshAgentListing(ctx.cwd);
   });
 
   // Covers quit/new/resume/fork too, not just the reload path above.
@@ -753,10 +759,23 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
     },
   });
 
+  async function refreshAgentListing(cwd: string): Promise<void> {
+    try {
+      const agents = await discoverAgents(cwd);
+      registerHerdrAgentTool(pi, describeAgentProfiles(agents));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(
+        `herdr-agents: failed to refresh agent listing: ${message}\n`,
+      );
+    }
+  }
+
 /**
  * `agent` description is static at load; `session_start` re-registers with
  * a dynamic listing once profiles are discoverable. registerTool replaces
- * by name, so the refreshed schema wins.
+ * by name, so the refreshed schema wins. Pi `/reload` emits session_start
+ * with reason "reload", which is the path that restores Available.
  */
 function registerHerdrAgentTool(
   pi: ExtensionAPI,
@@ -894,6 +913,7 @@ function registerHerdrAgentTool(
           const pendingQuestion = await readAgentQuestion(record?.resultFile);
           if (pendingQuestion) {
             const spawnWarnings = record?.spawnWarnings ?? [];
+            await dropCollectedSpawnWarnings(pane);
             return {
               content: [
                 {
@@ -955,6 +975,7 @@ function registerHerdrAgentTool(
             formatAgentOutput(output, label, closeError),
             spawnWarnings,
           );
+          await dropCollectedSpawnWarnings(pane);
           return {
             content: [{ type: "text", text }],
             details: {
@@ -1086,7 +1107,8 @@ function registerHerdrAgentTool(
             agentPane = candidatePane;
             automationName = candidateRecord?.automationName;
             resultFile = candidateRecord?.resultFile;
-            spawnWarnings = candidateRecord?.spawnWarnings ?? [];
+            // A new task on an existing pane is not the first collection:
+            // do not copy spawn-time notes onto later turns.
           }
         }
 
@@ -1257,6 +1279,7 @@ function registerHerdrAgentTool(
                 `Skills not found: ${resolved.missing.join(", ")}.`,
               );
             }
+            spawnWarnings.push(...resolved.diagnostics);
           }
           const toolAllowlist = buildChildToolAllowlist(agent.tools);
           if (toolAllowlist) piArgs.push("--tools", toolAllowlist.join(","));
@@ -1387,6 +1410,7 @@ function registerHerdrAgentTool(
         // The agent stays open — including one-shots — until it really finishes.
         const question = await readAgentQuestion(resultFile);
         if (question) {
+          await dropCollectedSpawnWarnings(agentPane);
           return {
             content: [
               {
@@ -1451,6 +1475,7 @@ function registerHerdrAgentTool(
           formatAgentOutput(output, tabLabel, closeError),
           spawnWarnings,
         );
+        await dropCollectedSpawnWarnings(agentPane);
 
         return {
           content: [

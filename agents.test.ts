@@ -70,6 +70,38 @@ test("a project profile overrides a user profile with the same name", async () =
   });
 });
 
+test("a non-string system-prompt in one file does not drop other profiles", async () => {
+  await withProfileDirs(async ({ userAgents, projectRoot }) => {
+    await fs.writeFile(
+      path.join(userAgents, "bad.md"),
+      "---\nname: bad\ndescription: junk prompt\nsystem-prompt: true\n---\n\nBAD\n",
+    );
+    await fs.writeFile(
+      path.join(userAgents, "good.md"),
+      "---\nname: good\ndescription: fine\n---\n\nBODY\n",
+    );
+
+    const agents = await discoverAgents(projectRoot);
+    const byName = new Map(agents.map((agent) => [agent.name, agent]));
+    assert.deepEqual([...byName.keys()].sort(), ["bad", "good"]);
+    assert.equal(byName.get("bad")?.systemPromptMode, undefined);
+    assert.equal(byName.get("good")?.systemPrompt, "BODY");
+  });
+});
+
+test("non-string thinking is omitted at parse instead of throwing", async () => {
+  await withProfileDirs(async ({ userAgents, projectRoot }) => {
+    await fs.writeFile(
+      path.join(userAgents, "bool.md"),
+      "---\nname: bool\ndescription: yaml bool\nthinking: true\n---\n\nBODY\n",
+    );
+
+    const profile = (await discoverAgents(projectRoot)).at(0);
+    assert.ok(profile);
+    assert.equal(profile.thinking, undefined);
+  });
+});
+
 test("skips files that are not usable agent profiles", async () => {
   await withProfileDirs(async ({ userAgents, projectRoot }) => {
     await fs.writeFile(
@@ -178,6 +210,8 @@ test("resolveThinkingLevel validates against pi's flag levels", () => {
   assert.equal(resolveThinkingLevel("sideways"), undefined);
   assert.equal(resolveThinkingLevel(""), undefined);
   assert.equal(resolveThinkingLevel(undefined), undefined);
+  assert.equal(resolveThinkingLevel(true), undefined);
+  assert.equal(resolveThinkingLevel(1), undefined);
 });
 
 test("resolveProfileSkills maps names to file paths via pi's discovery", async () => {
@@ -263,7 +297,29 @@ test("resolveProfileSkills discovers enabled package skills", async () => {
 
 test("resolveProfileSkills returns empty without work for empty names", async () => {
   const result = await resolveProfileSkills([], "/whatever");
-  assert.deepEqual(result, { found: [], missing: [] });
+  assert.deepEqual(result, { found: [], missing: [], diagnostics: [] });
+});
+
+test("resolveProfileSkills surfaces diagnostics for a broken requested skill", async () => {
+  await withProfileDirs(async ({ projectRoot }) => {
+    const agentDir = process.env.PI_CODING_AGENT_DIR!;
+    const broken = path.join(agentDir, "skills", "broken-skill");
+    await fs.mkdir(broken, { recursive: true });
+    await fs.writeFile(
+      path.join(broken, "SKILL.md"),
+      "---\nname: broken-skill\n---\n\nno description\n",
+    );
+
+    const resolved = await resolveProfileSkills(["broken-skill"], projectRoot);
+    assert.deepEqual(resolved.found, []);
+    assert.deepEqual(resolved.missing, ["broken-skill"]);
+    assert.ok(
+      resolved.diagnostics.some((line) =>
+        line.includes("description") || line.includes("SKILL.md"),
+      ),
+      `expected a diagnostic, got ${JSON.stringify(resolved.diagnostics)}`,
+    );
+  });
 });
 
 test("skills: none and an empty YAML list both mean no skills", async () => {

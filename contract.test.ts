@@ -279,6 +279,43 @@ test("keeps spawn warnings visible through detached delivery", async () => {
   );
 });
 
+test("keeps spawn warnings out of a detached question body", async () => {
+  await withHarness(
+    {
+      profiles: [
+        {
+          name: "worker",
+          skills: ["ghost-skill"],
+          body: "BODY",
+        },
+      ],
+    },
+    async (harness) => {
+      harness.fake.setBehavior(() => ({ question: "Which module first?" }));
+
+      await harness.call({
+        agent: "worker",
+        task: "background",
+        wait: false,
+        lifecycle: "persistent",
+      });
+
+      await harness.waitFor(
+        () => harness.messages.length > 0,
+        "detached question warning delivery",
+      );
+      const delivered = harness.messages[0];
+      assert.equal(delivered?.customType, AGENT_QUESTION_MESSAGE_TYPE);
+      assert.equal(delivered?.details.question, "Which module first?");
+      assert.deepEqual(delivered?.details.spawnWarnings, [
+        "Skills not found: ghost-skill.",
+      ]);
+      assert.match(delivered?.content ?? "", /Spawn warnings:/);
+      assert.match(delivered?.content ?? "", /Which module first\?/);
+    },
+  );
+});
+
 test("keeps the claim when a detached agent settles with nothing to deliver", async () => {
   // Without an artifact there is no usable result, so the flag stays set and an
   // explicit re-wait can still read the scrollback.
@@ -337,6 +374,45 @@ test("reuses a persistent tab by label and keeps new tab labels unique", async (
     });
     assert.equal(harness.fake.callsMatching("tab", "create").length, 1);
   });
+});
+
+test("does not reprint spawn warnings on persistent reuse or later re-wait", async () => {
+  await withHarness(
+    {
+      profiles: [
+        {
+          name: "worker",
+          skills: ["ghost-skill"],
+          body: "BODY",
+        },
+      ],
+    },
+    async (harness) => {
+      const first = await harness.call({
+        agent: "worker",
+        task: "one",
+        lifecycle: "persistent",
+      });
+      assert.equal(first.details.reused, false);
+      assert.match(first.content[0].text, /Skills not found: ghost-skill/);
+
+      const rewait = await harness.call({
+        agent: "worker",
+        tabLabel: "Worker",
+      });
+      assert.doesNotMatch(rewait.content[0].text, /Skills not found/);
+      assert.equal(rewait.details.spawnWarnings, undefined);
+
+      const reused = await harness.call({
+        agent: "worker",
+        task: "two",
+        lifecycle: "persistent",
+      });
+      assert.equal(reused.details.reused, true);
+      assert.doesNotMatch(reused.content[0].text, /Skills not found/);
+      assert.equal(reused.details.spawnWarnings, undefined);
+    },
+  );
 });
 
 test("looks the tab up by label when tab create omits the tab id", async () => {
@@ -806,5 +882,45 @@ test("session_start with no profiles still refreshes the agent listing", async (
     ).description;
     assert.match(description ?? "", /Agent profile name/);
     assert.doesNotMatch(description ?? "", /Available:/);
+  });
+});
+
+test("session_start reload reason refreshes the agent listing", async () => {
+  await withHarness(
+    {
+      profiles: [
+        { name: "scout", body: "BODY" },
+        { name: "secret", disableModelInvocation: true, body: "SECRET" },
+      ],
+    },
+    async (harness) => {
+      await harness.fire("session_start", { reason: "reload" });
+
+      const tool = harness.getTool("herdr_agent") as
+        | { parameters: { properties: Record<string, any> } }
+        | undefined;
+      assert.ok(tool);
+      const description = (
+        tool.parameters.properties.agent as { description?: string }
+      ).description;
+      assert.match(description ?? "", /Available: scout\./);
+      assert.doesNotMatch(description ?? "", /secret/);
+    },
+  );
+});
+
+test("boolean thinking in a profile does not fail the spawn", async () => {
+  await withHarness({ profiles: [] }, async (harness) => {
+    await fs.writeFile(
+      path.join(harness.cwd, ".pi", "agents", "worker.md"),
+      "---\nname: worker\ndescription: yaml bool thinking\nthinking: true\n---\n\nBODY\n",
+    );
+
+    const result = await harness.call({ agent: "worker", task: "Go" });
+    assert.equal(result.isError, undefined);
+    const start = harness.fake.callsMatching("agent", "start")[0];
+    assert.ok(start);
+    const piArgs = start.slice(start.indexOf("--") + 1);
+    assert.equal(flagValue(piArgs, "--thinking"), undefined);
   });
 });
