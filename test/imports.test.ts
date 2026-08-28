@@ -11,7 +11,10 @@ import { fileURLToPath } from "node:url";
  * relative import in a module no test happens to load.
  */
 
-const EXTENSION_DIR = path.dirname(fileURLToPath(import.meta.url));
+const EXTENSION_DIR = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
 
 async function sourceFiles(dir: string): Promise<string[]> {
   const found: string[] = [];
