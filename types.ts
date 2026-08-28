@@ -1,8 +1,15 @@
+export type SystemPromptMode = "append" | "replace";
+
 export interface AgentProfile {
   name: string;
   description: string;
   tools?: string[];
   model?: string;
+  thinking?: string;
+  /** `[]` (frontmatter `skills: none`) means "no skills"; undefined keeps full discovery. */
+  skills?: string[];
+  systemPromptMode?: SystemPromptMode;
+  disableModelInvocation?: boolean;
   systemPrompt: string;
   source: "user" | "project";
   filePath: string;
@@ -44,6 +51,8 @@ export interface HerdrAgentInfo {
   cwd?: string;
   /** State-record timestamp: when this agent last received a task. */
   updatedAt?: string;
+  /** Spawn-time profile values Pi ignored; surfaced in every collection path. */
+  spawnWarnings?: string[];
   /** Spawned with `wait: false` and not yet collected. */
   detached?: boolean;
   /** Pane terminal id — the state-record key. */

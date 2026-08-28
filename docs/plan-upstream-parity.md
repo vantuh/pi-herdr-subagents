@@ -15,7 +15,7 @@
 
 | Фаза | Що | Ризик | Стан |
 |---|---|:---:|---|
-| A | Frontmatter профілю: `thinking`, `skills`, `system-prompt`, `disable-model-invocation` | низький | заплановано |
+| A | Frontmatter профілю: `thinking`, `skills`, `system-prompt`, `disable-model-invocation` | низький | ✅ готово (2026-08-28) |
 | B | Ізоляція дитини: `--no-extensions` + динамічний вибір `--extension` | середній | заплановано |
 | C | Stall-детект за зростанням session-файлу + пінг батьку для detached | середній | заплановано |
 | D | Повідомлення агенту, що вже працює (steer у живий pane) | середній | заплановано |
@@ -47,11 +47,12 @@ E і F його перевикористовують. Дитина нічого 
     (синтетичний шлях `<builtin:name>`), тули розширень — реальний шлях до
     файлу розширення. Це дає динамічну мапу тул → розширення без хардкоду
     (фаза B).
-  - `loadSkills({ cwd, agentDir, skillPaths, includeDefaults })` — та сама
-    дисковері, яку pi виконує на старті; повертає **`LoadSkillsResult`**
-    (`{ skills, diagnostics }`), не голий `Skill[]`. У кожного `Skill` є
-    `name` і `filePath`. Виклик раз при спавні — резолв імен скілів для
-    фази A без власного сканування тек.
+  - `DefaultPackageManager.resolve()` повертає package-aware список ресурсів,
+    включно з `.pi/skills`, ancestor `.agents/skills`, configured paths і
+    package skills. Його enabled skill paths передаємо у
+    `loadSkills({ cwd, agentDir, skillPaths, includeDefaults: false })`, який
+    повертає **`LoadSkillsResult`** (`{ skills, diagnostics }`), не голий
+    `Skill[]`. У кожного `Skill` є `name` і `filePath`.
   - `ScopedModel` **не містить** source-інфо: мапа модель → розширення
     динамічно недосяжна, для провайдерів потрібен статичний список +
     безпечний fallback (фаза B).
@@ -125,13 +126,13 @@ E і F його перевикористовують. Дитина нічого 
 | `system-prompt` | `append` (дефолт, як зараз) або `replace` → `--system-prompt` замість `--append-system-prompt`. `CHILD_PROTOCOL` **завжди** додається, навіть при `replace` |
 | `disable-model-invocation` | профіль лишається спавнибельним по імені, але зникає з опису `agent` у схемі/`details` |
 
-Резолв `skills` — через SDK `loadSkills({ cwd, agentDir, skillPaths: [],
-includeDefaults: true })`. Результат — `{ skills, diagnostics }`; ітеруємо
-`skills`. Ім'я → `skill.filePath` → `--skill <path>`. Проєктні скіли
-резолвляться від cwd оркестратора — це коректно, бо дитина успадковує той
-самий cwd. Окремого кешування між спавнами не робимо: це той самий
-катал-скан, який pi виконує на кожному власному старті, — дешево і без
-ризику дрейфу кешу від диску.
+Резолв `skills` — через SDK `DefaultPackageManager.resolve()` із тим самим
+`cwd` / `agentDir`, далі enabled skill paths подаються у
+`loadSkills({ ..., includeDefaults: false })`. Це охоплює user/project `.pi`,
+ancestor `.agents`, configured paths і package skills із тими самими
+пріоритетами, що й pi. Ім'я → `skill.filePath` → `--skill <path>`. Відсутні
+configured packages при резолві не інсталюємо. Окремого кешування між
+спавнами не робимо, щоб не отримати дрейф від settings або диску.
 
 `cwd` навмисно **не** в цій фазі — див. відкриті питання.
 

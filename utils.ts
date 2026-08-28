@@ -72,6 +72,15 @@ export function formatAgentOutput(
     : text;
 }
 
+/** Model-facing spawn notes (unknown thinking, missing skills). */
+export function formatSpawnWarnings(
+  text: string,
+  warnings: readonly string[],
+): string {
+  if (warnings.length === 0) return text;
+  return `${text}\n\nSpawn warnings:\n${warnings.map((warning) => `- ${warning}`).join("\n")}`;
+}
+
 /** Outer abort / Herdr wait timeout — child may still be running. */
 export function isRecoverableWaitInterrupt(error: unknown): boolean {
   if (typeof error === "object" && error !== null) {

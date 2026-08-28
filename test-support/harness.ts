@@ -62,6 +62,8 @@ export interface Harness {
   ): Promise<any>;
   /** Fire an extension lifecycle event (e.g. `session_start`). */
   fire(event: string, payload?: Record<string, unknown>): Promise<unknown>;
+  /** The currently registered tool — re-registration replaces it by name. */
+  getTool(name: string): unknown;
   /** Run a registered slash command with the mock command context. */
   runCommand(name: string, args?: string): Promise<void>;
   readState(): Promise<HerdrAgentsState>;
@@ -137,6 +139,7 @@ export async function createHarness(
         host.ctx,
       ),
     fire: host.fire,
+    getTool: (name) => host.tools.get(name),
     runCommand: async (name, args = "") => {
       const command = host.commands.get(name);
       if (!command) throw new Error(`command /${name} is not registered`);

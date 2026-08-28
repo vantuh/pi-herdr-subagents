@@ -14,6 +14,8 @@ export interface HerdrAgentStateRecord {
   automationName?: string;
   resultFile?: string;
   layout?: HerdrAgentLayout;
+  /** Spawn-time profile values Pi ignored; retained for detached/re-wait output. */
+  spawnWarnings?: string[];
   /**
    * Spawned with `wait: false` and not yet collected. Lives in the state file
    * rather than memory so a pending delivery survives `/reload`.
@@ -123,6 +125,13 @@ export async function loadHerdrAgentsState(
         ? { resultFile: record.resultFile }
         : {}),
       ...(isLayout(record.layout) ? { layout: record.layout } : {}),
+      ...(Array.isArray(record.spawnWarnings)
+        ? {
+            spawnWarnings: record.spawnWarnings.filter(
+              (warning): warning is string => typeof warning === "string",
+            ),
+          }
+        : {}),
       ...(record.detached === true ? { detached: true } : {}),
       updatedAt:
         typeof record.updatedAt === "string"
@@ -191,6 +200,7 @@ export async function recordAgentLifecycle(
     automationName?: string;
     resultFile?: string;
     layout?: HerdrAgentLayout;
+    spawnWarnings?: string[];
     detached?: boolean;
   } = {},
   filePath = getHerdrAgentsStatePath(),

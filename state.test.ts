@@ -59,6 +59,7 @@ test("records and loads agent lifecycle state", async () => {
       automationName: "researcher_ab12cd34",
       resultFile: "/tmp/herdr-agent-test/result.md",
       layout: "pane",
+      spawnWarnings: ["Skill missing."],
     },
     filePath,
   );
@@ -71,6 +72,7 @@ test("records and loads agent lifecycle state", async () => {
     automationName: "researcher_ab12cd34",
     resultFile: "/tmp/herdr-agent-test/result.md",
     layout: "pane",
+    spawnWarnings: ["Skill missing."],
     updatedAt: state.agents["terminal:term-1"]?.updatedAt,
   });
 });

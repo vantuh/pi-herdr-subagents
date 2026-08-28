@@ -14,7 +14,11 @@ import {
   SelectList,
   Text,
 } from "@earendil-works/pi-tui";
-import { discoverAgents } from "./agents.ts";
+import {
+  discoverAgents,
+  resolveThinkingLevel,
+  resolveProfileSkills,
+} from "./agents.ts";
 import { registerChildMode } from "./child.ts";
 import { getHerdrAgentsLayout } from "./config.ts";
 import {
@@ -46,7 +50,10 @@ import {
   uniqueLabel,
   waitForAgent,
 } from "./herdr.ts";
-import { HerdrAgentParams } from "./schema.ts";
+import {
+  buildHerdrAgentParams,
+  describeAgentProfiles,
+} from "./schema.ts";
 import {
   claimDetachedAgent,
   deleteAgentLifecycle,
@@ -65,6 +72,7 @@ import {
   createAgentTempFiles,
   createResultFile,
   formatAgentOutput,
+  formatSpawnWarnings,
   formatWaitInterrupted,
   isRecoverableWaitInterrupt,
   makeHerdrAgentName,
@@ -241,19 +249,26 @@ async function deliverDetachedOutcomes(
       );
       if (!claimedQuestion) continue;
 
+      const questionWithWarnings = formatSpawnWarnings(
+        question,
+        agent.spawnWarnings ?? [],
+      );
       // The target stays open — including one-shots — and `question.md` stays on
       // disk, which is what keeps a parked one-shot reusable by label. The next
       // prompt clears it.
       pending.push({
         customType: AGENT_QUESTION_MESSAGE_TYPE,
-        content: formatAgentQuestion(agent.tabLabel, agent.agent, question),
+        content: formatSpawnWarnings(
+          formatAgentQuestion(agent.tabLabel, agent.agent, question),
+          agent.spawnWarnings ?? [],
+        ),
         display: true,
         details: {
           tabLabel: agent.tabLabel,
           agent: agent.agent,
           paneId: agent.paneId,
           lifecycle: agent.lifecycle,
-          question,
+          question: questionWithWarnings,
         },
       });
       continue;
@@ -297,13 +312,16 @@ async function deliverDetachedOutcomes(
       }
     }
 
+    const resultWithWarnings = formatSpawnWarnings(
+      `${result}${closeNote}`,
+      agent.spawnWarnings ?? [],
+    );
     pending.push({
       customType: AGENT_RESULT_MESSAGE_TYPE,
       content: [
         `Herdr agent ${agent.tabLabel} (${agent.agent}) finished on its own:`,
         "",
-        result,
-        closeNote,
+        resultWithWarnings,
       ].join("\n"),
       display: true,
       details: {
@@ -313,7 +331,7 @@ async function deliverDetachedOutcomes(
         lifecycle: agent.lifecycle,
         // The renderer shows this on its own under a header; `content` keeps
         // the attribution inline because that is what the model reads.
-        result: `${result}${closeNote}`,
+        result: resultWithWarnings,
       },
     });
   }
@@ -569,12 +587,19 @@ async function acquirePanePlacementLock(): Promise<() => void> {
   return release;
 }
 
+function spawnWarningDetails(
+  warnings: readonly string[],
+): { spawnWarnings?: string[] } {
+  return warnings.length > 0 ? { spawnWarnings: [...warnings] } : {};
+}
+
 export default function herdrAgentsExtension(pi: ExtensionAPI) {
   if (process.env.HERDR_AGENT_CHILD === "1") {
     registerChildMode(pi);
     return;
   }
 
+  registerHerdrAgentTool(pi);
   // A /reload leaves the previous instance's poller running with a stale ctx.
   stopAgentsWidgetPoller();
 
@@ -638,6 +663,15 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     ensureAgentsWidget(pi, ctx);
+    // Once profiles are discoverable, refresh the model-facing agent listing:
+    // disable-model-invocation profiles keep working by exact name but drop
+    // out of the schema description. registerTool replaces by name.
+    try {
+      const agents = await discoverAgents(ctx.cwd);
+      registerHerdrAgentTool(pi, describeAgentProfiles(agents));
+    } catch {
+      // Discovery is best-effort; the static schema description stays.
+    }
   });
 
   // Covers quit/new/resume/fork too, not just the reload path above.
@@ -719,6 +753,15 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
     },
   });
 
+/**
+ * `agent` description is static at load; `session_start` re-registers with
+ * a dynamic listing once profiles are discoverable. registerTool replaces
+ * by name, so the refreshed schema wins.
+ */
+function registerHerdrAgentTool(
+  pi: ExtensionAPI,
+  agentDescription?: string,
+): void {
   pi.registerTool({
     name: "herdr_agent",
     label: "Herdr Agent",
@@ -730,13 +773,17 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       "Use herdr_agent when global Delegation says isolated context helps; call after /run, a named role, or explicit delegation request.",
       "Follow the Herdr agents system instructions for lifecycle, self-contained tasks, independent parallel calls, avoiding duplicate work, and re-wait.",
     ],
-    parameters: HerdrAgentParams,
+    parameters: buildHerdrAgentParams(agentDescription),
 
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const agents = await discoverAgents(ctx.cwd);
       const agent = agents.find((item) => item.name === params.agent);
       if (!agent) {
-        const available = agents.map((item) => item.name).join(", ") || "none";
+        // Profiles marked disable-model-invocation stay spawnable by exact
+        // name, but they are not offered as options to the Orchestrator.
+        const listable = agents.filter((item) => !item.disableModelInvocation);
+        const available =
+          listable.map((item) => item.name).join(", ") || "none";
         return {
           content: [
             {
@@ -744,7 +791,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
               text: `Unknown Herdr agent: ${params.agent}. Available: ${available}`,
             },
           ],
-          details: { availableAgents: agents },
+          details: { availableAgents: listable },
           isError: true,
         };
       }
@@ -817,11 +864,15 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
         });
 
         if (!wait) {
+          const spawnWarnings = record?.spawnWarnings ?? [];
           return {
             content: [
               {
                 type: "text",
-                text: `Herdr agent ${label} (${pane.pane_id}) is still running.`,
+                text: formatSpawnWarnings(
+                  `Herdr agent ${label} (${pane.pane_id}) is still running.`,
+                  spawnWarnings,
+                ),
               },
             ],
             details: {
@@ -830,6 +881,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
               tabLabel: label,
               agent,
               waited: false,
+              ...spawnWarningDetails(spawnWarnings),
             },
           };
         }
@@ -841,14 +893,18 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
           await waitForAgent(target, timeoutMs, signal);
           const pendingQuestion = await readAgentQuestion(record?.resultFile);
           if (pendingQuestion) {
+            const spawnWarnings = record?.spawnWarnings ?? [];
             return {
               content: [
                 {
                   type: "text",
-                  text: formatAgentQuestion(
-                    label,
-                    record?.agent ?? agent.name,
-                    pendingQuestion,
+                  text: formatSpawnWarnings(
+                    formatAgentQuestion(
+                      label,
+                      record?.agent ?? agent.name,
+                      pendingQuestion,
+                    ),
+                    spawnWarnings,
                   ),
                 },
               ],
@@ -861,6 +917,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
                 agent,
                 waited: true,
                 status: "question",
+                ...spawnWarningDetails(spawnWarnings),
               },
             };
           }
@@ -893,7 +950,11 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
                 error instanceof Error ? error.message : String(error);
             }
           }
-          const text = formatAgentOutput(output, label, closeError);
+          const spawnWarnings = record?.spawnWarnings ?? [];
+          const text = formatSpawnWarnings(
+            formatAgentOutput(output, label, closeError),
+            spawnWarnings,
+          );
           return {
             content: [{ type: "text", text }],
             details: {
@@ -904,16 +965,21 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
               waited: true,
               closed,
               closeError,
+              ...spawnWarningDetails(spawnWarnings),
             },
           };
         } catch (error) {
           if (isRecoverableWaitInterrupt(error)) {
             const reason = waitInterruptReason(error);
+            const spawnWarnings = record?.spawnWarnings ?? [];
             return {
               content: [
                 {
                   type: "text",
-                  text: formatWaitInterrupted(label, reason),
+                  text: formatSpawnWarnings(
+                    formatWaitInterrupted(label, reason),
+                    spawnWarnings,
+                  ),
                 },
               ],
               details: {
@@ -924,6 +990,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
                 waited: false,
                 interrupted: true,
                 interruptReason: reason,
+                ...spawnWarningDetails(spawnWarnings),
               },
             };
           }
@@ -967,6 +1034,8 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       let automationName: string | undefined;
       let resultFile: string | undefined;
       let reused = false;
+      // Populated only on a fresh spawn: frontmatter fields pi can't honor.
+      let spawnWarnings: string[] = [];
       const releasePlacement =
         layout === "pane" ? await acquirePanePlacementLock() : () => {};
 
@@ -1017,6 +1086,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
             agentPane = candidatePane;
             automationName = candidateRecord?.automationName;
             resultFile = candidateRecord?.resultFile;
+            spawnWarnings = candidateRecord?.spawnWarnings ?? [];
           }
         }
 
@@ -1162,11 +1232,42 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
             .join("\n\n");
           const tempFiles = await createAgentTempFiles(profilePrompt);
           resultFile = tempFiles.resultFile;
+          // Unsupported frontmatter is ignored with a warning, not a failed spawn.
+          spawnWarnings = [];
           const piArgs = ["--name", tabLabel];
           if (agent.model) piArgs.push("--model", agent.model);
+          if (agent.thinking) {
+            const level = resolveThinkingLevel(agent.thinking);
+            if (level) {
+              piArgs.push("--thinking", level);
+            } else {
+              spawnWarnings.push(
+                `Unknown thinking level "${agent.thinking}" ignored.`,
+              );
+            }
+          }
+          if (Array.isArray(agent.skills)) {
+            const resolved = await resolveProfileSkills(agent.skills, ctx.cwd);
+            piArgs.push("--no-skills");
+            for (const skill of resolved.found) {
+              piArgs.push("--skill", skill.filePath);
+            }
+            if (resolved.missing.length > 0) {
+              spawnWarnings.push(
+                `Skills not found: ${resolved.missing.join(", ")}.`,
+              );
+            }
+          }
           const toolAllowlist = buildChildToolAllowlist(agent.tools);
           if (toolAllowlist) piArgs.push("--tools", toolAllowlist.join(","));
-          piArgs.push("--append-system-prompt", tempFiles.systemFile);
+          // replace swaps the default system prompt; the child protocol is
+          // always part of the passed file, whatever the mode.
+          piArgs.push(
+            agent.systemPromptMode === "replace"
+              ? "--system-prompt"
+              : "--append-system-prompt",
+            tempFiles.systemFile,
+          );
 
           onUpdate?.({
             content: [
@@ -1175,7 +1276,15 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
                 text: `Starting Herdr agent ${tabLabel} (${paneId})...`,
               },
             ],
-            details: { tabId, paneId, tabLabel, lifecycle, reused, agent },
+            details: {
+              tabId,
+              paneId,
+              tabLabel,
+              lifecycle,
+              reused,
+              agent,
+              ...spawnWarningDetails(spawnWarnings),
+            },
           });
           await startAgent(automationName, paneId, piArgs, signal);
           agentPane =
@@ -1193,6 +1302,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
               automationName,
               resultFile,
               layout,
+              ...(spawnWarnings.length > 0 ? { spawnWarnings } : {}),
               // Nobody is waiting for this one, so the poller owns its result.
               detached: !wait,
             }),
@@ -1253,7 +1363,10 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
             content: [
               {
                 type: "text",
-                text: `Herdr agent ${tabLabel} started (${paneId}).`,
+                text: formatSpawnWarnings(
+                  `Herdr agent ${tabLabel} started (${paneId}).`,
+                  spawnWarnings,
+                ),
               },
             ],
             details: {
@@ -1264,6 +1377,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
               reused,
               agent,
               waited: false,
+              ...spawnWarningDetails(spawnWarnings),
             },
           };
         }
@@ -1277,7 +1391,10 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
             content: [
               {
                 type: "text",
-                text: formatAgentQuestion(tabLabel, agent.name, question),
+                text: formatSpawnWarnings(
+                  formatAgentQuestion(tabLabel, agent.name, question),
+                  spawnWarnings,
+                ),
               },
             ],
             details: {
@@ -1290,6 +1407,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
               agent,
               waited: true,
               status: "question",
+              ...spawnWarningDetails(spawnWarnings),
             },
           };
         }
@@ -1329,7 +1447,10 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
           }
         }
 
-        const text = formatAgentOutput(output, tabLabel, closeError);
+        const text = formatSpawnWarnings(
+          formatAgentOutput(output, tabLabel, closeError),
+          spawnWarnings,
+        );
 
         return {
           content: [
@@ -1346,6 +1467,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
             reused,
             closed,
             closeError,
+            ...spawnWarningDetails(spawnWarnings),
             agent,
             waited: true,
           },
@@ -1357,7 +1479,10 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
             content: [
               {
                 type: "text",
-                text: formatWaitInterrupted(tabLabel, reason),
+                text: formatSpawnWarnings(
+                  formatWaitInterrupted(tabLabel, reason),
+                  spawnWarnings,
+                ),
               },
             ],
             details: {
@@ -1370,6 +1495,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
               waited: false,
               interrupted: true,
               interruptReason: reason,
+              ...spawnWarningDetails(spawnWarnings),
             },
           };
         }
@@ -1385,4 +1511,6 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       }
     },
   });
+}
+
 }

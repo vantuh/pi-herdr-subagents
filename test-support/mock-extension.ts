@@ -33,6 +33,10 @@ export interface AgentProfileFixture {
   description?: string;
   tools?: string[];
   model?: string;
+  thinking?: string;
+  skills?: string[];
+  systemPromptMode?: "append" | "replace";
+  disableModelInvocation?: boolean;
   body?: string;
 }
 
@@ -208,6 +212,20 @@ export async function writeAgentProfiles(
     ];
     if (profile.tools) lines.push(`tools: ${profile.tools.join(", ")}`);
     if (profile.model) lines.push(`model: ${profile.model}`);
+    if (profile.thinking) lines.push(`thinking: ${profile.thinking}`);
+    if (profile.skills) {
+      lines.push(
+        Array.isArray(profile.skills) && profile.skills.length > 0
+          ? `skills: ${profile.skills.join(", ")}`
+          : "skills: []",
+      );
+    }
+    if (profile.systemPromptMode) {
+      lines.push(`system-prompt: ${profile.systemPromptMode}`);
+    }
+    if (profile.disableModelInvocation) {
+      lines.push("disable-model-invocation: true");
+    }
     lines.push("---", "", profile.body ?? `You are the ${profile.name}.`);
     await fs.writeFile(
       path.join(dir, `${profile.name}.md`),

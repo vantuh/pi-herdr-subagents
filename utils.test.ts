@@ -11,6 +11,7 @@ import {
   createResultFile,
   findResultFileMarker,
   formatAgentOutput,
+  formatSpawnWarnings,
   formatWaitInterrupted,
   isRecoverableWaitInterrupt,
   makeHerdrAgentName,
@@ -107,6 +108,14 @@ test("closes only oneshot tabs", () => {
 
 test("formats agent output text", () => {
   assert.equal(formatAgentOutput("  hello  \n", "Worker"), "hello");
+});
+
+test("appends spawn warnings to model-facing result text", () => {
+  assert.equal(formatSpawnWarnings("done", []), "done");
+  assert.equal(
+    formatSpawnWarnings("done", ["Skills not found: ghost."]),
+    "done\n\nSpawn warnings:\n- Skills not found: ghost.",
+  );
 });
 
 test("falls back to a placeholder for empty agent output", () => {

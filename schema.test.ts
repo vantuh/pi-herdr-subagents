@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { HerdrAgentParams } from "./schema.ts";
+import { HerdrAgentParams, describeAgentProfiles } from "./schema.ts";
 
 /**
  * The parameter schema is the model-facing contract: renaming a field or
@@ -55,4 +55,25 @@ test("describes every parameter for the model", () => {
       `${name} needs a description the model can act on`,
     );
   }
+});
+
+test("the dynamic agent listing drops disable-model-invocation profiles", () => {
+  const description = describeAgentProfiles([
+    { name: "scout" },
+    { name: "secret", disableModelInvocation: true },
+    { name: "scout" },
+  ]);
+  assert.match(description, /Available: scout\./);
+  assert.doesNotMatch(description, /secret/);
+  // No duplicates even if user and project define the same name.
+  assert.doesNotMatch(description, /scout, scout/);
+});
+
+test("the agent listing falls back to the plain description", () => {
+  assert.match(describeAgentProfiles([]), /Agent profile name/);
+  assert.doesNotMatch(describeAgentProfiles([]), /Available:/);
+  assert.match(
+    describeAgentProfiles([{ name: "ghost", disableModelInvocation: true }]),
+    /Agent profile name/,
+  );
 });
