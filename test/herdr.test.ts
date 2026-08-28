@@ -16,9 +16,9 @@ import {
   parseStartedAgentSnapshot,
   promptAcceptanceObserved,
   startedAgentReady,
-} from "./herdr.ts";
-import { emptyHerdrAgentsState } from "./state.ts";
-import type { HerdrContext, PaneInfo, TabInfo } from "./types.ts";
+} from "../herdr.ts";
+import { emptyHerdrAgentsState } from "../state.ts";
+import type { HerdrContext, PaneInfo, TabInfo } from "../types.ts";
 
 test("builds an atomic prompt submit without the hardcoded --wait stall gate", () => {
   assert.deepEqual(buildAgentPromptArgs("reviewer_ab12", "Review"), [
@@ -864,7 +864,10 @@ test("reusable tab lookup prefers a pi pane in a multi-pane tab", () => {
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
 
-  assert.equal(findReusableAgentTab(context, tabs, "Worker", state)?.pane, panes[2]);
+  assert.equal(
+    findReusableAgentTab(context, tabs, "Worker", state)?.pane,
+    panes[2],
+  );
 });
 
 test("reusable tab lookup matches exact base label, not numbered labels", () => {
@@ -918,7 +921,10 @@ test("reusable tab lookup matches exact base label, not numbered labels", () => 
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
 
-  assert.equal(findReusableAgentTab(context, tabs, "Worker", state)?.tab, tabs[2]);
+  assert.equal(
+    findReusableAgentTab(context, tabs, "Worker", state)?.tab,
+    tabs[2],
+  );
 });
 
 test("does not list or reuse another orchestrator's agents", () => {

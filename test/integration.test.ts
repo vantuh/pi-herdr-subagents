@@ -2,8 +2,12 @@ import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import test from "node:test";
-import type { LayoutNode } from "./test-support/fake-herdr.ts";
-import { type Harness, type HarnessOptions, createHarness } from "./test-support/harness.ts";
+import type { LayoutNode } from "../test-support/fake-herdr.ts";
+import {
+  type Harness,
+  type HarnessOptions,
+  createHarness,
+} from "../test-support/harness.ts";
 
 /**
  * Integration tests for the whole `herdr_agent` flow: the real extension runs
@@ -114,7 +118,16 @@ test("falls back to pane scrollback when the child writes no artifact", async ()
 
 test("passes profile model and tool allowlist to the child, and keeps a persistent pane open", async () => {
   await withHarness(
-    { profiles: [{ name: "worker", tools: ["read", "edit"], model: "sonnet", body: "WORKER PROFILE BODY" }] },
+    {
+      profiles: [
+        {
+          name: "worker",
+          tools: ["read", "edit"],
+          model: "sonnet",
+          body: "WORKER PROFILE BODY",
+        },
+      ],
+    },
     async (harness) => {
       const first = await harness.call({
         agent: "worker",
@@ -386,7 +399,10 @@ test("rejects re-wait for a label that has no running agent", async () => {
     const result = await harness.call({ agent: "scout", tabLabel: "Ghost" });
 
     assert.equal(result.isError, true);
-    assert.match(result.content[0].text, /No running Herdr agent named "Ghost"/);
+    assert.match(
+      result.content[0].text,
+      /No running Herdr agent named "Ghost"/,
+    );
   });
 });
 
@@ -419,7 +435,10 @@ test("refuses a detached one-shot without a UI poller to collect it", async () =
     });
 
     assert.equal(result.isError, true);
-    assert.match(result.content[0].text, /requires wait: true in a headless session/);
+    assert.match(
+      result.content[0].text,
+      /requires wait: true in a headless session/,
+    );
     assert.equal(harness.fake.calls.length, 0);
   });
 });
@@ -637,8 +656,13 @@ test("removes the managed temp directory with a one-shot but keeps it for a pers
     });
     // The one-shot's own directory is gone; the persistent one is untouched.
     const dirs = await fs.readdir(path.dirname(persistentDir));
-    assert.equal(dirs.filter((name) => name.startsWith("herdr-agent-")).length, 1);
-    assert.ok(await fs.stat(path.join(persistentDir, "result.md")).catch(() => null));
+    assert.equal(
+      dirs.filter((name) => name.startsWith("herdr-agent-")).length,
+      1,
+    );
+    assert.ok(
+      await fs.stat(path.join(persistentDir, "result.md")).catch(() => null),
+    );
   });
 });
 
@@ -730,7 +754,10 @@ test("/herdr-agents focuses a managed agent", async () => {
       await harness.runCommand("herdr-agents");
 
       const focus = harness.fake.callsMatching("agent", "focus")[0];
-      assert.ok(focus, `expected an agent focus, calls: ${JSON.stringify(harness.fake.calls.slice(-4))}`);
+      assert.ok(
+        focus,
+        `expected an agent focus, calls: ${JSON.stringify(harness.fake.calls.slice(-4))}`,
+      );
       assert.equal(focus[2], harness.fake.paneByLabel("Scout")?.pane_id);
       assert.match(
         harness.notifications.at(-1)?.message ?? "",

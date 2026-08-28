@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { HerdrAgentInfo } from "./types.ts";
+import type { HerdrAgentInfo } from "../types.ts";
 import {
   agentStatusView,
   formatElapsed,
@@ -9,7 +9,7 @@ import {
   truncateLabel,
   visibleWidgetAgents,
   type WidgetPaint,
-} from "./widget.ts";
+} from "../widget.ts";
 
 const NOW = Date.parse("2026-08-27T12:00:00.000Z");
 

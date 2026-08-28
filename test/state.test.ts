@@ -14,8 +14,8 @@ import {
   pruneHerdrAgentsState,
   recordAgentLifecycle,
   isAgentOwnedBy,
-} from "./state.ts";
-import type { PaneInfo } from "./types.ts";
+} from "../state.ts";
+import type { PaneInfo } from "../types.ts";
 
 function pane(overrides: Partial<PaneInfo> = {}): PaneInfo {
   return {

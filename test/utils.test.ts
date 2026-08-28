@@ -24,7 +24,7 @@ import {
   waitInterruptReason,
   writeAgentQuestion,
   writeAgentResult,
-} from "./utils.ts";
+} from "../utils.ts";
 
 test("generates valid unique Herdr automation names", () => {
   const first = makeHerdrAgentName("Code Reviewer");

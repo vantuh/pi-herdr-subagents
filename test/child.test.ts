@@ -3,9 +3,9 @@ import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import test from "node:test";
-import herdrAgentsExtension from "./index.ts";
-import { applyEnv, createMockHost } from "./test-support/mock-extension.ts";
-import { RESULT_FILE_MARKER } from "./utils.ts";
+import herdrAgentsExtension from "../index.ts";
+import { applyEnv, createMockHost } from "../test-support/mock-extension.ts";
+import { RESULT_FILE_MARKER } from "../utils.ts";
 
 /**
  * Child-mode contract (docs/session-findings.md §4): with
@@ -73,7 +73,10 @@ test("a child persists its final assistant message to the result artifact", asyn
 
     // Each finalized message overwrites, so the last answer wins.
     await host.fire("message_end", {
-      message: { role: "assistant", content: [{ type: "text", text: "final" }] },
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "final" }],
+      },
     });
     assert.equal(await fs.readFile(resultFile, "utf8"), "final");
 

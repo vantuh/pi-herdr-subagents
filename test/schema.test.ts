@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { HerdrAgentParams, describeAgentProfiles } from "./schema.ts";
+import { HerdrAgentParams, describeAgentProfiles } from "../schema.ts";
 
 /**
  * The parameter schema is the model-facing contract: renaming a field or

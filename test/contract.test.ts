@@ -5,9 +5,13 @@ import test from "node:test";
 import {
   AGENT_QUESTION_MESSAGE_TYPE,
   AGENT_RESULT_MESSAGE_TYPE,
-} from "./index.ts";
-import { type Harness, type HarnessOptions, createHarness } from "./test-support/harness.ts";
-import { AGENTS_WIDGET_ID } from "./widget.ts";
+} from "../index.ts";
+import {
+  type Harness,
+  type HarnessOptions,
+  createHarness,
+} from "../test-support/harness.ts";
+import { AGENTS_WIDGET_ID } from "../widget.ts";
 
 /**
  * Behavior lock for refactoring.
@@ -355,7 +359,13 @@ test("reuses a persistent tab by label and keeps new tab labels unique", async (
       lifecycle: "persistent",
     });
     assert.equal(first.details.reused, false);
-    assert.equal(flagValue(harness.fake.callsMatching("tab", "create")[0] ?? [], "--label"), "Scout");
+    assert.equal(
+      flagValue(
+        harness.fake.callsMatching("tab", "create")[0] ?? [],
+        "--label",
+      ),
+      "Scout",
+    );
 
     const reused = await harness.call({
       agent: "scout",
@@ -426,7 +436,10 @@ test("looks the tab up by label when tab create omits the tab id", async () => {
     assert.equal(result.details.closed, true);
     assert.ok(result.details.tabId);
     assert.ok(harness.fake.callsMatching("tab", "list").length >= 1);
-    assert.equal(harness.fake.callsMatching("tab", "close")[0]?.[2], result.details.tabId);
+    assert.equal(
+      harness.fake.callsMatching("tab", "close")[0]?.[2],
+      result.details.tabId,
+    );
   });
 });
 
@@ -522,7 +535,9 @@ test("/run explains itself when given no task", async () => {
 test("/run completes agent names, then stops offering completions", async () => {
   await withHarness({}, async (harness) => {
     const command = harness.commands.get("run") as {
-      getArgumentCompletions?: (prefix: string) => Array<{ value: string }> | null;
+      getArgumentCompletions?: (
+        prefix: string,
+      ) => Array<{ value: string }> | null;
     };
     assert.ok(command.getArgumentCompletions);
 
@@ -547,7 +562,10 @@ test("/herdr-agents needs TUI mode", async () => {
     assert.ok(command);
     await command.handler("", {
       mode: "print",
-      ui: { notify: (message: string, level?: string) => harness.notifications.push({ message, level }) },
+      ui: {
+        notify: (message: string, level?: string) =>
+          harness.notifications.push({ message, level }),
+      },
     });
 
     assert.match(
@@ -648,7 +666,10 @@ test("prunes state records for panes Herdr no longer reports", async () => {
     await harness.runCommand("herdr-agents");
 
     const after = await harness.readState();
-    assert.deepEqual(Object.keys(after.agents).filter((key) => key.includes("ghost")), []);
+    assert.deepEqual(
+      Object.keys(after.agents).filter((key) => key.includes("ghost")),
+      [],
+    );
     assert.equal(Object.keys(after.agents).length, 1);
   });
 });
@@ -675,10 +696,7 @@ test("writes the state file with owner-only permissions", async () => {
 // Profile frontmatter → spawn argv
 // ---------------------------------------------------------------------------
 
-async function writeSkill(
-  dir: string,
-  name: string,
-): Promise<string> {
+async function writeSkill(dir: string, name: string): Promise<string> {
   await fs.mkdir(dir, { recursive: true });
   const filePath = path.join(dir, "SKILL.md");
   await fs.writeFile(
@@ -857,8 +875,7 @@ test("session_start refreshes the agent listing in the schema description", asyn
       await harness.fire("session_start");
 
       const tool = harness.getTool("herdr_agent") as
-        | { parameters: { properties: Record<string, any> } }
-        | undefined;
+        { parameters: { properties: Record<string, any> } } | undefined;
       assert.ok(tool);
       const description = (
         tool.parameters.properties.agent as { description?: string }
@@ -874,8 +891,7 @@ test("session_start with no profiles still refreshes the agent listing", async (
     await harness.fire("session_start");
 
     const tool = harness.getTool("herdr_agent") as
-      | { parameters: { properties: Record<string, any> } }
-      | undefined;
+      { parameters: { properties: Record<string, any> } } | undefined;
     assert.ok(tool);
     const description = (
       tool.parameters.properties.agent as { description?: string }
@@ -897,8 +913,7 @@ test("session_start reload reason refreshes the agent listing", async () => {
       await harness.fire("session_start", { reason: "reload" });
 
       const tool = harness.getTool("herdr_agent") as
-        | { parameters: { properties: Record<string, any> } }
-        | undefined;
+        { parameters: { properties: Record<string, any> } } | undefined;
       assert.ok(tool);
       const description = (
         tool.parameters.properties.agent as { description?: string }

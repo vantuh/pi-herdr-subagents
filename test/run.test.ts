@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatRunUserMessage, parseRunArgs } from "./run.ts";
+import { formatRunUserMessage, parseRunArgs } from "../run.ts";
 
 describe("parseRunArgs", () => {
   test("parses agent and task", () => {

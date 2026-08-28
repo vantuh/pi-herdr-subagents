@@ -8,8 +8,8 @@ import {
   normalizeSkillList,
   resolveProfileSkills,
   resolveThinkingLevel,
-} from "./agents.ts";
-import { applyEnv } from "./test-support/mock-extension.ts";
+} from "../agents.ts";
+import { applyEnv } from "../test-support/mock-extension.ts";
 
 /**
  * Profile discovery (docs/session-findings.md §2): existing Pi agent profiles
@@ -254,9 +254,9 @@ test("resolveProfileSkills maps names to file paths via pi's discovery", async (
       "tdd",
     ]);
     assert.ok(
-      byName.get("hunk-review")?.filePath.endsWith(
-        path.join("skills", "hunk-review", "SKILL.md"),
-      ),
+      byName
+        .get("hunk-review")
+        ?.filePath.endsWith(path.join("skills", "hunk-review", "SKILL.md")),
     );
     assert.deepEqual(missing, ["nonexistent"]);
   });
@@ -314,8 +314,8 @@ test("resolveProfileSkills surfaces diagnostics for a broken requested skill", a
     assert.deepEqual(resolved.found, []);
     assert.deepEqual(resolved.missing, ["broken-skill"]);
     assert.ok(
-      resolved.diagnostics.some((line) =>
-        line.includes("description") || line.includes("SKILL.md"),
+      resolved.diagnostics.some(
+        (line) => line.includes("description") || line.includes("SKILL.md"),
       ),
       `expected a diagnostic, got ${JSON.stringify(resolved.diagnostics)}`,
     );

@@ -3,7 +3,7 @@ import {
   buildRunTurnInstructions,
   CHILD_PROTOCOL,
   GLOBAL_INSTRUCTIONS,
-} from "./constants.ts";
+} from "../constants.ts";
 
 describe("constants", () => {
   test("CHILD_PROTOCOL prohibits recursive delegation", () => {
