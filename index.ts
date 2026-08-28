@@ -1,5 +1,6 @@
 import {
   DynamicBorder,
+  type AgentToolUpdateCallback,
   type ExtensionAPI,
   type ExtensionCommandContext,
   type ExtensionContext,
@@ -65,7 +66,13 @@ import {
   recordAgentLifecycle,
   saveHerdrAgentsState,
 } from "./state.ts";
-import type { HerdrAgentInfo, HerdrAgentLifecycle, PaneInfo } from "./types.ts";
+import type {
+  AgentProfile,
+  HerdrAgentInfo,
+  HerdrAgentLayout,
+  HerdrAgentLifecycle,
+  PaneInfo,
+} from "./types.ts";
 import {
   buildChildToolAllowlist,
   clearAgentQuestion,
@@ -81,7 +88,6 @@ import {
   readAgentResult,
   removeAgentTempFiles,
   RESULT_FILE_MARKER,
-  shouldCloseTab,
   titleCase,
   waitInterruptReason,
 } from "./utils.ts";
@@ -130,6 +136,70 @@ async function rebalanceCurrentPaneAgents(signal?: AbortSignal): Promise<void> {
   for (const update of updates) {
     await setLayoutSplitRatio(layout.tab_id, update.path, update.ratio, signal);
   }
+}
+
+/**
+ * Close a one-shot pane/tab: Herdr close, lifecycle delete, temp files,
+ * pane rebalance. Returns the close error message, or undefined on success.
+ * Each follow-up step stays bestEffort, matching the previous inline sites.
+ *
+ * Call-site differences that stay outside this helper: detached delivery
+ * claims before close and skips close for questions/missing artifacts;
+ * re-wait closes when the stored record is oneshot; spawn+wait closes from
+ * the call's lifecycle and omits lifecycle delete when agentPane is missing.
+ */
+async function closeOneShot(target: {
+  layout?: HerdrAgentLayout;
+  tabId: string;
+  paneId: string;
+  resultFile?: string;
+  lifecyclePane?: Pick<PaneInfo, "terminal_id">;
+  signal?: AbortSignal;
+}): Promise<string | undefined> {
+  try {
+    await execHerdr(
+      target.layout === "tab"
+        ? ["tab", "close", target.tabId]
+        : ["pane", "close", target.paneId],
+      target.signal,
+    );
+    const lifecyclePane = target.lifecyclePane;
+    if (lifecyclePane) {
+      await bestEffort(undefined, () => deleteAgentLifecycle(lifecyclePane));
+    }
+    await bestEffort(undefined, () => removeAgentTempFiles(target.resultFile));
+    if (target.layout !== "tab") {
+      await bestEffort(undefined, () =>
+        rebalanceCurrentPaneAgents(target.signal),
+      );
+    }
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
+function formatCollectedOutput(
+  output: string,
+  tabLabel: string,
+  closeError: string | undefined,
+  warnings: readonly string[],
+): string {
+  return formatSpawnWarnings(
+    formatAgentOutput(output, tabLabel, closeError),
+    warnings,
+  );
+}
+
+async function readSettledAgentOutput(
+  resultFile: string | undefined,
+  target: string,
+  signal?: AbortSignal,
+): Promise<{ question: string } | { output: string }> {
+  const question = await readAgentQuestion(resultFile);
+  if (question) return { question };
+  const artifact = await readAgentResult(resultFile);
+  return { output: artifact ?? (await readAgent(target, signal)) };
 }
 
 async function loadCurrentAgents(): Promise<HerdrAgentInfo[]> {
@@ -244,7 +314,7 @@ async function deliverDetachedOutcomes(
     const question = await bestEffort(undefined, () =>
       readAgentQuestion(agent.resultFile),
     );
-      if (question) {
+    if (question) {
       const claimedQuestion = await bestEffort(false, () =>
         claimDetachedAgent({ terminal_id: agent.terminalId }),
       );
@@ -286,34 +356,28 @@ async function deliverDetachedOutcomes(
     );
     if (!claimed) continue;
 
-    let closeNote = "";
+    // Routing through formatAgentOutput (trim + empty-output placeholder) is
+    // equivalent to the old `${result}${closeNote}` only because the claim
+    // above already proves readAgentResult returned a non-empty trimmed
+    // string; readAgentResult trims and maps "" to undefined.
+    let closeError: string | undefined;
     if (agent.lifecycle === "oneshot") {
       // One-shots are closed by whoever collects them. Until now that was
       // always the waiting tool call, which is why `oneshot` required
       // `wait: true`.
-      try {
-        await execHerdr(
-          agent.layout === "tab"
-            ? ["tab", "close", agent.tabId]
-            : ["pane", "close", agent.paneId],
-        );
-        await bestEffort(undefined, () =>
-          deleteAgentLifecycle({ terminal_id: agent.terminalId }),
-        );
-        await bestEffort(undefined, () =>
-          removeAgentTempFiles(agent.resultFile),
-        );
-        if (agent.layout !== "tab") {
-          await bestEffort(undefined, () => rebalanceCurrentPaneAgents());
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        closeNote = `\n\nWarning: failed to close one-shot Herdr agent ${agent.tabLabel}: ${message}`;
-      }
+      closeError = await closeOneShot({
+        layout: agent.layout,
+        tabId: agent.tabId,
+        paneId: agent.paneId,
+        resultFile: agent.resultFile,
+        lifecyclePane: { terminal_id: agent.terminalId },
+      });
     }
 
-    const resultWithWarnings = formatSpawnWarnings(
-      `${result}${closeNote}`,
+    const resultWithWarnings = formatCollectedOutput(
+      result,
+      agent.tabLabel,
+      closeError,
       agent.spawnWarnings ?? [],
     );
     pending.push({
@@ -601,6 +665,209 @@ async function dropCollectedSpawnWarnings(
   await bestEffort(undefined, () => clearAgentSpawnWarnings(pane));
 }
 
+async function executeRewait(
+  pi: ExtensionAPI,
+  args: {
+    agent: AgentProfile;
+    tabLabel: string | undefined;
+    baseLabel: string;
+    layout: HerdrAgentLayout;
+    wait: boolean;
+    timeoutMs: number;
+    signal?: AbortSignal;
+    onUpdate?: AgentToolUpdateCallback<Record<string, unknown>>;
+  },
+) {
+  const { agent, baseLabel, layout, wait, timeoutMs, signal, onUpdate } = args;
+  if (!args.tabLabel?.trim()) {
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: "tabLabel is required when task is omitted (re-wait mode).",
+        },
+      ],
+      isError: true,
+    };
+  }
+
+  const current = await getCurrentContext(signal);
+  const state = await bestEffort(emptyHerdrAgentsState(), () =>
+    loadHerdrAgentsState(),
+  );
+  const tabs =
+    layout === "tab" ? await listTabs(current.workspaceId, signal) : [];
+  const reusableTab =
+    layout === "tab"
+      ? findReusableAgentTab(current, tabs, baseLabel, state)
+      : undefined;
+  const reusablePane =
+    layout === "pane"
+      ? findReusableAgentPane(current, state, baseLabel)
+      : undefined;
+  const pane = reusableTab?.pane ?? reusablePane;
+  const tabId = reusableTab?.tab.tab_id ?? reusablePane?.tab_id;
+  const label = reusableTab?.tab.label ?? baseLabel;
+  const stateKey = pane ? paneStateKey(pane) : undefined;
+  const record = stateKey ? state.agents[stateKey] : undefined;
+  const target = record?.automationName ?? pane?.pane_id;
+  if (!pane || !tabId || !target) {
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `No running Herdr agent named "${baseLabel}" found to re-wait on.`,
+        },
+      ],
+      isError: true,
+    };
+  }
+
+  onUpdate?.({
+    content: [
+      {
+        type: "text",
+        text: `Reconnecting to existing Herdr agent ${label} (${pane.pane_id})...`,
+      },
+    ],
+    details: { tabId, paneId: pane.pane_id, tabLabel: label, agent },
+  });
+
+  if (!wait) {
+    const spawnWarnings = record?.spawnWarnings ?? [];
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: formatSpawnWarnings(
+            `Herdr agent ${label} (${pane.pane_id}) is still running.`,
+            spawnWarnings,
+          ),
+        },
+      ],
+      details: {
+        tabId,
+        paneId: pane.pane_id,
+        tabLabel: label,
+        agent,
+        waited: false,
+        ...spawnWarningDetails(spawnWarnings),
+      },
+    };
+  }
+
+  const blockedLabel = `waiting for ${label}`;
+  pi.events.emit("herdr:blocked", { active: true, label: blockedLabel });
+  beginAwaitingAgent(label);
+  try {
+    await waitForAgent(target, timeoutMs, signal);
+    const settled = await readSettledAgentOutput(
+      record?.resultFile,
+      target,
+      signal,
+    );
+    if ("question" in settled) {
+      const spawnWarnings = record?.spawnWarnings ?? [];
+      await dropCollectedSpawnWarnings(pane);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: formatSpawnWarnings(
+              formatAgentQuestion(
+                label,
+                record?.agent ?? agent.name,
+                settled.question,
+              ),
+              spawnWarnings,
+            ),
+          },
+        ],
+        details: {
+          tabId,
+          paneId: pane.pane_id,
+          tabLabel: label,
+          lifecycle: record?.lifecycle,
+          closed: false,
+          agent,
+          waited: true,
+          status: "question",
+          ...spawnWarningDetails(spawnWarnings),
+        },
+      };
+    }
+    // An explicit re-wait collects the result, so release the poller's claim.
+    await bestEffort(false, () => claimDetachedAgent(pane));
+    let closed = false;
+    let closeError: string | undefined;
+    if (record?.lifecycle === "oneshot") {
+      closeError = await closeOneShot({
+        layout: record.layout,
+        tabId,
+        paneId: pane.pane_id,
+        resultFile: record.resultFile,
+        lifecyclePane: pane,
+        signal,
+      });
+      closed = closeError === undefined;
+    }
+    const spawnWarnings = record?.spawnWarnings ?? [];
+    const text = formatCollectedOutput(
+      settled.output,
+      label,
+      closeError,
+      spawnWarnings,
+    );
+    await dropCollectedSpawnWarnings(pane);
+    return {
+      content: [{ type: "text" as const, text }],
+      details: {
+        tabId,
+        paneId: pane.pane_id,
+        tabLabel: label,
+        agent,
+        waited: true,
+        closed,
+        closeError,
+        ...spawnWarningDetails(spawnWarnings),
+      },
+    };
+  } catch (error) {
+    if (isRecoverableWaitInterrupt(error)) {
+      const reason = waitInterruptReason(error);
+      const spawnWarnings = record?.spawnWarnings ?? [];
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: formatSpawnWarnings(
+              formatWaitInterrupted(label, reason),
+              spawnWarnings,
+            ),
+          },
+        ],
+        details: {
+          tabId,
+          paneId: pane.pane_id,
+          tabLabel: label,
+          agent,
+          waited: false,
+          interrupted: true,
+          interruptReason: reason,
+          ...spawnWarningDetails(spawnWarnings),
+        },
+      };
+    }
+    throw error;
+  } finally {
+    endAwaitingAgent(label);
+    pi.events.emit("herdr:blocked", {
+      active: false,
+      label: blockedLabel,
+    });
+  }
+}
+
 export default function herdrAgentsExtension(pi: ExtensionAPI) {
   if (process.env.HERDR_AGENT_CHILD === "1") {
     registerChildMode(pi);
@@ -819,7 +1086,6 @@ function registerHerdrAgentTool(
       const layout = getHerdrAgentsLayout();
       const lifecycle = params.lifecycle ?? "oneshot";
       const persistent = lifecycle === "persistent";
-      const closeAfterWait = shouldCloseTab(lifecycle);
       const timeoutMs = params.timeoutMs ?? 600000;
       const baseLabel = params.tabLabel?.trim() || titleCase(agent.name);
 
@@ -828,202 +1094,19 @@ function registerHerdrAgentTool(
         // (expected to be) still running — e.g. after a previous call to this
         // tool timed out while the agent kept working. It only invokes the
         // server-owned agent wait, so no prompt is re-sent into a busy pane.
-        if (!params.tabLabel?.trim()) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: "tabLabel is required when task is omitted (re-wait mode).",
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        const current = await getCurrentContext(signal);
-        const state = await bestEffort(emptyHerdrAgentsState(), () =>
-          loadHerdrAgentsState(),
-        );
-        const tabs =
-          layout === "tab" ? await listTabs(current.workspaceId, signal) : [];
-        const reusableTab =
-          layout === "tab"
-            ? findReusableAgentTab(current, tabs, baseLabel, state)
-            : undefined;
-        const reusablePane =
-          layout === "pane"
-            ? findReusableAgentPane(current, state, baseLabel)
-            : undefined;
-        const pane = reusableTab?.pane ?? reusablePane;
-        const tabId = reusableTab?.tab.tab_id ?? reusablePane?.tab_id;
-        const label = reusableTab?.tab.label ?? baseLabel;
-        const stateKey = pane ? paneStateKey(pane) : undefined;
-        const record = stateKey ? state.agents[stateKey] : undefined;
-        const target = record?.automationName ?? pane?.pane_id;
-        if (!pane || !tabId || !target) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `No running Herdr agent named "${baseLabel}" found to re-wait on.`,
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        onUpdate?.({
-          content: [
-            {
-              type: "text",
-              text: `Reconnecting to existing Herdr agent ${label} (${pane.pane_id})...`,
-            },
-          ],
-          details: { tabId, paneId: pane.pane_id, tabLabel: label, agent },
+        return await executeRewait(pi, {
+          agent,
+          tabLabel: params.tabLabel,
+          baseLabel,
+          layout,
+          wait,
+          timeoutMs,
+          signal,
+          onUpdate,
         });
-
-        if (!wait) {
-          const spawnWarnings = record?.spawnWarnings ?? [];
-          return {
-            content: [
-              {
-                type: "text",
-                text: formatSpawnWarnings(
-                  `Herdr agent ${label} (${pane.pane_id}) is still running.`,
-                  spawnWarnings,
-                ),
-              },
-            ],
-            details: {
-              tabId,
-              paneId: pane.pane_id,
-              tabLabel: label,
-              agent,
-              waited: false,
-              ...spawnWarningDetails(spawnWarnings),
-            },
-          };
-        }
-
-        const blockedLabel = `waiting for ${label}`;
-        pi.events.emit("herdr:blocked", { active: true, label: blockedLabel });
-        beginAwaitingAgent(label);
-        try {
-          await waitForAgent(target, timeoutMs, signal);
-          const pendingQuestion = await readAgentQuestion(record?.resultFile);
-          if (pendingQuestion) {
-            const spawnWarnings = record?.spawnWarnings ?? [];
-            await dropCollectedSpawnWarnings(pane);
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: formatSpawnWarnings(
-                    formatAgentQuestion(
-                      label,
-                      record?.agent ?? agent.name,
-                      pendingQuestion,
-                    ),
-                    spawnWarnings,
-                  ),
-                },
-              ],
-              details: {
-                tabId,
-                paneId: pane.pane_id,
-                tabLabel: label,
-                lifecycle: record?.lifecycle,
-                closed: false,
-                agent,
-                waited: true,
-                status: "question",
-                ...spawnWarningDetails(spawnWarnings),
-              },
-            };
-          }
-          const artifact = await readAgentResult(record?.resultFile);
-          const output = artifact ?? (await readAgent(target, signal));
-          // An explicit re-wait collects the result, so release the poller's claim.
-          await bestEffort(false, () => claimDetachedAgent(pane));
-          let closed = false;
-          let closeError: string | undefined;
-          if (record?.lifecycle === "oneshot") {
-            try {
-              await execHerdr(
-                record.layout === "tab"
-                  ? ["tab", "close", tabId]
-                  : ["pane", "close", pane.pane_id],
-                signal,
-              );
-              await bestEffort(undefined, () => deleteAgentLifecycle(pane));
-              await bestEffort(undefined, () =>
-                removeAgentTempFiles(record.resultFile),
-              );
-              if (record.layout !== "tab") {
-                await bestEffort(undefined, () =>
-                  rebalanceCurrentPaneAgents(signal),
-                );
-              }
-              closed = true;
-            } catch (error) {
-              closeError =
-                error instanceof Error ? error.message : String(error);
-            }
-          }
-          const spawnWarnings = record?.spawnWarnings ?? [];
-          const text = formatSpawnWarnings(
-            formatAgentOutput(output, label, closeError),
-            spawnWarnings,
-          );
-          await dropCollectedSpawnWarnings(pane);
-          return {
-            content: [{ type: "text", text }],
-            details: {
-              tabId,
-              paneId: pane.pane_id,
-              tabLabel: label,
-              agent,
-              waited: true,
-              closed,
-              closeError,
-              ...spawnWarningDetails(spawnWarnings),
-            },
-          };
-        } catch (error) {
-          if (isRecoverableWaitInterrupt(error)) {
-            const reason = waitInterruptReason(error);
-            const spawnWarnings = record?.spawnWarnings ?? [];
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: formatSpawnWarnings(
-                    formatWaitInterrupted(label, reason),
-                    spawnWarnings,
-                  ),
-                },
-              ],
-              details: {
-                tabId,
-                paneId: pane.pane_id,
-                tabLabel: label,
-                agent,
-                waited: false,
-                interrupted: true,
-                interruptReason: reason,
-                ...spawnWarningDetails(spawnWarnings),
-              },
-            };
-          }
-          throw error;
-        } finally {
-          endAwaitingAgent(label);
-          pi.events.emit("herdr:blocked", {
-            active: false,
-            label: blockedLabel,
-          });
-        }
       }
+
+      const task = params.task;
 
       // A detached one-shot is closed by the poller after it delivers the
       // result, so this only has to stay forbidden where no poller runs.
@@ -1038,14 +1121,6 @@ function registerHerdrAgentTool(
           details: { lifecycle, waited: false },
           isError: true,
         };
-      }
-
-      const task = params.task;
-      if (task === undefined) {
-        // Unreachable: the re-wait branch above returns early when task is
-        // omitted. This satisfies the type checker that `task` is a string
-        // from here on.
-        throw new Error("Unreachable: task is required past this point.");
       }
 
       let tabLabel = baseLabel;
@@ -1411,15 +1486,15 @@ function registerHerdrAgentTool(
         // Checked before the result: a child that asked ends its turn without
         // HERDR_RESULT, so the wait fires on idle exactly like a completion.
         // The agent stays open — including one-shots — until it really finishes.
-        const question = await readAgentQuestion(resultFile);
-        if (question) {
+        const settled = await readSettledAgentOutput(resultFile, target, signal);
+        if ("question" in settled) {
           await dropCollectedSpawnWarnings(agentPane);
           return {
             content: [
               {
                 type: "text",
                 text: formatSpawnWarnings(
-                  formatAgentQuestion(tabLabel, agent.name, question),
+                  formatAgentQuestion(tabLabel, agent.name, settled.question),
                   spawnWarnings,
                 ),
               },
@@ -1439,8 +1514,6 @@ function registerHerdrAgentTool(
           };
         }
 
-        const artifact = await readAgentResult(resultFile);
-        const output = artifact ?? (await readAgent(target, signal));
         // Whoever collects first owns the result. Releasing the claim here stops
         // the poller from delivering the same result a second time.
         if (agentPane) {
@@ -1449,33 +1522,22 @@ function registerHerdrAgentTool(
 
         let closed = false;
         let closeError: string | undefined;
-        if (closeAfterWait) {
-          try {
-            await execHerdr(
-              layout === "pane"
-                ? ["pane", "close", paneId]
-                : ["tab", "close", tabId],
-              signal,
-            );
-            if (agentPane) {
-              await bestEffort(undefined, () =>
-                deleteAgentLifecycle(agentPane!),
-              );
-            }
-            await bestEffort(undefined, () => removeAgentTempFiles(resultFile));
-            if (layout === "pane") {
-              await bestEffort(undefined, () =>
-                rebalanceCurrentPaneAgents(signal),
-              );
-            }
-            closed = true;
-          } catch (error) {
-            closeError = error instanceof Error ? error.message : String(error);
-          }
+        if (lifecycle === "oneshot") {
+          closeError = await closeOneShot({
+            layout,
+            tabId,
+            paneId,
+            resultFile,
+            lifecyclePane: agentPane,
+            signal,
+          });
+          closed = closeError === undefined;
         }
 
-        const text = formatSpawnWarnings(
-          formatAgentOutput(output, tabLabel, closeError),
+        const text = formatCollectedOutput(
+          settled.output,
+          tabLabel,
+          closeError,
           spawnWarnings,
         );
         await dropCollectedSpawnWarnings(agentPane);

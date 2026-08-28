@@ -20,7 +20,6 @@ import {
   readAgentQuestion,
   readAgentResult,
   removeAgentTempFiles,
-  shouldCloseTab,
   waitInterruptReason,
   writeAgentQuestion,
   writeAgentResult,
@@ -99,11 +98,6 @@ test("returns undefined for empty tools", () => {
 test("returns undefined for unsupported tool shapes", () => {
   assert.equal(normalizeTools(123), undefined);
   assert.equal(normalizeTools({ read: true }), undefined);
-});
-
-test("closes only oneshot tabs", () => {
-  assert.equal(shouldCloseTab("oneshot"), true);
-  assert.equal(shouldCloseTab("persistent"), false);
 });
 
 test("formats agent output text", () => {

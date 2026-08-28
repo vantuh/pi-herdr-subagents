@@ -44,45 +44,45 @@ const STATE_LOCK_STALE_MS = 8_000;
 // the same to claimDetached / record writes.
 const stateFileQueues = new Map<string, Promise<unknown>>();
 
+async function tryAcquireExclusiveLock(
+  lockPath: string,
+): Promise<(() => Promise<void>) | "locked"> {
+  try {
+    const handle = await fs.open(lockPath, "wx");
+    return async () => {
+      await handle.close();
+      await fs.unlink(lockPath).catch(() => {});
+    };
+  } catch (error) {
+    if ((error as { code?: string }).code !== "EEXIST") throw error;
+    return "locked";
+  }
+}
+
 async function acquireExclusiveLock(
   lockPath: string,
 ): Promise<() => Promise<void>> {
   const deadline = Date.now() + STATE_LOCK_STALE_MS;
   while (true) {
-    try {
-      const handle = await fs.open(lockPath, "wx");
-      return async () => {
-        await handle.close();
-        await fs.unlink(lockPath).catch(() => {});
-      };
-    } catch (error) {
-      if ((error as { code?: string }).code !== "EEXIST") throw error;
-      let stale = Date.now() >= deadline;
-      if (!stale) {
-        try {
-          const stat = await fs.stat(lockPath);
-          stale = Date.now() - stat.mtimeMs >= STATE_LOCK_STALE_MS;
-        } catch {
-          continue;
-        }
+    const acquired = await tryAcquireExclusiveLock(lockPath);
+    if (acquired !== "locked") return acquired;
+
+    let stale = Date.now() >= deadline;
+    if (!stale) {
+      try {
+        const stat = await fs.stat(lockPath);
+        stale = Date.now() - stat.mtimeMs >= STATE_LOCK_STALE_MS;
+      } catch {
+        continue;
       }
-      if (stale) {
-        await fs.unlink(lockPath).catch(() => {});
-        try {
-          const handle = await fs.open(lockPath, "wx");
-          return async () => {
-            await handle.close();
-            await fs.unlink(lockPath).catch(() => {});
-          };
-        } catch (retryError) {
-          if ((retryError as { code?: string }).code !== "EEXIST") {
-            throw retryError;
-          }
-          throw new Error(`Timed out waiting for ${lockPath}`);
-        }
-      }
-      await new Promise((resolve) => setTimeout(resolve, 15));
     }
+    if (stale) {
+      await fs.unlink(lockPath).catch(() => {});
+      const retried = await tryAcquireExclusiveLock(lockPath);
+      if (retried !== "locked") return retried;
+      throw new Error(`Timed out waiting for ${lockPath}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 15));
   }
 }
 
@@ -219,21 +219,6 @@ export async function saveHerdrAgentsState(
   await fs.rename(tempPath, filePath);
 }
 
-export function getKnownAgentLifecyclesByTabId(
-  panes: PaneInfo[],
-  state: HerdrAgentsState,
-): Map<string, HerdrAgentLifecycle> {
-  const lifecycles = new Map<string, HerdrAgentLifecycle>();
-
-  for (const pane of panes) {
-    const key = paneStateKey(pane);
-    const record = key ? state.agents[key] : undefined;
-    if (record) lifecycles.set(pane.tab_id, record.lifecycle);
-  }
-
-  return lifecycles;
-}
-
 export function pruneHerdrAgentsState(
   state: HerdrAgentsState,
   panes: PaneInfo[],
@@ -331,7 +316,7 @@ export async function clearAgentSpawnWarnings(
 }
 
 export async function deleteAgentLifecycle(
-  pane: PaneInfo,
+  pane: Pick<PaneInfo, "terminal_id">,
   filePath = getHerdrAgentsStatePath(),
 ): Promise<void> {
   const key = paneStateKey(pane);

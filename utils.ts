@@ -55,10 +55,6 @@ export function normalizeTools(rawTools: unknown): string[] | undefined {
   return tools && tools.length > 0 ? tools : undefined;
 }
 
-export function shouldCloseTab(lifecycle: "oneshot" | "persistent"): boolean {
-  return lifecycle === "oneshot";
-}
-
 export function formatAgentOutput(
   output: string,
   tabLabel: string,

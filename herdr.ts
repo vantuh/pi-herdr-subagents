@@ -3,7 +3,6 @@ import { createConnection } from "node:net";
 import { isAgentOwnedBy, paneStateKey, type HerdrAgentsState } from "./state.ts";
 import type {
   HerdrAgentInfo,
-  HerdrAgentLifecycle,
   HerdrContext,
   HerdrSessionSnapshot,
   PaneInfo,
@@ -458,51 +457,28 @@ export function chooseAgentColumnSplitTarget(
   )[0];
 }
 
-export function listCurrentWorkspaceAgents(
-  context: HerdrContext,
-  tabs: TabInfo[],
-  lifecycleByTabId: ReadonlyMap<string, HerdrAgentLifecycle> = new Map(),
-): HerdrAgentInfo[] {
-  const tabsById = new Map(tabs.map((tab) => [tab.tab_id, tab]));
-  const seenTabs = new Set<string>();
-  const agents: HerdrAgentInfo[] = [];
-
-  for (const pane of context.panes) {
-    if (pane.workspace_id !== context.workspaceId) continue;
-    if (pane.tab_id === context.currentTab) continue;
-    if (!pane.agent) continue;
-    if (seenTabs.has(pane.tab_id)) continue;
-
-    const tab = tabsById.get(pane.tab_id);
-    if (!tab) continue;
-
-    seenTabs.add(pane.tab_id);
-    const chosenPane = choosePaneForTab(context.panes, pane.tab_id) ?? pane;
-    const lifecycle = lifecycleByTabId.get(chosenPane.tab_id);
-    agents.push({
-      tabId: chosenPane.tab_id,
-      tabLabel: tab.label,
-      paneId: chosenPane.pane_id,
-      agent: chosenPane.agent ?? pane.agent,
-      status: chosenPane.agent_status ?? tab.agent_status ?? "unknown",
-      ...(lifecycle ? { lifecycle } : {}),
-      cwd: chosenPane.foreground_cwd ?? chosenPane.cwd,
-    });
-  }
-
-  return agents.sort((a, b) => a.tabLabel.localeCompare(b.tabLabel));
-}
-
 type StartedAgentSnapshot = {
   agent: string;
   status: string;
 };
 
-export function parseStartedAgentSnapshot(
-  output: string,
-): StartedAgentSnapshot {
+type ParsedAgentGet = {
+  agent?: string;
+  status?: string;
+  stateChangeSeq?: number;
+  interactiveReady: boolean;
+};
+
+function parseAgentGetOutput(output: string): ParsedAgentGet {
   let parsed: {
-    result?: { agent?: { agent?: unknown; agent_status?: unknown } };
+    result?: {
+      agent?: {
+        agent?: unknown;
+        agent_status?: unknown;
+        state_change_seq?: unknown;
+        interactive_ready?: unknown;
+      };
+    };
   };
   try {
     parsed = JSON.parse(output);
@@ -511,14 +487,28 @@ export function parseStartedAgentSnapshot(
     throw new Error(`Malformed herdr agent get output: ${message}`);
   }
 
-  const agent = parsed.result?.agent?.agent;
-  const status = parsed.result?.agent?.agent_status;
-  if (typeof agent !== "string" || typeof status !== "string") {
+  const raw = parsed.result?.agent;
+  return {
+    agent: typeof raw?.agent === "string" ? raw.agent : undefined,
+    status: typeof raw?.agent_status === "string" ? raw.agent_status : undefined,
+    stateChangeSeq:
+      typeof raw?.state_change_seq === "number"
+        ? raw.state_change_seq
+        : undefined,
+    interactiveReady: raw?.interactive_ready === true,
+  };
+}
+
+export function parseStartedAgentSnapshot(
+  output: string,
+): StartedAgentSnapshot {
+  const parsed = parseAgentGetOutput(output);
+  if (typeof parsed.agent !== "string" || typeof parsed.status !== "string") {
     throw new Error(
       "Malformed herdr agent get output: expected result.agent.agent and agent_status.",
     );
   }
-  return { agent, status };
+  return { agent: parsed.agent, status: parsed.status };
 }
 
 export function buildAgentRenameArgs(target: string, name: string): string[] {
@@ -645,33 +635,19 @@ export function buildAgentWaitArgs(
 }
 
 export function parseAgentSnapshot(output: string): HerdrAgentSnapshot {
-  let parsed: {
-    result?: {
-      agent?: {
-        agent_status?: unknown;
-        state_change_seq?: unknown;
-        interactive_ready?: unknown;
-      };
-    };
-  };
-  try {
-    parsed = JSON.parse(output);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Malformed herdr agent get output: ${message}`);
-  }
-  const agent = parsed.result?.agent;
-  const status = agent?.agent_status;
-  const stateChangeSeq = agent?.state_change_seq;
-  if (typeof status !== "string" || typeof stateChangeSeq !== "number") {
+  const parsed = parseAgentGetOutput(output);
+  if (
+    typeof parsed.status !== "string" ||
+    typeof parsed.stateChangeSeq !== "number"
+  ) {
     throw new Error(
       "Malformed herdr agent get output: expected result.agent.agent_status and state_change_seq.",
     );
   }
   return {
-    status,
-    stateChangeSeq,
-    interactiveReady: agent?.interactive_ready === true,
+    status: parsed.status,
+    stateChangeSeq: parsed.stateChangeSeq,
+    interactiveReady: parsed.interactiveReady,
   };
 }
 

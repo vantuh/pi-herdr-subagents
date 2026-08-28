@@ -8,7 +8,6 @@ import {
   clearAgentSpawnWarnings,
   deleteAgentLifecycle,
   emptyHerdrAgentsState,
-  getKnownAgentLifecyclesByTabId,
   loadHerdrAgentsState,
   paneStateKey,
   pruneHerdrAgentsState,
@@ -161,19 +160,6 @@ test("ignores corrupted state files", async () => {
   assert.deepEqual(
     await loadHerdrAgentsState(filePath),
     emptyHerdrAgentsState(),
-  );
-});
-
-test("maps known pane lifecycle state by tab id", () => {
-  const state = emptyHerdrAgentsState();
-  state.agents["terminal:term-1"] = {
-    lifecycle: "oneshot",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  };
-
-  assert.deepEqual(
-    getKnownAgentLifecyclesByTabId([pane()], state),
-    new Map([["tab-1", "oneshot"]]),
   );
 });
 

@@ -65,5 +65,3 @@ export function buildHerdrAgentParams(
     ),
   });
 }
-
-export const HerdrAgentParams = buildHerdrAgentParams();

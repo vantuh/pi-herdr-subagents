@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { HerdrAgentParams, describeAgentProfiles } from "../schema.ts";
+import { buildHerdrAgentParams, describeAgentProfiles } from "../schema.ts";
 
 /**
  * The parameter schema is the model-facing contract: renaming a field or
@@ -8,6 +8,7 @@ import { HerdrAgentParams, describeAgentProfiles } from "../schema.ts";
  * else in the suite would notice.
  */
 
+const HerdrAgentParams = buildHerdrAgentParams();
 test("exposes exactly the documented parameters", () => {
   assert.deepEqual(Object.keys(HerdrAgentParams.properties).sort(), [
     "agent",
