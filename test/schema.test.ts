@@ -13,6 +13,7 @@ test("exposes exactly the documented parameters", () => {
   assert.deepEqual(Object.keys(HerdrAgentParams.properties).sort(), [
     "agent",
     "lifecycle",
+    "resumeClosed",
     "tabLabel",
     "task",
     "timeoutMs",
@@ -44,6 +45,7 @@ test("declares parameter types the provider can validate", () => {
   assert.equal(properties.task?.type, "string");
   assert.equal(properties.tabLabel?.type, "string");
   assert.equal(properties.wait?.type, "boolean");
+  assert.equal(properties.resumeClosed?.type, "boolean");
   assert.equal(properties.timeoutMs?.type, "number");
 });
 

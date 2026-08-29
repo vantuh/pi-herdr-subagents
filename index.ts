@@ -62,9 +62,16 @@ import {
   emptyHerdrAgentsState,
   loadHerdrAgentsState,
   paneStateKey,
-  pruneHerdrAgentsState,
+  persistPrunedAgentsState,
   recordAgentLifecycle,
-  saveHerdrAgentsState,
+  claimClosedHistory,
+  releaseClosedHistory,
+  markClosedHistoryInvalid,
+  findOwnedClosedHistory,
+  stageClosedOneShot,
+  finalizeStagedClosedOneShot,
+  type ClosedAgentHistoryRecord,
+  type HerdrAgentStateRecord,
 } from "./state.ts";
 import type {
   AgentProfile,
@@ -86,9 +93,13 @@ import {
   makeHerdrAgentName,
   readAgentQuestion,
   readAgentResult,
+  readAgentSessionMeta,
   removeAgentTempFiles,
   RESULT_FILE_MARKER,
+  SESSION_META_ENV,
+  assertResumableSessionDir,
   titleCase,
+  validateResumableSessionFile,
   waitInterruptReason,
 } from "./utils.ts";
 import {
@@ -119,12 +130,51 @@ async function bestEffort<T>(fallback: T, task: () => Promise<T>): Promise<T> {
   }
 }
 
+const RESUME_CLEANUP_TIMEOUT_MS = 8_000;
+const FINALIZE_RETRY_ATTEMPTS = 3;
+
+function independentCleanupSignal(
+  timeoutMs = RESUME_CLEANUP_TIMEOUT_MS,
+): AbortSignal {
+  return AbortSignal.timeout(timeoutMs);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function resumeClosedLiveDecision(input: {
+  label: string;
+  pane: PaneInfo;
+  record?: HerdrAgentStateRecord;
+  answeringQuestion: boolean;
+}): { action: "reuse" } | { action: "reject"; text: string } {
+  if (input.answeringQuestion) return { action: "reuse" };
+  if (input.record?.lifecycle === "persistent") return { action: "reuse" };
+  const status = input.pane.agent_status;
+  if (status === "working" || status === "blocked") {
+    return {
+      action: "reject",
+      text: `A live Herdr agent named "${input.label}" is still working. Omit task to re-wait; do not resume a closed copy over live work.`,
+    };
+  }
+  if (input.record?.detached) {
+    return {
+      action: "reject",
+      text: `A live Herdr agent named "${input.label}" already settled and is waiting to be collected. Re-wait or let the widget deliver it; do not resume a closed copy over live work.`,
+    };
+  }
+  return {
+    action: "reject",
+    text: `A live Herdr agent named "${input.label}" is still open. Re-wait or answer it; do not resume a closed copy over live work.`,
+  };
+}
+
 async function rebalanceCurrentPaneAgents(signal?: AbortSignal): Promise<void> {
   const current = await getCurrentContext(signal);
-  const state = await loadHerdrAgentsState();
-  if (pruneHerdrAgentsState(state, current.panes)) {
-    await saveHerdrAgentsState(state);
-  }
+  const state = await bestEffort(emptyHerdrAgentsState(), () =>
+    persistPrunedAgentsState(current.panes),
+  );
   const agents = listManagedWorkspaceAgents(current, state).filter(
     (agent) => agent.layout === "pane" && agent.tabId === current.currentTab,
   );
@@ -139,14 +189,9 @@ async function rebalanceCurrentPaneAgents(signal?: AbortSignal): Promise<void> {
 }
 
 /**
- * Close a one-shot pane/tab: Herdr close, lifecycle delete, temp files,
- * pane rebalance. Returns the close error message, or undefined on success.
- * Each follow-up step stays bestEffort, matching the previous inline sites.
- *
- * Call-site differences that stay outside this helper: detached delivery
- * claims before close and skips close for questions/missing artifacts;
- * re-wait closes when the stored record is oneshot; spawn+wait closes from
- * the call's lifecycle and omits lifecycle delete when agentPane is missing.
+ * Close a one-shot pane/tab after durably staging continuation metadata.
+ * Stage first; close only after a successful stage; then atomically finalize
+ * history as resumable and delete live state.
  */
 async function closeOneShot(target: {
   layout?: HerdrAgentLayout;
@@ -156,6 +201,16 @@ async function closeOneShot(target: {
   lifecyclePane?: Pick<PaneInfo, "terminal_id">;
   signal?: AbortSignal;
 }): Promise<string | undefined> {
+  let stagedId: string | undefined;
+  try {
+    stagedId = await stageClosedOneShotIfEligible({
+      resultFile: target.resultFile,
+      lifecyclePane: target.lifecyclePane,
+    });
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+
   try {
     await execHerdr(
       target.layout === "tab"
@@ -163,20 +218,177 @@ async function closeOneShot(target: {
         : ["pane", "close", target.paneId],
       target.signal,
     );
-    const lifecyclePane = target.lifecyclePane;
-    if (lifecyclePane) {
-      await bestEffort(undefined, () => deleteAgentLifecycle(lifecyclePane));
-    }
-    await bestEffort(undefined, () => removeAgentTempFiles(target.resultFile));
-    if (target.layout !== "tab") {
-      await bestEffort(undefined, () =>
-        rebalanceCurrentPaneAgents(target.signal),
-      );
-    }
-    return undefined;
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
+
+  const finalizeOnce = async () => {
+    if (stagedId) {
+      await finalizeStagedClosedOneShot({
+        historyId: stagedId,
+        livePane: target.lifecyclePane,
+      });
+    } else if (target.lifecyclePane) {
+      await deleteAgentLifecycle(target.lifecyclePane);
+    }
+  };
+
+  let finalizeError: string | undefined;
+  for (let attempt = 0; attempt < FINALIZE_RETRY_ATTEMPTS; attempt++) {
+    try {
+      await finalizeOnce();
+      finalizeError = undefined;
+      break;
+    } catch (error) {
+      finalizeError = errorMessage(error);
+    }
+  }
+  if (finalizeError) {
+    await bestEffort(false, async () => {
+      const panes = await listPanes(independentCleanupSignal());
+      const state = await persistPrunedAgentsState(panes);
+      if (!stagedId) return true;
+      const record = state.closedHistory.find((item) => item.id === stagedId);
+      return record?.status === "resumable";
+    });
+  }
+
+  await bestEffort(undefined, () => removeAgentTempFiles(target.resultFile));
+  if (target.layout !== "tab") {
+    await bestEffort(undefined, () =>
+      rebalanceCurrentPaneAgents(target.signal),
+    );
+  }
+  return undefined;
+}
+
+async function stageClosedOneShotIfEligible(target: {
+  resultFile?: string;
+  lifecyclePane?: Pick<PaneInfo, "terminal_id">;
+}): Promise<string | undefined> {
+  if (!target.lifecyclePane) return undefined;
+  let state;
+  try {
+    state = await loadHerdrAgentsState();
+  } catch {
+    return undefined;
+  }
+  const key = paneStateKey(target.lifecyclePane);
+  const live = key ? state.agents[key] : undefined;
+  if (!live) return undefined;
+  if (live.lifecycle !== "oneshot") return undefined;
+  if (!live.ownerSessionId || !live.tabLabel || !live.agent) {
+    throw new Error(
+      `Cannot close "${live.tabLabel ?? "one-shot"}": missing owner/label/profile metadata needed to resume later.`,
+    );
+  }
+
+  const meta = await readAgentSessionMeta(target.resultFile);
+  if (!meta?.sessionFile || !meta.sessionId) {
+    throw new Error(
+      `Cannot close "${live.tabLabel}": child session metadata is missing, so the one-shot cannot be archived for resume.`,
+    );
+  }
+  const header = await validateResumableSessionFile(meta.sessionFile, {
+    sessionId: meta.sessionId,
+    cwd: meta.cwd,
+  });
+  if (!header) {
+    throw new Error(
+      `Cannot close "${live.tabLabel}": child session file is missing, corrupt, or does not match the stored session id/cwd.`,
+    );
+  }
+
+  const staged = await stageClosedOneShot({
+    ...(live.closedHistoryId ? { id: live.closedHistoryId } : {}),
+    livePane: target.lifecyclePane,
+    ownerSessionId: live.ownerSessionId,
+    ...(live.ownerSessionFile
+      ? { ownerSessionFile: live.ownerSessionFile }
+      : {}),
+    profileName: live.agent,
+    tabLabel: live.tabLabel,
+    childSessionFile: meta.sessionFile,
+    childSessionId: header.id,
+    cwd: header.cwd,
+    layout: live.layout ?? "pane",
+  });
+  return staged.id;
+}
+
+function herdrChildEnvArgs(sessionMetaFile?: string): string[] {
+  const args = [
+    "--env",
+    "HERDR_AGENT_CHILD=1",
+    "--env",
+    "PROCESS_LAUNCHED_BY_Q=1",
+  ];
+  if (sessionMetaFile) {
+    args.push("--env", `${SESSION_META_ENV}=${sessionMetaFile}`);
+  }
+  return args;
+}
+
+function orchestratorIdentity(ctx: ExtensionContext): {
+  sessionId?: string;
+  sessionFile?: string;
+} {
+  const sessionId = ctx.sessionManager?.getSessionId()?.trim();
+  const sessionFile = ctx.sessionManager?.getSessionFile()?.trim();
+  return {
+    ...(sessionId ? { sessionId } : {}),
+    ...(sessionFile ? { sessionFile } : {}),
+  };
+}
+
+async function buildChildPiArgs(options: {
+  agent: AgentProfile;
+  tabLabel: string;
+  systemFile: string;
+  cwd: string;
+  sessionFile?: string;
+}): Promise<{ piArgs: string[]; spawnWarnings: string[] }> {
+  const spawnWarnings: string[] = [];
+  const piArgs: string[] = [];
+  if (!options.sessionFile) {
+    piArgs.push("--name", options.tabLabel);
+  } else {
+    piArgs.push("--session", options.sessionFile);
+  }
+  if (options.agent.model) piArgs.push("--model", options.agent.model);
+  if (options.agent.thinking) {
+    const level = resolveThinkingLevel(options.agent.thinking);
+    if (level) {
+      piArgs.push("--thinking", level);
+    } else {
+      spawnWarnings.push(
+        `Unknown thinking level "${options.agent.thinking}" ignored.`,
+      );
+    }
+  }
+  if (Array.isArray(options.agent.skills)) {
+    const resolved = await resolveProfileSkills(
+      options.agent.skills,
+      options.cwd,
+    );
+    piArgs.push("--no-skills");
+    for (const skill of resolved.found) {
+      piArgs.push("--skill", skill.filePath);
+    }
+    if (resolved.missing.length > 0) {
+      spawnWarnings.push(`Skills not found: ${resolved.missing.join(", ")}.`);
+    }
+    spawnWarnings.push(...resolved.diagnostics);
+  }
+  const toolAllowlist = buildChildToolAllowlist(options.agent.tools);
+  if (toolAllowlist) piArgs.push("--tools", toolAllowlist.join(","));
+  piArgs.push(
+    options.agent.systemPromptMode === "replace"
+      ? "--system-prompt"
+      : "--append-system-prompt",
+    options.systemFile,
+  );
+  return { piArgs, spawnWarnings };
 }
 
 function formatCollectedOutput(
@@ -205,22 +417,18 @@ async function readSettledAgentOutput(
 async function loadCurrentAgents(): Promise<HerdrAgentInfo[]> {
   const current = await getCurrentContext();
   const state = await bestEffort(emptyHerdrAgentsState(), () =>
-    loadHerdrAgentsState(),
+    persistPrunedAgentsState(current.panes),
   );
-  await bestEffort(undefined, async () => {
-    if (pruneHerdrAgentsState(state, current.panes)) {
-      await saveHerdrAgentsState(state);
-    }
-  });
   return listManagedWorkspaceAgents(current, state);
 }
 
-// Unlike loadCurrentAgents(), this deliberately skips prune/save: it runs on a
-// one-second timer, and writing the state file for a read-only display would be
-// wasteful. Stale records are still reconciled by the paths that do prune.
+// Widget ticks prune only when live terminals disappeared so staged
+// history can finalize without a second-long write on every idle tick.
 async function loadAgentsForWidget(): Promise<HerdrAgentInfo[]> {
   const current = await getCurrentContext();
-  const state = await loadHerdrAgentsState();
+  const state = await bestEffort(emptyHerdrAgentsState(), () =>
+    persistPrunedAgentsState(current.panes),
+  );
   return listManagedWorkspaceAgents(current, state);
 }
 
@@ -623,6 +831,37 @@ async function showHerdrAgentsManager(
       return;
     }
 
+    const question = await readAgentQuestion(selected.agent.resultFile);
+    const settled =
+      selected.agent.status === "idle" || selected.agent.status === "done";
+    if (selected.agent.lifecycle === "oneshot" && (!settled || question)) {
+      ctx.ui.notify(
+        `Cannot close "${selected.agent.tabLabel}": it is still running or waiting on a question. Answer it or wait for it to finish so history can be saved.`,
+        "warning",
+      );
+      continue;
+    }
+    if (selected.agent.lifecycle === "oneshot") {
+      const closeError = await closeOneShot({
+        layout: selected.agent.layout,
+        tabId: selected.agent.tabId,
+        paneId: selected.agent.paneId,
+        resultFile: selected.agent.resultFile,
+        lifecyclePane: selected.agent.terminalId
+          ? { terminal_id: selected.agent.terminalId }
+          : undefined,
+      });
+      if (closeError) {
+        ctx.ui.notify(
+          `Could not close Herdr agent "${selected.agent.tabLabel}": ${closeError}`,
+          "error",
+        );
+        continue;
+      }
+      ctx.ui.notify(`Closed Herdr agent "${selected.agent.tabLabel}"`, "info");
+      continue;
+    }
+
     await execHerdr(
       selected.agent.layout === "pane"
         ? ["pane", "close", selected.agent.paneId]
@@ -650,6 +889,10 @@ async function acquirePanePlacementLock(): Promise<() => void> {
   panePlacementQueue = previous.then(() => current);
   await previous;
   return release;
+}
+
+function resumedDetails(resumed: boolean): { resumed?: boolean } {
+  return resumed ? { resumed: true } : {};
 }
 
 function spawnWarningDetails(
@@ -693,7 +936,7 @@ async function executeRewait(
 
   const current = await getCurrentContext(signal);
   const state = await bestEffort(emptyHerdrAgentsState(), () =>
-    loadHerdrAgentsState(),
+    persistPrunedAgentsState(current.panes),
   );
   const tabs =
     layout === "tab" ? await listTabs(current.workspaceId, signal) : [];
@@ -1063,11 +1306,13 @@ function registerHerdrAgentTool(
 
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const agents = await discoverAgents(ctx.cwd);
-      const agent = agents.find((item) => item.name === params.agent);
+      let agent = agents.find((item) => item.name === params.agent);
       if (!agent) {
         // Profiles marked disable-model-invocation stay spawnable by exact
         // name, but they are not offered as options to the Orchestrator.
-        const listable = agents.filter((item) => !item.disableModelInvocation);
+        const listable = agents.filter(
+          (item) => !item.disableModelInvocation,
+        );
         const available =
           listable.map((item) => item.name).join(", ") || "none";
         return {
@@ -1085,15 +1330,58 @@ function registerHerdrAgentTool(
       const wait = params.wait ?? true;
       const layout = getHerdrAgentsLayout();
       const lifecycle = params.lifecycle ?? "oneshot";
+      let activeLifecycle = lifecycle;
       const persistent = lifecycle === "persistent";
       const timeoutMs = params.timeoutMs ?? 600000;
       const baseLabel = params.tabLabel?.trim() || titleCase(agent.name);
+      const resumeClosed = params.resumeClosed === true;
+      const owner = orchestratorIdentity(ctx);
+
+      if (resumeClosed) {
+        if (!params.task?.trim()) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "resumeClosed requires a non-empty task. Omit resumeClosed and task to re-wait on a still-running agent.",
+              },
+            ],
+            details: { resumeClosed: true, waited: false },
+            isError: true,
+          };
+        }
+        if (!params.tabLabel?.trim()) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "resumeClosed requires an explicit non-empty tabLabel.",
+              },
+            ],
+            details: { resumeClosed: true, waited: false },
+            isError: true,
+          };
+        }
+        if (persistent) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "resumeClosed is only supported for one-shot agents. Use lifecycle: 'oneshot' or omit lifecycle.",
+              },
+            ],
+            details: { resumeClosed: true, lifecycle, waited: false },
+            isError: true,
+          };
+        }
+      }
 
       if (params.task === undefined) {
         // Re-wait mode: no new task, just reconnect to an existing tab that is
         // (expected to be) still running — e.g. after a previous call to this
         // tool timed out while the agent kept working. It only invokes the
         // server-owned agent wait, so no prompt is re-sent into a busy pane.
+        // Omitting task never resurrects a closed agent.
         return await executeRewait(pi, {
           agent,
           tabLabel: params.tabLabel,
@@ -1129,7 +1417,12 @@ function registerHerdrAgentTool(
       let agentPane: PaneInfo | undefined;
       let automationName: string | undefined;
       let resultFile: string | undefined;
+      let sessionMetaFile: string | undefined;
+      let systemFile: string | undefined;
       let reused = false;
+      let resumed = false;
+      let resumeClaim: ClosedAgentHistoryRecord | undefined;
+      let resumeDurable = false;
       // Populated only on a fresh spawn: frontmatter fields pi can't honor.
       let spawnWarnings: string[] = [];
       const releasePlacement =
@@ -1140,12 +1433,15 @@ function registerHerdrAgentTool(
         // parallel calls see panes and labels created by earlier calls.
         const current = await getCurrentContext(signal);
 
-        await execHerdr(["tab", "rename", current.currentTab, "agent"], signal);
+        await execHerdr(
+          ["tab", "rename", current.currentTab, "agent"],
+          signal,
+        );
 
         const tabs =
           layout === "tab" ? await listTabs(current.workspaceId, signal) : [];
         const state = await bestEffort(emptyHerdrAgentsState(), () =>
-          loadHerdrAgentsState(),
+          persistPrunedAgentsState(current.panes),
         );
 
         // Reuse is normally a persistent-only affordance, but a one-shot parked
@@ -1174,8 +1470,40 @@ function registerHerdrAgentTool(
               readAgentQuestion(candidateRecord.resultFile),
             )) !== undefined;
 
-          if ((persistent || answeringQuestion) && candidatePane) {
+          if (resumeClosed && candidatePane) {
+            const decision = resumeClosedLiveDecision({
+              label: baseLabel,
+              pane: candidatePane,
+              record: candidateRecord,
+              answeringQuestion,
+            });
+            if (decision.action === "reject") {
+              return {
+                content: [{ type: "text", text: decision.text }],
+                details: {
+                  resumeClosed: true,
+                  tabLabel: baseLabel,
+                  paneId: candidatePane.pane_id,
+                  waited: false,
+                  liveStatus: candidatePane.agent_status,
+                  detached: candidateRecord?.detached === true,
+                },
+                isError: true,
+              };
+            }
+          }
+
+          if (
+            (persistent ||
+              answeringQuestion ||
+              (resumeClosed &&
+                candidateRecord?.lifecycle === "persistent")) &&
+            candidatePane
+          ) {
             reused = true;
+            if (candidateRecord?.lifecycle === "persistent") {
+              activeLifecycle = "persistent";
+            }
             tabId = candidateTab?.tab.tab_id ?? candidatePane.tab_id;
             if (candidateTab) tabLabel = candidateTab.tab.label;
             paneId = candidatePane.pane_id;
@@ -1187,8 +1515,119 @@ function registerHerdrAgentTool(
           }
         }
 
+        if (resumeClosed && !reused) {
+          if (!owner.sessionId) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "Cannot resume a closed agent: this Orchestrator session has no session id.",
+                },
+              ],
+              details: { resumeClosed: true, waited: false },
+              isError: true,
+            };
+          }
+          const historyState = await bestEffort(emptyHerdrAgentsState(), () =>
+            persistPrunedAgentsState(current.panes),
+          );
+          const existing = findOwnedClosedHistory(
+            historyState,
+            owner.sessionId,
+            params.tabLabel!.trim(),
+          );
+          if (!existing) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `No closed one-shot Herdr agent named "${params.tabLabel!.trim()}" is owned by this Orchestrator session.`,
+                },
+              ],
+              details: { resumeClosed: true, waited: false },
+              isError: true,
+            };
+          }
+          if (existing.status === "claimed") {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Closed Herdr agent "${existing.tabLabel}" is already being resumed.`,
+                },
+              ],
+              details: { resumeClosed: true, waited: false },
+              isError: true,
+            };
+          }
+          if (existing.profileName !== agent.name) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Closed Herdr agent "${existing.tabLabel}" was a ${existing.profileName} agent, not ${agent.name}.`,
+                },
+              ],
+              details: { resumeClosed: true, waited: false },
+              isError: true,
+            };
+          }
+          const cwdError = await assertResumableSessionDir(existing.cwd);
+          const header = cwdError
+            ? undefined
+            : await validateResumableSessionFile(existing.childSessionFile, {
+                sessionId: existing.childSessionId,
+                cwd: existing.cwd,
+              });
+          if (cwdError || !header) {
+            await bestEffort(undefined, () =>
+              markClosedHistoryInvalid(existing.id, existing.claimGeneration),
+            );
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: cwdError
+                    ? `Cannot resume "${existing.tabLabel}": ${cwdError}`
+                    : `Cannot resume "${existing.tabLabel}": child session file is missing, corrupt, or does not match the stored session id/cwd.`,
+                },
+              ],
+              details: { resumeClosed: true, waited: false },
+              isError: true,
+            };
+          }
+          const claimed = await claimClosedHistory({
+            ownerSessionId: owner.sessionId,
+            tabLabel: existing.tabLabel,
+            profileName: agent.name,
+          });
+          if (!claimed.ok) {
+            return {
+              content: [{ type: "text", text: claimed.error }],
+              details: { resumeClosed: true, waited: false },
+              isError: true,
+            };
+          }
+          resumeClaim = claimed.record;
+          resumed = true;
+          tabLabel = claimed.record.tabLabel;
+          const resumedAgents = await discoverAgents(claimed.record.cwd);
+          agent =
+            resumedAgents.find((item) => item.name === params.agent) ?? agent;
+        }
+
+        if (!reused) {
+          const profilePrompt = [agent.systemPrompt, CHILD_PROTOCOL]
+            .filter(Boolean)
+            .join("\n\n");
+          const tempFiles = await createAgentTempFiles(profilePrompt);
+          resultFile = tempFiles.resultFile;
+          sessionMetaFile = tempFiles.sessionMetaFile;
+          systemFile = tempFiles.systemFile;
+        }
+
         if (!reused && layout === "tab") {
-          tabLabel = uniqueLabel(baseLabel, tabs);
+          if (!resumeClaim) tabLabel = uniqueLabel(baseLabel, tabs);
           const createOutput = await execHerdr(
             [
               "tab",
@@ -1198,11 +1637,8 @@ function registerHerdrAgentTool(
               "--label",
               tabLabel,
               "--cwd",
-              ctx.cwd,
-              "--env",
-              "HERDR_AGENT_CHILD=1",
-              "--env",
-              "PROCESS_LAUNCHED_BY_Q=1",
+              resumeClaim?.cwd ?? ctx.cwd,
+              ...herdrChildEnvArgs(sessionMetaFile),
               "--no-focus",
             ],
             signal,
@@ -1243,13 +1679,15 @@ function registerHerdrAgentTool(
             (item) =>
               item.layout === "pane" && item.tabId === current.currentTab,
           );
-          tabLabel = uniqueLabel(
-            baseLabel,
-            managedAgents.map((item) => ({
-              tab_id: item.paneId,
-              label: item.tabLabel,
-            })),
-          );
+          if (!resumeClaim) {
+            tabLabel = uniqueLabel(
+              baseLabel,
+              managedAgents.map((item) => ({
+                tab_id: item.paneId,
+                label: item.tabLabel,
+              })),
+            );
+          }
           const managedPaneIds = new Set(
             managedAgents.map((item) => item.paneId),
           );
@@ -1279,11 +1717,8 @@ function registerHerdrAgentTool(
               "--ratio",
               splitTarget ? "0.5" : "0.6",
               "--cwd",
-              ctx.cwd,
-              "--env",
-              "HERDR_AGENT_CHILD=1",
-              "--env",
-              "PROCESS_LAUNCHED_BY_Q=1",
+              resumeClaim?.cwd ?? ctx.cwd,
+              ...herdrChildEnvArgs(sessionMetaFile),
               "--no-focus",
             ],
             signal,
@@ -1324,54 +1759,25 @@ function registerHerdrAgentTool(
 
         if (!reused) {
           automationName = makeHerdrAgentName(agent.name);
-          const profilePrompt = [agent.systemPrompt, CHILD_PROTOCOL]
-            .filter(Boolean)
-            .join("\n\n");
-          const tempFiles = await createAgentTempFiles(profilePrompt);
-          resultFile = tempFiles.resultFile;
-          // Unsupported frontmatter is ignored with a warning, not a failed spawn.
-          spawnWarnings = [];
-          const piArgs = ["--name", tabLabel];
-          if (agent.model) piArgs.push("--model", agent.model);
-          if (agent.thinking) {
-            const level = resolveThinkingLevel(agent.thinking);
-            if (level) {
-              piArgs.push("--thinking", level);
-            } else {
-              spawnWarnings.push(
-                `Unknown thinking level "${agent.thinking}" ignored.`,
-              );
-            }
-          }
-          if (Array.isArray(agent.skills)) {
-            const resolved = await resolveProfileSkills(agent.skills, ctx.cwd);
-            piArgs.push("--no-skills");
-            for (const skill of resolved.found) {
-              piArgs.push("--skill", skill.filePath);
-            }
-            if (resolved.missing.length > 0) {
-              spawnWarnings.push(
-                `Skills not found: ${resolved.missing.join(", ")}.`,
-              );
-            }
-            spawnWarnings.push(...resolved.diagnostics);
-          }
-          const toolAllowlist = buildChildToolAllowlist(agent.tools);
-          if (toolAllowlist) piArgs.push("--tools", toolAllowlist.join(","));
-          // replace swaps the default system prompt; the child protocol is
-          // always part of the passed file, whatever the mode.
-          piArgs.push(
-            agent.systemPromptMode === "replace"
-              ? "--system-prompt"
-              : "--append-system-prompt",
-            tempFiles.systemFile,
-          );
+          const built = await buildChildPiArgs({
+            agent,
+            tabLabel,
+            systemFile: systemFile!,
+            cwd: resumeClaim?.cwd ?? ctx.cwd,
+            ...(resumeClaim
+              ? { sessionFile: resumeClaim.childSessionFile }
+              : {}),
+          });
+          spawnWarnings = built.spawnWarnings;
+          const piArgs = built.piArgs;
 
           onUpdate?.({
             content: [
               {
                 type: "text",
-                text: `Starting Herdr agent ${tabLabel} (${paneId})...`,
+                text: resumed
+                  ? `Resuming Herdr agent ${tabLabel} (${paneId})...`
+                  : `Starting Herdr agent ${tabLabel} (${paneId})...`,
               },
             ],
             details: {
@@ -1380,38 +1786,84 @@ function registerHerdrAgentTool(
               tabLabel,
               lifecycle,
               reused,
+              ...resumedDetails(resumed),
               agent,
               ...spawnWarningDetails(spawnWarnings),
             },
           });
           await startAgent(automationName, paneId, piArgs, signal);
           agentPane =
-            (await listPanes(signal)).find((pane) => pane.pane_id === paneId) ??
-            agentPane;
+            (await listPanes(signal)).find(
+              (pane) => pane.pane_id === paneId,
+            ) ?? agentPane;
         } else {
           resultFile ??= await createResultFile();
         }
 
         if (agentPane) {
-          await bestEffort(undefined, () =>
-            recordAgentLifecycle(agentPane!, lifecycle, {
+          const writeLifecycle = () =>
+            recordAgentLifecycle(agentPane!, activeLifecycle, {
               tabLabel,
               agent: agent.name,
               automationName,
               resultFile,
               layout,
               ...(spawnWarnings.length > 0 ? { spawnWarnings } : {}),
-              // Nobody is waiting for this one, so the poller owns its result.
               detached: !wait,
               ...(current.currentPane.terminal_id
                 ? { ownerTerminalId: current.currentPane.terminal_id }
                 : {}),
-            }),
+              ...(owner.sessionId ? { ownerSessionId: owner.sessionId } : {}),
+              ...(owner.sessionFile
+                ? { ownerSessionFile: owner.sessionFile }
+                : {}),
+              ...(resumeClaim
+                ? {
+                    closedHistoryId: resumeClaim.id,
+                    closedHistoryGeneration: resumeClaim.claimGeneration,
+                  }
+                : {}),
+            });
+          if (resumeClaim) {
+            await writeLifecycle();
+            resumeDurable = true;
+          } else {
+            await bestEffort(undefined, writeLifecycle);
+          }
+        } else if (resumeClaim) {
+          throw new Error(
+            `Could not record a live lifecycle for resumed Herdr agent ${tabLabel}.`,
           );
         }
         if (layout === "pane") {
-          await bestEffort(undefined, () => rebalanceCurrentPaneAgents(signal));
+          await bestEffort(undefined, () =>
+            rebalanceCurrentPaneAgents(signal),
+          );
         }
+      } catch (error) {
+        if (resumeClaim && !resumeDurable) {
+          const cleanupSignal = independentCleanupSignal();
+          let closedPartial = true;
+          if (paneId && tabId) {
+            closedPartial = await bestEffort(false, async () => {
+              await execHerdr(
+                layout === "tab"
+                  ? ["tab", "close", tabId!]
+                  : ["pane", "close", paneId!],
+                cleanupSignal,
+              );
+              return true;
+            });
+          }
+          await bestEffort(undefined, () => removeAgentTempFiles(resultFile));
+          if (closedPartial) {
+            await releaseClosedHistory(
+              resumeClaim.id,
+              resumeClaim.claimGeneration,
+            );
+          }
+        }
+        throw error;
       } finally {
         releasePlacement();
       }
@@ -1453,7 +1905,10 @@ function registerHerdrAgentTool(
 
       const blockedLabel = `waiting for ${tabLabel}`;
       if (wait) {
-        pi.events.emit("herdr:blocked", { active: true, label: blockedLabel });
+        pi.events.emit("herdr:blocked", {
+          active: true,
+          label: blockedLabel,
+        });
         beginAwaitingAgent(tabLabel);
       }
       try {
@@ -1476,6 +1931,7 @@ function registerHerdrAgentTool(
               tabLabel,
               lifecycle,
               reused,
+              ...resumedDetails(resumed),
               agent,
               waited: false,
               ...spawnWarningDetails(spawnWarnings),
@@ -1486,7 +1942,11 @@ function registerHerdrAgentTool(
         // Checked before the result: a child that asked ends its turn without
         // HERDR_RESULT, so the wait fires on idle exactly like a completion.
         // The agent stays open — including one-shots — until it really finishes.
-        const settled = await readSettledAgentOutput(resultFile, target, signal);
+        const settled = await readSettledAgentOutput(
+          resultFile,
+          target,
+          signal,
+        );
         if ("question" in settled) {
           await dropCollectedSpawnWarnings(agentPane);
           return {
@@ -1505,6 +1965,7 @@ function registerHerdrAgentTool(
               tabLabel,
               lifecycle,
               reused,
+              ...resumedDetails(resumed),
               closed: false,
               agent,
               waited: true,
@@ -1522,7 +1983,7 @@ function registerHerdrAgentTool(
 
         let closed = false;
         let closeError: string | undefined;
-        if (lifecycle === "oneshot") {
+        if (activeLifecycle === "oneshot") {
           closeError = await closeOneShot({
             layout,
             tabId,
@@ -1555,6 +2016,7 @@ function registerHerdrAgentTool(
             tabLabel,
             lifecycle,
             reused,
+            ...resumedDetails(resumed),
             closed,
             closeError,
             ...spawnWarningDetails(spawnWarnings),
@@ -1581,6 +2043,7 @@ function registerHerdrAgentTool(
               tabLabel,
               lifecycle,
               reused,
+              ...resumedDetails(resumed),
               agent,
               waited: false,
               interrupted: true,
@@ -1602,5 +2065,4 @@ function registerHerdrAgentTool(
     },
   });
 }
-
 }

@@ -14,6 +14,9 @@ import {
   parseAgentSnapshot,
   parseStartedAgentSnapshot,
   promptAcceptanceObserved,
+  redactHerdrArgs,
+  sanitizeHerdrOutput,
+  sensitiveArgValues,
   startedAgentReady,
 } from "../herdr.ts";
 import { emptyHerdrAgentsState } from "../state.ts";
@@ -73,6 +76,59 @@ test("maps agent_blocked prompt failures to an actionable orchestrator error", (
     () => mapPromptError(plain, "worker_ab12"),
     (error: unknown) => error === plain,
   );
+});
+
+test("redacts session, system-prompt, and managed temp paths from Herdr argv", () => {
+  const session = "/tmp/herdr-pi-sessions/child.jsonl";
+  const system = "/tmp/herdr-agent-xyz/system.md";
+  const meta = "/tmp/herdr-agent-xyz/session.json";
+  const redacted = redactHerdrArgs([
+    "agent",
+    "start",
+    "scout_ab12",
+    "--pane",
+    "pane-1",
+    "--",
+    "--session",
+    session,
+    "--append-system-prompt",
+    system,
+    "--env",
+    `HERDR_AGENT_SESSION_META=${meta}`,
+  ]);
+  assert.equal(redacted.includes(session), false);
+  assert.equal(redacted.includes(system), false);
+  assert.equal(redacted.includes(meta), false);
+  assert.equal(redacted[redacted.indexOf("--session") + 1], "<redacted>");
+  assert.equal(
+    redacted[redacted.indexOf("--append-system-prompt") + 1],
+    "<redacted>",
+  );
+});
+
+test("sanitizes exact argv values including paths with spaces from Herdr stderr", () => {
+  const session = "/tmp/my project/herdr-pi-sessions/child session.jsonl";
+  const temp = "/tmp/herdr-agent-xyz/system file.md";
+  const args = [
+    "agent",
+    "start",
+    "scout_ab12",
+    "--",
+    "--session",
+    session,
+    "--append-system-prompt",
+    temp,
+  ];
+  const quoted = `failed '${session}' and "${temp}"`;
+  const unquoted = `cmd ${session} ${temp}`;
+  const sensitive = sensitiveArgValues(args);
+  assert.ok(sensitive.includes(session));
+  assert.ok(sensitive.includes(temp));
+  for (const text of [quoted, unquoted, JSON.stringify({ cmd: args })]) {
+    const safe = sanitizeHerdrOutput(text, sensitive);
+    assert.equal(safe.includes(session), false);
+    assert.equal(safe.includes(temp), false);
+  }
 });
 
 test("builds a completion wait that ignores blocked", () => {

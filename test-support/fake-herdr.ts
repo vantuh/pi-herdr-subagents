@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import * as path from "node:path";
+import { SESSION_META_ENV } from "../utils.ts";
 
 /**
  * In-process Herdr simulator for integration tests.
@@ -54,6 +56,8 @@ export interface FakeAgent {
   turns: number;
   /** Result artifact from the most recent prompt. */
   resultFile?: string;
+  childSessionId?: string;
+  childSessionFile?: string;
 }
 
 /** What a simulated child does with one prompt. */
@@ -183,6 +187,8 @@ export class FakeHerdr {
   >();
   private readonly commandMalformed = new Map<string, string>();
   private omitTabIdOnCreate = false;
+  private omitSessionMeta = false;
+  private agentStartDelayMs = 0;
   /** Prompts whose Enter never fired, keyed by agent name. */
   private readonly stalledPrompts = new Map<string, () => Promise<void>>();
   private behavior: ChildBehavior = defaultBehavior;
@@ -223,6 +229,11 @@ export class FakeHerdr {
     this.alwaysFailStartWith = code;
   }
 
+  /** Delay `agent start` so tests can abort mid-resume spawn. */
+  delayAgentStart(ms: number): void {
+    this.agentStartDelayMs = ms;
+  }
+
   /**
    * Accept prompts but do not start the simulated turns yet.
    *
@@ -256,6 +267,11 @@ export class FakeHerdr {
    */
   omitCreatedTabId(): void {
     this.omitTabIdOnCreate = true;
+  }
+
+  /** Do not write child session.json metadata, so archive/stage cannot proceed. */
+  skipSessionMeta(): void {
+    this.omitSessionMeta = true;
   }
 
   /** Run every held turn to completion, so all of them are settled on return. */
@@ -453,7 +469,7 @@ export class FakeHerdr {
 
     if (group === "tab") return this.handleTab(argv);
     if (group === "pane") return this.handlePane(argv);
-    if (group === "agent") return this.handleAgent(argv);
+    if (group === "agent") return await this.handleAgent(argv);
     return fail("unknown_command", `unknown command: ${argv.join(" ")}`);
   }
 
@@ -571,7 +587,7 @@ export class FakeHerdr {
     return fail("unknown_command", `unknown pane command: ${command}`);
   }
 
-  private handleAgent(argv: string[]): CliResponse {
+  private async handleAgent(argv: string[]): Promise<CliResponse> {
     const [, command, target] = argv;
 
     if (command === "start") {
@@ -582,6 +598,9 @@ export class FakeHerdr {
       const separator = argv.indexOf("--");
       const piArgs = separator >= 0 ? argv.slice(separator + 1) : [];
       const failure = this.alwaysFailStartWith ?? this.startFailures.shift();
+      if (this.agentStartDelayMs > 0) {
+        await this.delay(this.agentStartDelayMs);
+      }
 
       if (failure === "agent_kind_mismatch") {
         // A provider child can briefly own the pane before Pi claims it. The
@@ -613,7 +632,10 @@ export class FakeHerdr {
         return fail("agent_kind_mismatch", "pane is running kiro, not pi");
       }
       if (failure) {
-        return fail(failure, `${failure} for pane ${pane.pane_id}`);
+        return fail(
+          failure,
+          `${failure} for pane ${pane.pane_id}: ${piArgs.join(" ")}`,
+        );
       }
 
       const agent: FakeAgent = {
@@ -626,10 +648,14 @@ export class FakeHerdr {
         piArgs,
         transcript: "",
         turns: 0,
+        ...(flag(piArgs, "--session")
+          ? { childSessionFile: flag(piArgs, "--session") }
+          : {}),
       };
       this.agents.set(agent.name, agent);
       pane.agent = agent.kind;
       pane.agent_status = agent.status;
+      await this.captureChildSession(agent);
       return ok({ agent: this.agentJson(agent) });
     }
 
@@ -715,6 +741,7 @@ export class FakeHerdr {
         if (outcome.result !== undefined) {
           await fs.writeFile(turn.resultFile, outcome.result, "utf8");
         }
+        await this.captureChildSession(agent);
       }
       agent.transcript = outcome.transcript ?? agent.transcript;
       this.setStatus(agent, outcome.settleStatus ?? "idle");
@@ -731,6 +758,60 @@ export class FakeHerdr {
       return;
     }
     await run();
+  }
+
+  private async captureChildSession(agent: FakeAgent): Promise<void> {
+    if (this.omitSessionMeta) return;
+    const pane = this.paneById(agent.paneId);
+    const metaPath = pane?.env[SESSION_META_ENV];
+    if (!metaPath) return;
+    const cwd = pane.cwd || process.cwd();
+    let sessionFile = agent.childSessionFile;
+    let sessionId = agent.childSessionId;
+    if (sessionFile && !sessionId) {
+      try {
+        const first = (await fs.readFile(sessionFile, "utf8")).split("\n")[0];
+        const parsed = JSON.parse(first) as { id?: unknown };
+        if (typeof parsed.id === "string") sessionId = parsed.id;
+      } catch {
+        // Fall through and create a header below.
+      }
+    }
+    sessionId ??= randomUUID();
+    sessionFile ??= path.join(
+      path.dirname(path.dirname(metaPath)),
+      "herdr-pi-sessions",
+      `${sessionId}.jsonl`,
+    );
+    agent.childSessionId = sessionId;
+    agent.childSessionFile = sessionFile;
+    try {
+      await fs.access(sessionFile);
+    } catch {
+      await fs.mkdir(path.dirname(sessionFile), { recursive: true });
+      await fs.writeFile(
+        sessionFile,
+        `${JSON.stringify({
+          type: "session",
+          version: 3,
+          id: sessionId,
+          timestamp: new Date().toISOString(),
+          cwd,
+        })}\n`,
+        { encoding: "utf8", mode: 0o600 },
+      );
+    }
+    await fs.mkdir(path.dirname(metaPath), { recursive: true });
+    await fs.writeFile(
+      metaPath,
+      `${JSON.stringify({
+        sessionId,
+        sessionFile,
+        cwd,
+        updatedAt: new Date().toISOString(),
+      })}\n`,
+      { encoding: "utf8", mode: 0o600 },
+    );
   }
 
   private async waitForAgent(

@@ -62,6 +62,8 @@ export function createMockHost(options: {
   cwd: string;
   hasUI?: boolean;
   isIdle?: boolean;
+  sessionId?: string;
+  sessionFile?: string;
   /**
    * Keystrokes to feed the Nth `ctx.ui.custom` overlay, which is how the
    * `/herdr-agents` manager is driven without a terminal. A call with no entry
@@ -123,6 +125,12 @@ export function createMockHost(options: {
     mode: "tui",
     isIdle: () => options.isIdle ?? true,
     signal: undefined,
+    sessionManager: {
+      getSessionId: () => options.sessionId ?? "test-orch-session",
+      getSessionFile: () =>
+        options.sessionFile ?? path.join(options.cwd, "orchestrator.jsonl"),
+      getCwd: () => options.cwd,
+    },
     ui: {
       theme,
       setWidget: (id: string, content: unknown) => {

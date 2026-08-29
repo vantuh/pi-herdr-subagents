@@ -105,6 +105,7 @@ The child protocol requires a final report:
 
 ```md
 HERDR_RESULT:
+
 - status: done | blocked
 - summary: <short result>
 - evidence: <files/commands/links inspected>
@@ -171,6 +172,24 @@ To continue waiting on the same managed target without starting a new one or re-
 
 This avoids two bad alternatives: assuming the timeout means failure, or falling back to raw
 `herdr wait agent-status`/`herdr pane read` bash commands to poll the same pane manually.
+
+Omitting `task` never resurrects a closed agent. To continue a closed one-shot owned by this
+Orchestrator session, call `herdr_agent` with `resumeClosed: true`, the exact `tabLabel`, and a
+new self-contained `task`. Live agents with that label take precedence: parked questions reuse the
+live target, a still-working agent must be re-waited, a settled detached result must be collected,
+and persistent agents are reused. Resume never replaces a live target with a closed copy. Resume
+launches Pi with `--session` pointing at the child's existing JSONL, rebuilds the current profile
+policy from the archived session cwd, and keeps the resumed lifecycle one-shot — after a successful
+result it closes again and updates the same continuation slot.
+
+State-file writes use an exclusive lock directory created with `mkdir` at
+`herdr-agents-state.json.lock`. Acquisition succeeds only when that `mkdir` succeeds; the holder
+then writes an owner sentinel whose name includes a random token and the owner PID. There is no
+automatic stale-lock takeover. A waiter that sees `EEXIST` retries until timeout. Release unlinks
+only that holder's exact sentinel, then `rmdir`s the directory; `rmdir` fails if a replacement
+sentinel is present, so an old holder cannot drop a new lock. A leftover lock *file* at the same
+path (from older versions) is treated as occupied and times out — stop every Pi/herdr-agents
+process first, then remove the directory or legacy file by hand.
 
 ## 10. Completion detection
 

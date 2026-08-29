@@ -42,6 +42,8 @@ export interface HarnessOptions {
   dialogInputs?: string[][];
   /** Orchestrator pane id reported in HERDR_PANE_ID; defaults to the real one. */
   paneIdEnv?: string;
+  sessionId?: string;
+  sessionFile?: string;
 }
 
 export interface Harness {
@@ -113,6 +115,8 @@ export async function createHarness(
     hasUI: options.hasUI,
     isIdle: options.isIdle,
     dialogInputs: options.dialogInputs,
+    sessionId: options.sessionId,
+    sessionFile: options.sessionFile,
   });
   await Promise.resolve(herdrAgentsExtension(host.pi));
 

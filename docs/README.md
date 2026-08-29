@@ -43,6 +43,7 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Thi
 - One-shot scout: `{ "agent": "scout", "task": "...", "lifecycle": "oneshot" }` — managed target closes after result.
 - Persistent scout: `{ "agent": "scout", "tabLabel": "Scout — message-bus", "task": "...", "lifecycle": "persistent" }` — follow-up reuses the same label.
 - Re-wait after timeout: `{ "agent": "scout", "tabLabel": "Scout — message-bus" }` with no `task`.
+- Resume a closed one-shot: `{ "agent": "scout", "tabLabel": "Scout — message-bus", "task": "...", "resumeClosed": true }` — only when no live agent with that label exists. A live question is answered in place; a live working or detached agent must be re-waited or collected.
 
 ## Main concepts
 
@@ -193,6 +194,7 @@ Use `pane` or remove the variable to return to the default. Restart Pi after cha
   wait?: boolean;
   timeoutMs?: number;
   lifecycle?: "oneshot" | "persistent";
+  resumeClosed?: boolean;
 }
 ```
 

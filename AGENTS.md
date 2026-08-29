@@ -119,8 +119,9 @@ one-shot answered by label), parallel spawns serialized into one agent column
 with rebalancing, `agent_pane_busy` retry, `agent_kind_mismatch` recovery, the
 single Enter nudge for a stalled prompt, timeout/abort soft re-wait plus the
 re-wait path, detached result and question delivery through the widget poller
-(exactly once), the tab layout, and the injected Orchestrator / `/run`
-instructions.
+(exactly once), the tab layout, the injected Orchestrator / `/run`
+instructions, and closed one-shot archive/resume (`resumeClosed`, session
+JSONL, ownership, concurrent claim, question after resurrection).
 
 Regressions from `docs/session-findings.md` that used to be checked by hand and
 now have tests, with the finding they came from:
@@ -154,16 +155,16 @@ lone agent; state pruning; and `0600` on the state file and artifacts.
 
 Covered by the e2e layer: a real child produces a real result artifact and its
 pane is really closed; a persistent child keeps its context across two tasks
-(asserted on the model's request history); a real `ask_question` tool call
+(asserted on the model's request history); a closed one-shot can be resumed
+with `resumeClosed` and still sees prior context; a real `ask_question` tool call
 travels from a tools-restricted child back to the Orchestrator and the answer
 finishes it; two real agent panes stack into one right column with the
 Orchestrator held at 60%; a detached real child is delivered and closed by the
 poller with nobody waiting.
 
 Not covered: the Orchestrator's own Pi process (the extension is driven
-directly, not through a real model emitting `herdr_agent` tool calls), the zsh
-`HISTFILE` child guard (§14, it lives in the `zsh` package), and multi-process
-state-file coordination (intentionally out of scope).
+directly, not through a real model emitting `herdr_agent` tool calls), and the zsh
+`HISTFILE` child guard (§14, it lives in the `zsh` package).
 
 One e2e-specific constraint worth knowing: `MockLlm` stalls ~1.5s before its
 content chunk on purpose. Herdr samples the pane for agent state, so an instant

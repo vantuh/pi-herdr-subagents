@@ -1,12 +1,40 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
   ASK_QUESTION_TOOL,
   assistantText,
   findResultFileMarker,
+  SESSION_META_ENV,
   writeAgentQuestion,
   writeAgentResult,
+  writeAgentSessionMeta,
 } from "./utils.ts";
+
+export async function captureChildSessionMeta(
+  ctx: ExtensionContext,
+): Promise<string | undefined> {
+  const dest = process.env[SESSION_META_ENV]?.trim();
+  const sessionManager = ctx.sessionManager;
+  if (!dest || !sessionManager) return undefined;
+  const sessionId = sessionManager.getSessionId()?.trim();
+  if (!sessionId) return undefined;
+  const sessionFile = sessionManager.getSessionFile()?.trim();
+  const cwd = (
+    "getCwd" in sessionManager && typeof sessionManager.getCwd === "function"
+      ? sessionManager.getCwd()
+      : ctx.cwd
+  )?.trim();
+  if (!cwd) return undefined;
+  return writeAgentSessionMeta(dest, {
+    sessionId,
+    cwd,
+    updatedAt: new Date().toISOString(),
+    ...(sessionFile ? { sessionFile } : {}),
+  });
+}
 
 /**
  * Child-side half of the Herdr agent protocol. Runs only when
@@ -20,14 +48,19 @@ import {
 export function registerChildMode(pi: ExtensionAPI): void {
   let resultFile: string | undefined;
 
+  pi.on("session_start", async (_event, ctx) => {
+    await captureChildSessionMeta(ctx);
+  });
+
   pi.on("before_agent_start", async (event) => {
     resultFile = findResultFileMarker(event.prompt);
   });
 
-  pi.on("message_end", async (event) => {
+  pi.on("message_end", async (event, ctx) => {
     if (!resultFile || event.message.role !== "assistant") return;
     const output = assistantText(event.message);
     if (output.trim()) await writeAgentResult(resultFile, output);
+    await captureChildSessionMeta(ctx);
   });
 
   pi.registerTool({
@@ -48,7 +81,7 @@ export function registerChildMode(pi: ExtensionAPI): void {
       }),
     }),
 
-    async execute(_toolCallId, params) {
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const question = params.question.trim();
       if (!question) {
         return {
@@ -72,6 +105,8 @@ export function registerChildMode(pi: ExtensionAPI): void {
         };
       }
 
+      if (ctx) await captureChildSessionMeta(ctx);
+
       return {
         content: [
           {
@@ -79,7 +114,7 @@ export function registerChildMode(pi: ExtensionAPI): void {
             text: "Question sent to the Orchestrator. Reply with one short line saying you are waiting for the answer, then stop — do not emit HERDR_RESULT and do not call other tools. The answer will arrive as your next prompt.",
           },
         ],
-        details: { questionFile: written },
+        details: { delivered: true },
       };
     },
   });

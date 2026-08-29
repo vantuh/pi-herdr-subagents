@@ -5,7 +5,7 @@ import * as path from "node:path";
 import test from "node:test";
 import herdrAgentsExtension from "../index.ts";
 import { applyEnv, createMockHost } from "../test-support/mock-extension.ts";
-import { RESULT_FILE_MARKER } from "../utils.ts";
+import { RESULT_FILE_MARKER, SESSION_META_ENV } from "../utils.ts";
 
 /**
  * Child-mode contract (docs/session-findings.md §4): with
@@ -122,7 +122,8 @@ test("ask_question writes the question beside the result file", async () => {
     assert.equal(result.isError, undefined);
     assert.match(result.content[0].text, /Question sent to the Orchestrator/);
     const questionFile = path.join(path.dirname(resultFile), "question.md");
-    assert.equal(result.details.questionFile, questionFile);
+    assert.equal(result.details.questionFile, undefined);
+    assert.equal(result.details.delivered, true);
     assert.equal(await fs.readFile(questionFile, "utf8"), "Cookie or JWT?");
     // Asking is not answering: the result artifact stays absent.
     assert.equal(await fs.stat(resultFile).catch(() => null), null);
@@ -141,5 +142,44 @@ test("ask_question fails loudly instead of stranding the child", async () => {
     const empty = await tool.execute("call-2", { question: "   " });
     assert.equal(empty.isError, true);
     assert.match(empty.content[0].text, /must not be empty/);
+  });
+});
+
+test("child session_start writes session metadata to the env artifact", async () => {
+  await withChildHost(async (host, tmp) => {
+    const resultFile = await managedResultFile(tmp);
+    const metaFile = path.join(path.dirname(resultFile), "session.json");
+    process.env[SESSION_META_ENV] = metaFile;
+
+    await host.fire("session_start");
+
+    const raw = JSON.parse(await fs.readFile(metaFile, "utf8"));
+    assert.equal(raw.sessionId, "test-orch-session");
+    assert.equal(raw.cwd, host.ctx.cwd);
+    assert.ok(path.isAbsolute(raw.sessionFile));
+    const stats = await fs.stat(metaFile);
+    assert.equal(stats.mode & 0o777, 0o600);
+    delete process.env[SESSION_META_ENV];
+  });
+});
+
+test("child refreshes session metadata after a finalized result", async () => {
+  await withChildHost(async (host, tmp) => {
+    const resultFile = await managedResultFile(tmp);
+    const metaFile = path.join(path.dirname(resultFile), "session.json");
+    process.env[SESSION_META_ENV] = metaFile;
+    await host.fire("before_agent_start", {
+      systemPrompt: "BASE",
+      prompt: `Do the thing.\n${RESULT_FILE_MARKER} ${resultFile}`,
+    });
+    await host.fire("message_end", {
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "done" }],
+      },
+    });
+    const raw = JSON.parse(await fs.readFile(metaFile, "utf8"));
+    assert.equal(raw.sessionId, "test-orch-session");
+    delete process.env[SESSION_META_ENV];
   });
 });

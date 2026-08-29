@@ -9,6 +9,7 @@ import type {
   ReusableAgentTab,
   TabInfo,
 } from "./types.ts";
+import { isManagedHerdrTempPath, SESSION_META_ENV } from "./utils.ts";
 
 export class HerdrCliError extends Error {
   constructor(
@@ -39,11 +40,109 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-function redactHerdrArgs(args: readonly string[]): string[] {
-  if (args[0] === "agent" && args[1] === "prompt" && args.length >= 4) {
-    return [...args.slice(0, 3), "<prompt>", ...args.slice(4)];
+const SENSITIVE_AGENT_START_FLAGS = new Set([
+  "--session",
+  "--system-prompt",
+  "--append-system-prompt",
+]);
+
+export function redactHerdrArgs(args: readonly string[]): string[] {
+  const redacted = [...args];
+  if (
+    redacted[0] === "agent" &&
+    redacted[1] === "prompt" &&
+    redacted.length >= 4
+  ) {
+    redacted[3] = "<prompt>";
   }
-  return [...args];
+  for (let i = 0; i < redacted.length; i++) {
+    const current = redacted[i];
+    const next = redacted[i + 1];
+    if (SENSITIVE_AGENT_START_FLAGS.has(current) && next !== undefined) {
+      redacted[i + 1] = "<redacted>";
+      i += 1;
+      continue;
+    }
+    if (current === "--env" && next !== undefined) {
+      const eq = next.indexOf("=");
+      const key = eq >= 0 ? next.slice(0, eq) : next;
+      const value = eq >= 0 ? next.slice(eq + 1) : "";
+      if (
+        key === SESSION_META_ENV ||
+        isSensitivePath(value) ||
+        isManagedHerdrTempPath(value)
+      ) {
+        redacted[i + 1] = `${key}=<redacted>`;
+      }
+      i += 1;
+      continue;
+    }
+    if (isSensitivePath(current) || isManagedHerdrTempPath(current)) {
+      redacted[i] = "<path>";
+    }
+  }
+  return redacted;
+}
+
+function isSensitivePath(value: string): boolean {
+  if (!value) return false;
+  if (
+    value.includes(".jsonl") &&
+    (value.startsWith("/") || value.includes("\\"))
+  ) {
+    return true;
+  }
+  return value.includes("herdr-agent-") || value.includes("herdr-pi-sessions");
+}
+
+export function sensitiveArgValues(args: readonly string[]): string[] {
+  const values: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const current = args[i];
+    const next = args[i + 1];
+    if (SENSITIVE_AGENT_START_FLAGS.has(current) && next !== undefined) {
+      values.push(next);
+      i += 1;
+      continue;
+    }
+    if (current === "--env" && next !== undefined) {
+      const eq = next.indexOf("=");
+      if (eq >= 0) values.push(next.slice(eq + 1));
+      i += 1;
+      continue;
+    }
+    if (isSensitivePath(current) || isManagedHerdrTempPath(current)) {
+      values.push(current);
+    }
+  }
+  return [...new Set(values.filter((value) => value.length > 0))].toSorted(
+    (a, b) => b.length - a.length,
+  );
+}
+
+function replacementForSensitiveValue(value: string): string {
+  if (value.includes("herdr-agent-")) return "<temp>";
+  if (value.includes(".jsonl") || value.includes("herdr-pi-sessions")) {
+    return "<session>";
+  }
+  return "<redacted>";
+}
+
+export function sanitizeHerdrOutput(
+  text: string,
+  sensitiveValues: readonly string[] = [],
+): string {
+  let result = text;
+  for (const value of sensitiveValues) {
+    if (!value) continue;
+    const replacement = replacementForSensitiveValue(value);
+    result = result.split(value).join(replacement);
+    const jsonEscaped = JSON.stringify(value).slice(1, -1);
+    if (jsonEscaped !== value) {
+      result = result.split(jsonEscaped).join(replacement);
+    }
+  }
+  return result;
 }
 
 function parseHerdrError(
@@ -84,11 +183,16 @@ export function execHerdr(
         cleanup();
         if (error) {
           const parsed = parseHerdrError(stderr?.trim(), error.message);
+          const sensitive = sensitiveArgValues(args);
           const safeArgs = redactHerdrArgs(args);
           const code = parsed.code ? ` [${parsed.code}]` : "";
+          const safeMessage = sanitizeHerdrOutput(parsed.message, sensitive);
           reject(
             new HerdrCliError(
-              `herdr ${safeArgs.join(" ")} failed${code}: ${parsed.message}`,
+              sanitizeHerdrOutput(
+                `herdr ${safeArgs.join(" ")} failed${code}: ${safeMessage}`,
+                sensitive,
+              ),
               parsed.code,
               safeArgs,
             ),
@@ -348,6 +452,18 @@ export function listManagedWorkspaceAgents(
         : {}),
       ...(record.detached ? { detached: true } : {}),
       ...(pane.terminal_id ? { terminalId: pane.terminal_id } : {}),
+      ...(record.ownerSessionId
+        ? { ownerSessionId: record.ownerSessionId }
+        : {}),
+      ...(record.ownerSessionFile
+        ? { ownerSessionFile: record.ownerSessionFile }
+        : {}),
+      ...(record.closedHistoryId
+        ? { closedHistoryId: record.closedHistoryId }
+        : {}),
+      ...(record.closedHistoryGeneration
+        ? { closedHistoryGeneration: record.closedHistoryGeneration }
+        : {}),
     });
   }
 
@@ -490,7 +606,8 @@ function parseAgentGetOutput(output: string): ParsedAgentGet {
   const raw = parsed.result?.agent;
   return {
     agent: typeof raw?.agent === "string" ? raw.agent : undefined,
-    status: typeof raw?.agent_status === "string" ? raw.agent_status : undefined,
+    status:
+      typeof raw?.agent_status === "string" ? raw.agent_status : undefined,
     stateChangeSeq:
       typeof raw?.state_change_seq === "number"
         ? raw.state_change_seq

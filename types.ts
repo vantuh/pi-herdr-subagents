@@ -57,6 +57,10 @@ export interface HerdrAgentInfo {
   detached?: boolean;
   /** Pane terminal id — the state-record key. */
   terminalId?: string;
+  ownerSessionId?: string;
+  ownerSessionFile?: string;
+  closedHistoryId?: string;
+  closedHistoryGeneration?: number;
 }
 
 export interface ReusableAgentTab {

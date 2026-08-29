@@ -217,6 +217,53 @@ test("re-wait with wait: false only reports that the agent is still running", as
   });
 });
 
+test("resumeClosed without a task is rejected and does not resurrect", async () => {
+  await withHarness({}, async (harness) => {
+    const result = await harness.call({
+      agent: "scout",
+      tabLabel: "Scout Resume",
+      resumeClosed: true,
+    });
+    assert.equal(result.isError, true);
+    assert.match(
+      result.content[0].text,
+      /resumeClosed requires a non-empty task/,
+    );
+    assert.deepEqual(harness.fake.callsMatching("agent", "start"), []);
+  });
+});
+
+test("resumeClosed without tabLabel is rejected", async () => {
+  await withHarness({}, async (harness) => {
+    const result = await harness.call({
+      agent: "scout",
+      task: "continue",
+      resumeClosed: true,
+    });
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /explicit non-empty tabLabel/);
+  });
+});
+
+test("omitting task still re-waits and does not resume a closed agent", async () => {
+  await withHarness({}, async (harness) => {
+    await harness.call({
+      agent: "scout",
+      task: "one",
+      tabLabel: "Scout Closed",
+    });
+    const starts = harness.fake.callsMatching("agent", "start").length;
+
+    const result = await harness.call({
+      agent: "scout",
+      tabLabel: "Scout Closed",
+    });
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /No running Herdr agent/);
+    assert.equal(harness.fake.callsMatching("agent", "start").length, starts);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Detached delivery
 // ---------------------------------------------------------------------------

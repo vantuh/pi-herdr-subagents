@@ -8,6 +8,7 @@ import {
   type HarnessOptions,
   createHarness,
 } from "../test-support/harness.ts";
+import { setFailNextStateMutation, clearStateSaveFailures } from "../state.ts";
 
 /**
  * Integration tests for the whole `herdr_agent` flow: the real extension runs
@@ -24,6 +25,7 @@ async function withHarness(
   try {
     await body(harness);
   } finally {
+    clearStateSaveFailures();
     await harness.dispose();
   }
 }
@@ -646,6 +648,7 @@ test("removes the managed temp directory with a one-shot but keeps it for a pers
     assert.ok(persistentRecord?.resultFile);
     assert.deepEqual((await fs.readdir(persistentDir)).sort(), [
       "result.md",
+      "session.json",
       "system.md",
     ]);
 
@@ -803,5 +806,651 @@ test("/herdr-agents reports an empty workspace instead of failing", async () => 
     await harness.runCommand("herdr-agents");
     assert.deepEqual(harness.notifications, []);
     assert.deepEqual(harness.fake.callsMatching("pane", "close"), []);
+  });
+});
+
+test("archives a completed one-shot and resumes it with --session", async () => {
+  await withHarness({}, async (harness) => {
+    const first = await harness.call({
+      agent: "scout",
+      task: "first slice",
+      tabLabel: "Scout Resume",
+    });
+    assert.equal(first.details.closed, true);
+    const history = (await harness.readState()).closedHistory ?? [];
+    assert.equal(history.length, 1);
+    assert.equal(history[0]?.tabLabel, "Scout Resume");
+    assert.equal(history[0]?.status, "resumable");
+    const sessionFile = history[0]?.childSessionFile;
+    assert.ok(sessionFile && path.isAbsolute(sessionFile));
+
+    const resumed = await harness.call({
+      agent: "scout",
+      task: "second slice",
+      tabLabel: "Scout Resume",
+      resumeClosed: true,
+    });
+    if (resumed.isError) {
+      throw new Error(`resume failed: ${resumed.content[0].text}`);
+    }
+    assert.equal(resumed.details.resumed, true);
+    assert.equal(resumed.details.closed, true);
+
+    const starts = harness.fake.callsMatching("agent", "start");
+    const resumeStart = starts.at(-1) ?? [];
+    const separator = resumeStart.indexOf("--");
+    const piArgs = resumeStart.slice(separator + 1);
+    assert.equal(flagValue(piArgs, "--session"), sessionFile);
+    assert.equal(piArgs.includes("--name"), false);
+
+    const after = (await harness.readState()).closedHistory ?? [];
+    assert.equal(after.length, 1);
+    assert.equal(after[0]?.id, history[0]?.id);
+    assert.equal(after[0]?.status, "resumable");
+  });
+});
+
+test("resumeClosed errors when the child JSONL is missing or mismatched", async () => {
+  await withHarness({}, async (harness) => {
+    await harness.call({
+      agent: "scout",
+      task: "first",
+      tabLabel: "Scout Resume",
+    });
+    const history = (await harness.readState()).closedHistory ?? [];
+    const sessionFile = history[0]?.childSessionFile;
+    assert.ok(sessionFile);
+    await fs.rm(sessionFile);
+
+    const missing = await harness.call({
+      agent: "scout",
+      task: "again",
+      tabLabel: "Scout Resume",
+      resumeClosed: true,
+    });
+    assert.equal(missing.isError, true);
+    assert.match(
+      missing.content[0].text,
+      /missing, corrupt, or does not match/,
+    );
+    assert.equal(harness.fake.callsMatching("agent", "start").length, 1);
+  });
+});
+
+test("another Orchestrator session cannot resume this session's closed agent", async () => {
+  await withHarness({}, async (first) => {
+    await first.call({
+      agent: "scout",
+      task: "first",
+      tabLabel: "Scout Resume",
+    });
+    const state = await first.readState();
+    await withHarness({ sessionId: "other-orch" }, async (second) => {
+      await fs.writeFile(
+        second.statePath,
+        `${JSON.stringify(state, null, 2)}\n`,
+      );
+      const result = await second.call({
+        agent: "scout",
+        task: "steal",
+        tabLabel: "Scout Resume",
+        resumeClosed: true,
+      });
+      assert.equal(result.isError, true);
+      assert.match(
+        result.content[0].text,
+        /owned by this Orchestrator session/,
+      );
+    });
+  });
+});
+
+test("concurrent resumeClosed has a single winner", async () => {
+  await withHarness({}, async (harness) => {
+    await harness.call({
+      agent: "scout",
+      task: "first",
+      tabLabel: "Scout Resume",
+    });
+    harness.fake.setBehavior(() => ({
+      result: "resumed",
+      delayMs: 400,
+    }));
+    const results = await Promise.all([
+      harness.call({
+        agent: "scout",
+        task: "a",
+        tabLabel: "Scout Resume",
+        resumeClosed: true,
+      }),
+      harness.call({
+        agent: "scout",
+        task: "b",
+        tabLabel: "Scout Resume",
+        resumeClosed: true,
+      }),
+    ]);
+    assert.equal(results.filter((item) => !item.isError).length, 1);
+    assert.equal(results.filter((item) => item.isError).length, 1);
+  });
+});
+
+test("a resumed one-shot can ask a question and be answered by label", async () => {
+  await withHarness({}, async (harness) => {
+    await harness.call({
+      agent: "scout",
+      task: "first",
+      tabLabel: "Scout Resume",
+    });
+    harness.fake.setBehavior(() => ({ question: "Which module?" }));
+    const asked = await harness.call({
+      agent: "scout",
+      task: "continue",
+      tabLabel: "Scout Resume",
+      resumeClosed: true,
+    });
+    assert.equal(asked.details.status, "question");
+    assert.equal(asked.details.closed, false);
+    assert.equal(asked.details.resumed, true);
+
+    harness.fake.setBehavior(() => ({ result: "answered" }));
+    const answered = await harness.call({
+      agent: "scout",
+      task: "the auth module",
+      tabLabel: "Scout Resume",
+    });
+    assert.equal(answered.details.reused, true);
+    assert.equal(answered.details.closed, true);
+    assert.match(answered.content[0].text, /answered/);
+  });
+});
+
+test("detached one-shot completion archives before cleanup", async () => {
+  await withHarness({}, async (harness) => {
+    await harness.call({
+      agent: "scout",
+      task: "background",
+      wait: false,
+      tabLabel: "Scout Detached Resume",
+    });
+    await harness.waitFor(async () => {
+      const history = (await harness.readState()).closedHistory ?? [];
+      return history.length === 1 && harness.fake.panes.length === 1;
+    }, "detached one-shot to archive and close");
+    const history = (await harness.readState()).closedHistory ?? [];
+    assert.equal(history[0]?.tabLabel, "Scout Detached Resume");
+    assert.equal(history[0]?.status, "resumable");
+  });
+});
+
+test("spawn failure after claim releases the closed history slot", async () => {
+  await withHarness({}, async (harness) => {
+    await harness.call({
+      agent: "scout",
+      task: "first",
+      tabLabel: "Scout Resume",
+    });
+    harness.fake.failEveryStart("agent_start_failed");
+    await assert.rejects(() =>
+      harness.call({
+        agent: "scout",
+        task: "again",
+        tabLabel: "Scout Resume",
+        resumeClosed: true,
+      }),
+    );
+    const history = (await harness.readState()).closedHistory ?? [];
+    assert.equal(history[0]?.status, "resumable");
+  });
+});
+
+test("malformed target creation after claim rolls the history slot back", async () => {
+  await withHarness({}, async (harness) => {
+    await harness.call({
+      agent: "scout",
+      task: "first",
+      tabLabel: "Scout Resume",
+    });
+    harness.fake.malformCommand("pane split", "<html>nope</html>");
+    await assert.rejects(() =>
+      harness.call({
+        agent: "scout",
+        task: "again",
+        tabLabel: "Scout Resume",
+        resumeClosed: true,
+      }),
+    );
+    const history = (await harness.readState()).closedHistory ?? [];
+    assert.equal(history[0]?.status, "resumable");
+    assert.equal(harness.fake.panes.length, 1);
+  });
+});
+
+test("lifecycle write failure after start releases the claim and closes the partial target", async () => {
+  await withHarness({}, async (harness) => {
+    await harness.call({
+      agent: "scout",
+      task: "first",
+      tabLabel: "Scout Resume",
+    });
+    setFailNextStateMutation("lifecycle");
+    await assert.rejects(() =>
+      harness.call({
+        agent: "scout",
+        task: "again",
+        tabLabel: "Scout Resume",
+        resumeClosed: true,
+      }),
+    );
+    const history = (await harness.readState()).closedHistory ?? [];
+    assert.equal(history[0]?.status, "resumable");
+    assert.equal(harness.fake.panes.length, 1);
+  });
+});
+
+test("failed resume spawn redacts session and temp paths from the error", async () => {
+  await withHarness({}, async (harness) => {
+    await harness.call({
+      agent: "scout",
+      task: "first",
+      tabLabel: "Scout Resume",
+    });
+    const history = (await harness.readState()).closedHistory ?? [];
+    const sessionFile = history[0]?.childSessionFile;
+    assert.ok(sessionFile);
+    harness.fake.failEveryStart("agent_start_failed");
+    await assert.rejects(
+      () =>
+        harness.call({
+          agent: "scout",
+          task: "again",
+          tabLabel: "Scout Resume",
+          resumeClosed: true,
+        }),
+      (error: unknown) => {
+        const text = String(error);
+        assert.equal(text.includes(sessionFile), false);
+        assert.equal(text.includes("herdr-agent-"), false);
+        assert.match(text, /agent_start_failed/);
+        return true;
+      },
+    );
+  });
+});
+
+test("missing continuation metadata does not close or archive a one-shot", async () => {
+  await withHarness({}, async (harness) => {
+    harness.fake.skipSessionMeta();
+    const result = await harness.call({
+      agent: "scout",
+      task: "first",
+      tabLabel: "Scout Missing Meta",
+    });
+    assert.equal(result.details.closed, false);
+    assert.match(
+      String(result.details.closeError),
+      /session metadata is missing/,
+    );
+    assert.equal(harness.fake.panes.length, 2);
+    const history = (await harness.readState()).closedHistory ?? [];
+    assert.equal(history.length, 0);
+  });
+});
+
+test("stage write failure keeps the live one-shot and does not expose resumable history", async () => {
+  await withHarness({}, async (harness) => {
+    harness.fake.holdChildren();
+    await harness.call({
+      agent: "scout",
+      task: "background",
+      wait: false,
+      tabLabel: "Scout Stage Fail",
+    });
+    setFailNextStateMutation("stage");
+    await harness.fake.releaseChildren();
+    await harness.waitFor(async () => {
+      const record = Object.values((await harness.readState()).agents)[0];
+      return record?.detached !== true;
+    }, "detached claim to settle after failed stage");
+    assert.equal(harness.fake.panes.length, 2);
+    const history = (await harness.readState()).closedHistory ?? [];
+    assert.equal(
+      history.filter((item) => item.status === "resumable").length,
+      0,
+    );
+  });
+});
+
+test("close failure after staging keeps the live agent and is not resumable", async () => {
+  await withHarness({}, async (harness) => {
+    harness.fake.setBehavior(() => ({ result: "PRECIOUS RESULT" }));
+    harness.fake.failCommand("pane close", "pane_close_failed");
+    const result = await harness.call({
+      agent: "scout",
+      task: "Find it",
+      tabLabel: "Scout Close Fail",
+    });
+    assert.equal(result.details.closed, false);
+    assert.equal(harness.fake.panes.length, 2);
+    const state = await harness.readState();
+    assert.ok(Object.keys(state.agents).length > 0);
+    assert.equal(
+      (state.closedHistory ?? []).some((item) => item.status === "resumable"),
+      false,
+    );
+    assert.equal(state.closedHistory[0]?.status, "staged");
+  });
+});
+
+test("/herdr-agents refuses to close a questioned one-shot", async () => {
+  await withHarness({ dialogInputs: [["d"]] }, async (harness) => {
+    harness.fake.setBehavior(() => ({ question: "Which module?" }));
+    await harness.call({
+      agent: "scout",
+      task: "ask",
+      tabLabel: "Scout Question Close",
+    });
+    await harness.runCommand("herdr-agents");
+    assert.equal(harness.fake.panes.length, 2);
+    assert.match(
+      harness.notifications.at(-1)?.message ?? "",
+      /Cannot close "Scout Question Close"/,
+    );
+    const history = (await harness.readState()).closedHistory ?? [];
+    assert.equal(history.length, 0);
+  });
+});
+
+test("/herdr-agents refuses to close an active resumed one-shot", async () => {
+  await withHarness({ dialogInputs: [["d"]] }, async (harness) => {
+    await harness.call({
+      agent: "scout",
+      task: "first",
+      tabLabel: "Scout Resume Close",
+    });
+    harness.fake.setBehavior(() => ({ question: "Which module?" }));
+    const asked = await harness.call({
+      agent: "scout",
+      task: "again",
+      tabLabel: "Scout Resume Close",
+      resumeClosed: true,
+    });
+    assert.equal(asked.details.status, "question");
+    assert.equal(asked.details.closed, false);
+    await harness.runCommand("herdr-agents");
+    assert.equal(harness.fake.panes.length, 2);
+    assert.match(
+      harness.notifications.at(-1)?.message ?? "",
+      /Cannot close "Scout Resume Close"/,
+    );
+    const history = (await harness.readState()).closedHistory ?? [];
+    assert.equal(history[0]?.status, "claimed");
+  });
+});
+
+test("aborted resume spawn still cleans up with an independent signal", async () => {
+  await withHarness({}, async (harness) => {
+    await harness.call({
+      agent: "scout",
+      task: "first",
+      tabLabel: "Scout Resume Abort",
+    });
+    harness.fake.delayAgentStart(800);
+    const controller = new AbortController();
+    const pending = harness.call(
+      {
+        agent: "scout",
+        task: "again",
+        tabLabel: "Scout Resume Abort",
+        resumeClosed: true,
+      },
+      { signal: controller.signal },
+    );
+    await harness.waitFor(
+      () => harness.fake.callsMatching("agent", "start").length > 1,
+      "resume agent start to begin",
+    );
+    controller.abort();
+    await assert.rejects(() => pending);
+    const history = (await harness.readState()).closedHistory ?? [];
+    assert.equal(history[0]?.status, "resumable");
+    assert.equal(harness.fake.panes.length, 1);
+  });
+});
+
+test("unconfirmed rollback close keeps the claim instead of a resumable duplicate", async () => {
+  await withHarness({}, async (harness) => {
+    await harness.call({
+      agent: "scout",
+      task: "first",
+      tabLabel: "Scout Resume CloseFail",
+    });
+    harness.fake.failEveryStart("agent_start_failed");
+    harness.fake.failCommand("pane close", "pane_close_failed");
+    await assert.rejects(() =>
+      harness.call({
+        agent: "scout",
+        task: "again",
+        tabLabel: "Scout Resume CloseFail",
+        resumeClosed: true,
+      }),
+    );
+    const history = (await harness.readState()).closedHistory ?? [];
+    assert.equal(history[0]?.status, "claimed");
+    assert.equal(harness.fake.panes.length, 2);
+  });
+});
+
+test("prompt failure after a durable resume leaves the live generation recoverable", async () => {
+  await withHarness({}, async (harness) => {
+    await harness.call({
+      agent: "scout",
+      task: "first",
+      tabLabel: "Scout Resume Prompt",
+    });
+    harness.fake.failCommand("agent prompt", "agent_prompt_failed", {
+      times: 1,
+    });
+    await assert.rejects(() =>
+      harness.call({
+        agent: "scout",
+        task: "again",
+        tabLabel: "Scout Resume Prompt",
+        resumeClosed: true,
+      }),
+    );
+    const state = await harness.readState();
+    assert.equal(state.closedHistory[0]?.status, "claimed");
+    assert.ok(Object.keys(state.agents).length > 0);
+    assert.equal(harness.fake.panes.length, 2);
+  });
+});
+
+test("close success plus finalize failure still lets a later resume succeed", async () => {
+  await withHarness({}, async (harness) => {
+    setFailNextStateMutation("finalize", 3);
+    const first = await harness.call({
+      agent: "scout",
+      task: "first",
+      tabLabel: "Scout Resume Finalize",
+    });
+    assert.equal(first.isError, undefined);
+    assert.equal(harness.fake.panes.length, 1);
+    const history = (await harness.readState()).closedHistory ?? [];
+    assert.equal(history[0]?.status, "resumable");
+    const resumed = await harness.call({
+      agent: "scout",
+      task: "second",
+      tabLabel: "Scout Resume Finalize",
+      resumeClosed: true,
+    });
+    assert.equal(resumed.isError, undefined);
+    assert.equal(resumed.details.resumed, true);
+    assert.equal(resumed.details.closed, true);
+  });
+});
+
+test("resumeClosed does not spawn over a live working agent", async () => {
+  await withHarness({}, async (harness) => {
+    await harness.call({
+      agent: "scout",
+      task: "first",
+      tabLabel: "Scout Live Working",
+    });
+    harness.fake.setBehavior(() => ({ neverSettle: true }));
+    await harness.call({
+      agent: "scout",
+      task: "live",
+      wait: false,
+      tabLabel: "Scout Live Working",
+    });
+    await harness.waitFor(
+      () =>
+        harness.fake.panes.some(
+          (pane) =>
+            pane !== harness.fake.orchestratorPane &&
+            pane.agent_status === "working",
+        ),
+      "live agent to report working",
+    );
+    const blocked = await harness.call({
+      agent: "scout",
+      task: "resume anyway",
+      tabLabel: "Scout Live Working",
+      resumeClosed: true,
+    });
+    assert.equal(blocked.isError, true);
+    assert.match(blocked.content[0].text, /still working/);
+    assert.equal(harness.fake.callsMatching("agent", "start").length, 2);
+  });
+});
+
+test("resumeClosed does not spawn over a settled detached live agent", async () => {
+  await withHarness({}, async (harness) => {
+    await harness.call({
+      agent: "scout",
+      task: "first",
+      tabLabel: "Scout Live Settled",
+    });
+    harness.fake.holdChildren();
+    await harness.call({
+      agent: "scout",
+      task: "background",
+      wait: false,
+      tabLabel: "Scout Live Settled",
+    });
+    await harness.fake.releaseChildren();
+    await harness.waitFor(
+      () =>
+        harness.fake.panes.some(
+          (pane) =>
+            pane !== harness.fake.orchestratorPane &&
+            pane.agent_status === "idle",
+        ),
+      "detached live agent to settle",
+    );
+    const blocked = await harness.call({
+      agent: "scout",
+      task: "resume anyway",
+      tabLabel: "Scout Live Settled",
+      resumeClosed: true,
+    });
+    assert.equal(blocked.isError, true);
+    assert.match(blocked.content[0].text, /waiting to be collected|still open/);
+    assert.equal(harness.fake.callsMatching("agent", "start").length, 2);
+  });
+});
+
+test("resumeClosed resolves project skills from the archived cwd", async () => {
+  await withHarness(
+    { profiles: [{ name: "scout", skills: ["tdd"] }] },
+    async (harness) => {
+      const otherDir = path.join(path.dirname(harness.cwd), "archived project");
+      await fs.mkdir(path.join(otherDir, ".pi", "skills", "tdd"), {
+        recursive: true,
+      });
+      await fs.writeFile(
+        path.join(otherDir, ".pi", "skills", "tdd", "SKILL.md"),
+        "---\nname: tdd\ndescription: red green\n---\n\nBODY\n",
+      );
+      await harness.call({
+        agent: "scout",
+        task: "first",
+        tabLabel: "Scout Cwd",
+      });
+      const statePath = harness.statePath;
+      const state = JSON.parse(await fs.readFile(statePath, "utf8"));
+      const record = state.closedHistory[0];
+      const sessionFile = record.childSessionFile as string;
+      const raw = await fs.readFile(sessionFile, "utf8");
+      const [headerLine, ...rest] = raw.split("\n");
+      const header = JSON.parse(headerLine);
+      header.cwd = otherDir;
+      await fs.writeFile(
+        sessionFile,
+        [JSON.stringify(header), ...rest].join("\n"),
+      );
+      record.cwd = otherDir;
+      await fs.writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`);
+
+      const resumed = await harness.call({
+        agent: "scout",
+        task: "second",
+        tabLabel: "Scout Cwd",
+        resumeClosed: true,
+      });
+      if (resumed.isError) {
+        throw new Error(`resume failed: ${resumed.content[0].text}`);
+      }
+      const starts = harness.fake.callsMatching("agent", "start");
+      const resumeStart = starts.at(-1) ?? [];
+      const separator = resumeStart.indexOf("--");
+      const piArgs = resumeStart.slice(separator + 1);
+      const skill = flagValue(piArgs, "--skill");
+      assert.ok(
+        skill?.includes(path.join("archived project", ".pi", "skills", "tdd")),
+      );
+      const split = harness.fake.callsMatching("pane", "split").at(-1) ?? [];
+      assert.equal(flagValue(split, "--cwd"), otherDir);
+    },
+  );
+});
+
+test("failed resume spawn redacts session paths that contain whitespace", async () => {
+  await withHarness({}, async (harness) => {
+    await harness.call({
+      agent: "scout",
+      task: "first",
+      tabLabel: "Scout Space Path",
+    });
+    const state = JSON.parse(await fs.readFile(harness.statePath, "utf8"));
+    const sessionFile = state.closedHistory[0].childSessionFile as string;
+    const spaced = path.join(path.dirname(sessionFile), "child session.jsonl");
+    await fs.rename(sessionFile, spaced);
+    const raw = await fs.readFile(spaced, "utf8");
+    const [headerLine, ...rest] = raw.split("\n");
+    await fs.writeFile(spaced, [headerLine, ...rest].join("\n"));
+    state.closedHistory[0].childSessionFile = spaced;
+    await fs.writeFile(
+      harness.statePath,
+      `${JSON.stringify(state, null, 2)}\n`,
+    );
+    harness.fake.failEveryStart("agent_start_failed");
+    await assert.rejects(
+      () =>
+        harness.call({
+          agent: "scout",
+          task: "again",
+          tabLabel: "Scout Space Path",
+          resumeClosed: true,
+        }),
+      (error: unknown) => {
+        const text = String(error);
+        assert.equal(text.includes(spaced), false);
+        assert.equal(text.includes("child session.jsonl"), false);
+        assert.match(text, /agent_start_failed/);
+        return true;
+      },
+    );
   });
 });

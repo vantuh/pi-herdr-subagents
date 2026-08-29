@@ -42,6 +42,11 @@ describe("constants", () => {
     expect(GLOBAL_INSTRUCTIONS).toContain("re-wait");
   });
 
+  test("GLOBAL_INSTRUCTIONS covers closed one-shot resume", () => {
+    expect(GLOBAL_INSTRUCTIONS).toContain("resumeClosed: true");
+    expect(GLOBAL_INSTRUCTIONS).toContain("never resurrects a closed agent");
+  });
+
   test("buildRunTurnInstructions names agent when provided", () => {
     expect(buildRunTurnInstructions("scout")).toContain('agent: "scout"');
     expect(buildRunTurnInstructions()).toContain("smallest suitable");

@@ -223,3 +223,35 @@ test("delivers a detached real child's result and closes its pane on its own", a
     assert.deepEqual((await harness.readState()).agents, {});
   });
 });
+
+test("resumes a closed real one-shot with prior conversation context", async () => {
+  await withE2e({}, async (harness) => {
+    const first = await harness.call({
+      agent: "scout",
+      task: "Remember the token ALPHA-42.",
+      tabLabel: "Scout Resume E2E",
+    });
+    assert.equal(first.isError, undefined);
+    assert.equal(first.details.closed, true);
+    const history = (await harness.readState()).closedHistory ?? [];
+    assert.equal(history.length, 1);
+    assert.ok(history[0]?.childSessionFile);
+
+    const resumed = await harness.call({
+      agent: "scout",
+      task: "What token did I ask you to remember?",
+      tabLabel: "Scout Resume E2E",
+      resumeClosed: true,
+    });
+    assert.equal(resumed.isError, undefined);
+    assert.equal(resumed.details.resumed, true);
+    assert.equal(resumed.details.closed, true);
+
+    const secondRequest = harness.llm.requestsMentioning(
+      "What token did I ask you to remember?",
+    )[0];
+    assert.ok(secondRequest, "expected the resumed task to reach the model");
+    const historyText = JSON.stringify(secondRequest.messages);
+    assert.match(historyText, /Remember the token ALPHA-42/);
+  });
+});

@@ -63,5 +63,11 @@ export function buildHerdrAgentParams(
           "Agent lifecycle. Use 'oneshot' for one-off tasks that close after completion, or 'persistent' to keep/reuse the agent for follow-up tasks. Default: oneshot.",
       }),
     ),
+    resumeClosed: Type.Optional(
+      Type.Boolean({
+        description:
+          "Resume a closed one-shot agent owned by this Orchestrator session, matched by exact tabLabel. Requires a non-empty task and tabLabel. Never resumes over a live agent: parked questions are answered in place, working agents must be re-waited, settled detached results must be collected, and persistent agents are reused. Omit task to re-wait on a still-running agent — that never resurrects a closed one.",
+      }),
+    ),
   });
 }
