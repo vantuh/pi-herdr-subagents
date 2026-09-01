@@ -3,6 +3,7 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { getCurrentContext } from "./herdr.ts";
 import {
   ASK_QUESTION_TOOL,
   assistantText,
@@ -37,6 +38,24 @@ export async function captureChildSessionMeta(
 }
 
 /**
+ * Mirrors this pane's Herdr label (set by `herdr agent start <name>`) into
+ * pi.setSessionName() once at session_start. pi-autoname's restore() has no
+ * marker for a `--name`-assigned session name, so it treats the session as
+ * unnamed and renames it on the first agent_settled despite the Orchestrator
+ * already naming it. Emitting session_info_changed here lets pi-autoname's
+ * respectManualName logic (enabled in pi-autoname.json) recognize the name
+ * as manual and skip renaming it.
+ */
+async function mirrorPaneLabelAsSessionName(pi: ExtensionAPI): Promise<void> {
+  try {
+    const { currentPane } = await getCurrentContext();
+    if (currentPane.label) pi.setSessionName(currentPane.label);
+  } catch {
+    // No Herdr context (e.g. socket unavailable) — nothing to mirror.
+  }
+}
+
+/**
  * Child-side half of the Herdr agent protocol. Runs only when
  * `HERDR_AGENT_CHILD=1`, so the delegation tool and the status widget stay out
  * of spawned agents.
@@ -50,6 +69,7 @@ export function registerChildMode(pi: ExtensionAPI): void {
 
   pi.on("session_start", async (_event, ctx) => {
     await captureChildSessionMeta(ctx);
+    await mirrorPaneLabelAsSessionName(pi);
   });
 
   pi.on("before_agent_start", async (event) => {
