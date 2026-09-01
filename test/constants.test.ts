@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import {
   buildRunTurnInstructions,
   CHILD_PROTOCOL,
@@ -6,49 +7,51 @@ import {
 } from "../constants.ts";
 
 describe("constants", () => {
-  test("CHILD_PROTOCOL prohibits recursive delegation", () => {
-    expect(CHILD_PROTOCOL).toContain(
-      "Do not spawn additional agents unless explicitly asked",
+  it("CHILD_PROTOCOL prohibits recursive delegation", () => {
+    assert.ok(
+      CHILD_PROTOCOL.includes(
+        "Do not spawn additional agents unless explicitly asked",
+      ),
     );
   });
 
-  test("GLOBAL_INSTRUCTIONS names herdr_agent and oneshot default", () => {
-    expect(GLOBAL_INSTRUCTIONS).toContain("herdr_agent");
-    expect(GLOBAL_INSTRUCTIONS).toContain('lifecycle: "oneshot"');
-    expect(GLOBAL_INSTRUCTIONS).toContain(
-      "agent closes after a successful result",
+  it("GLOBAL_INSTRUCTIONS names herdr_agent and oneshot default", () => {
+    assert.ok(GLOBAL_INSTRUCTIONS.includes("herdr_agent"));
+    assert.ok(GLOBAL_INSTRUCTIONS.includes('lifecycle: "oneshot"'));
+    assert.ok(GLOBAL_INSTRUCTIONS.includes("agent closes after a successful result"));
+    assert.ok(GLOBAL_INSTRUCTIONS.includes("reuse by exact label"));
+    assert.ok(
+      GLOBAL_INSTRUCTIONS.includes(
+        "scout, researcher, planner, worker, reviewer",
+      ),
     );
-    expect(GLOBAL_INSTRUCTIONS).toContain("reuse by exact label");
-    expect(GLOBAL_INSTRUCTIONS).toContain(
-      "scout, researcher, planner, worker, reviewer",
-    );
   });
 
-  test("GLOBAL_INSTRUCTIONS handles agents opened without a task", () => {
-    expect(GLOBAL_INSTRUCTIONS).toContain("do not inspect skills");
-    expect(GLOBAL_INSTRUCTIONS).toContain('lifecycle: "persistent"');
-    expect(GLOBAL_INSTRUCTIONS).toContain("wait: false");
-    expect(GLOBAL_INSTRUCTIONS).toContain("minimal standby");
+  it("GLOBAL_INSTRUCTIONS handles agents opened without a task", () => {
+    assert.ok(GLOBAL_INSTRUCTIONS.includes("do not inspect skills"));
+    assert.ok(GLOBAL_INSTRUCTIONS.includes('lifecycle: "persistent"'));
+    assert.ok(GLOBAL_INSTRUCTIONS.includes("wait: false"));
+    assert.ok(GLOBAL_INSTRUCTIONS.includes("minimal standby"));
   });
 
-  test("GLOBAL_INSTRUCTIONS does not use proactive delegation", () => {
-    expect(GLOBAL_INSTRUCTIONS).not.toContain("openai-codex");
-    expect(GLOBAL_INSTRUCTIONS).not.toContain("Proactively use");
+  it("GLOBAL_INSTRUCTIONS does not use proactive delegation", () => {
+    assert.ok(!GLOBAL_INSTRUCTIONS.includes("openai-codex"));
+    assert.ok(!GLOBAL_INSTRUCTIONS.includes("Proactively use"));
   });
 
-  test("GLOBAL_INSTRUCTIONS covers abort and timeout re-wait", () => {
-    expect(GLOBAL_INSTRUCTIONS).toContain("times out or was aborted");
-    expect(GLOBAL_INSTRUCTIONS).toContain("no `task`");
-    expect(GLOBAL_INSTRUCTIONS).toContain("re-wait");
+  it("GLOBAL_INSTRUCTIONS covers abort and timeout re-wait", () => {
+    assert.ok(GLOBAL_INSTRUCTIONS.includes("times out or was aborted"));
+    assert.ok(GLOBAL_INSTRUCTIONS.includes("no `task`"));
+    assert.ok(GLOBAL_INSTRUCTIONS.includes("re-wait"));
   });
 
-  test("GLOBAL_INSTRUCTIONS covers closed one-shot resume", () => {
-    expect(GLOBAL_INSTRUCTIONS).toContain("resumeClosed: true");
-    expect(GLOBAL_INSTRUCTIONS).toContain("never resurrects a closed agent");
+  it("GLOBAL_INSTRUCTIONS covers closed one-shot resume", () => {
+    assert.ok(GLOBAL_INSTRUCTIONS.includes("resumeClosed: true"));
+    assert.ok(GLOBAL_INSTRUCTIONS.includes("never resurrects a closed agent"));
   });
 
-  test("buildRunTurnInstructions names agent when provided", () => {
-    expect(buildRunTurnInstructions("scout")).toContain('agent: "scout"');
-    expect(buildRunTurnInstructions()).toContain("smallest suitable");
+  it("buildRunTurnInstructions names agent when provided", () => {
+    assert.ok(buildRunTurnInstructions("scout").includes('agent: "scout"'));
+    assert.ok(buildRunTurnInstructions().includes("smallest suitable"));
   });
 });

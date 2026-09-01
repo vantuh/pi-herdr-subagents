@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "./test-support/link-deps.sh && bun test --timeout 30000 ./test/*.test.ts",
+    "test": "./test-support/link-deps.sh && bun run test:unit && bun run test:integration",
     "test:unit": "bun test --timeout 30000 ./test/agents.test.ts ./test/child.test.ts ./test/config.test.ts ./test/constants.test.ts ./test/herdr.test.ts ./test/imports.test.ts ./test/run.test.ts ./test/schema.test.ts ./test/state.test.ts ./test/utils.test.ts ./test/widget.test.ts",
     "test:integration": "./test-support/link-deps.sh && bun test --timeout 30000 ./test/integration.test.ts ./test/contract.test.ts",
     "test:e2e": "./test-support/link-deps.sh && bun test --timeout 180000 ./e2e/*.test.ts",

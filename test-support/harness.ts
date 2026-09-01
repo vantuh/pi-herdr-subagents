@@ -80,7 +80,7 @@ export interface Harness {
 export async function createHarness(
   options: HarnessOptions = {},
 ): Promise<Harness> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "herdr-agents-test-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "hat-"));
   const cwd = path.join(root, "repo");
   const agentDir = path.join(root, "pi-agent-dir");
   const statePath = path.join(root, "state.json");

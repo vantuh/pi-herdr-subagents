@@ -975,7 +975,13 @@ test("detached one-shot completion archives before cleanup", async () => {
     });
     await harness.waitFor(async () => {
       const history = (await harness.readState()).closedHistory ?? [];
-      return history.length === 1 && harness.fake.panes.length === 1;
+      // Wait for the final status: the record is staged first and promoted
+      // to resumable after pane cleanup, so a bare length check races.
+      return (
+        history.length === 1 &&
+        history[0]?.status === "resumable" &&
+        harness.fake.panes.length === 1
+      );
     }, "detached one-shot to archive and close");
     const history = (await harness.readState()).closedHistory ?? [];
     assert.equal(history[0]?.tabLabel, "Scout Detached Resume");
