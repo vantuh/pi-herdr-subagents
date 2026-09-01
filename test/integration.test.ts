@@ -35,6 +35,14 @@ function flagValue(argv: string[], name: string): string | undefined {
   return index >= 0 ? argv[index + 1] : undefined;
 }
 
+async function writeHarnessCouncilConfig(content: string): Promise<void> {
+  const agentDir = process.env.PI_CODING_AGENT_DIR;
+  if (!agentDir) {
+    throw new Error("expected PI_CODING_AGENT_DIR from the harness");
+  }
+  await fs.writeFile(path.join(agentDir, "council.json"), content, "utf8");
+}
+
 function splitDirections(node: LayoutNode | undefined): string[] {
   if (!node || node.type === "pane") return [];
   return [
@@ -168,6 +176,37 @@ test("passes profile model and tool allowlist to the child, and keeps a persiste
       assert.equal(records[0]?.lifecycle, "persistent");
       assert.equal(records[0]?.tabLabel, "Worker");
       assert.equal(records[0]?.layout, "pane");
+    },
+  );
+});
+
+test("model override replaces the profile model for a fresh spawn", async () => {
+  await withHarness(
+    {
+      profiles: [
+        {
+          name: "worker",
+          model: "sonnet",
+          body: "WORKER PROFILE BODY",
+        },
+      ],
+    },
+    async (harness) => {
+      const result = await harness.call({
+        agent: "worker",
+        task: "Slice one",
+        model: "opus-5",
+        lifecycle: "persistent",
+      });
+      assert.equal(result.isError ?? false, false);
+
+      const start = harness.fake.callsMatching("agent", "start")[0];
+      assert.ok(start);
+      assert.equal(flagValue(start, "--model"), "opus-5");
+      // Other profile settings are untouched.
+      const systemFile = flagValue(start, "--append-system-prompt");
+      assert.ok(systemFile);
+      assert.match(await fs.readFile(systemFile, "utf8"), /WORKER PROFILE BODY/);
     },
   );
 });
@@ -559,6 +598,64 @@ test("injects Orchestrator instructions, and /run instructions for one turn", as
       prompt: "hi",
     })) as { systemPrompt: string };
     assert.doesNotMatch(after.systemPrompt, /\/run delegation/);
+  });
+});
+
+test("/council injects the question and a persisted per-model spawn contract", async () => {
+  await withHarness({}, async (harness) => {
+    await writeHarnessCouncilConfig(
+      JSON.stringify({ models: ["model-a", "model-b"] }),
+    );
+    const council = harness.commands.get("council");
+    assert.ok(council, "expected a /council command");
+    await council.handler("Why is X better than Y?", {
+      isIdle: () => true,
+      ui: { notify: () => undefined },
+    });
+    assert.equal(harness.userMessages.length, 1);
+    const injected = harness.userMessages[0] ?? "";
+    assert.match(injected, /^\[via \/council\] Why is X better than Y\?/);
+    assert.match(injected, /model-a/);
+    assert.match(injected, /model-b/);
+    assert.match(injected, /wait: false/);
+    assert.match(injected, /consolidate/);
+
+    const after = (await harness.fire("before_agent_start", {
+      systemPrompt: "BASE",
+      prompt: "hi",
+    })) as { systemPrompt: string };
+    assert.doesNotMatch(after.systemPrompt, /\/council round table/);
+    assert.doesNotMatch(after.systemPrompt, /Models: model-a, model-b/);
+  });
+});
+
+test("/council refuses while busy and warns on an empty config", async () => {
+  await withHarness({}, async (harness) => {
+    await writeHarnessCouncilConfig(JSON.stringify({ models: [] }));
+    const notifications: string[] = [];
+    const commandCtx = {
+      isIdle: () => true,
+      ui: { notify: (message: string) => notifications.push(message) },
+    };
+    const council = harness.commands.get("council");
+    assert.ok(council);
+
+    // Busy guard fires before the config is even read.
+    await council.handler("Why is X better than Y?", {
+      ...commandCtx,
+      isIdle: () => false,
+    });
+    assert.deepEqual(harness.userMessages, []);
+    assert.match(notifications[0] ?? "", /busy/i);
+
+    // Empty model list never injects a spawn contract.
+    await council.handler("Why is X better than Y?", commandCtx);
+    assert.deepEqual(harness.userMessages, []);
+    assert.match(notifications[1] ?? "", /No council models/);
+
+    // Empty question shows usage.
+    await council.handler("   ", commandCtx);
+    assert.match(notifications[2] ?? "", /Usage:/);
   });
 });
 
