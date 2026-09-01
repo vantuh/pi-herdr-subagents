@@ -71,11 +71,9 @@ The snapshot contains panes, tabs, agents, focused IDs, layout metadata, and pro
 
 Reason: focus can move while a tool is running. `HERDR_PANE_ID` identifies the actual pane running the Orchestrator Pi process.
 
-The extension then renames that tab:
-
-```bash
-herdr tab rename <current-tab> Orchestrator
-```
+The extension does not rename that tab; a separate extension
+(`extensions/herdr-tab-name.ts`) keeps the tab label in sync with the Pi
+session name.
 
 ## 6. The extension creates or reuses a Herdr target
 

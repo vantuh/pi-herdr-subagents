@@ -51,7 +51,7 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Thi
 
 The current/main Pi session. It receives the user's request and decides whether isolated context is useful.
 
-On first use, the extension renames the current Herdr tab to `Orchestrator`.
+The extension does not rename the current Herdr tab; `extensions/herdr-tab-name.ts` syncs the tab label with the Pi session name.
 
 ### Herdr agent
 

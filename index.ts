@@ -1475,11 +1475,6 @@ function registerHerdrAgentTool(
         // parallel calls see panes and labels created by earlier calls.
         const current = await getCurrentContext(signal);
 
-        await execHerdr(
-          ["tab", "rename", current.currentTab, "agent"],
-          signal,
-        );
-
         const tabs =
           layout === "tab" ? await listTabs(current.workspaceId, signal) : [];
         const state = await bestEffort(emptyHerdrAgentsState(), () =>
