@@ -4,9 +4,9 @@
   "type": "module",
   "scripts": {
     "test": "./test-support/link-deps.sh && bun test --timeout 30000 ./test/*.test.ts",
-    "test:unit": "cd test && bun test --timeout 30000 agents.test.ts child.test.ts config.test.ts constants.test.ts herdr.test.ts imports.test.ts run.test.ts schema.test.ts state.test.ts utils.test.ts widget.test.ts",
-    "test:integration": "cd test && ./test-support/link-deps.sh && bun test --timeout 30000 integration.test.ts contract.test.ts",
-    "test:e2e": "cd test && ./test-support/link-deps.sh && bun test --timeout 180000 ./e2e/*.test.ts",
+    "test:unit": "bun test --timeout 30000 ./test/agents.test.ts ./test/child.test.ts ./test/config.test.ts ./test/constants.test.ts ./test/herdr.test.ts ./test/imports.test.ts ./test/run.test.ts ./test/schema.test.ts ./test/state.test.ts ./test/utils.test.ts ./test/widget.test.ts",
+    "test:integration": "./test-support/link-deps.sh && bun test --timeout 30000 ./test/integration.test.ts ./test/contract.test.ts",
+    "test:e2e": "./test-support/link-deps.sh && bun test --timeout 180000 ./e2e/*.test.ts",
     "test:all": "bun run test && bun run test:e2e"
   },
   "peerDependencies": {
