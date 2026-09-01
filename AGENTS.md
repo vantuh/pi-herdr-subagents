@@ -34,6 +34,8 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 
 - `index.ts` — Pi extension entrypoint and `herdr_agent` tool registration.
 - `agents.ts` — loads agent profiles from user/project Pi agent directories.
+- `config.ts` — layout env and `council.json` loading.
+- `run.ts` — `/run` and `/council` arg parsing and injected user messages.
 - `herdr.ts` — Herdr CLI/API wrappers, snapshot discovery, layout helpers, and named-agent lifecycle commands.
 - `schema.ts` — TypeBox schema for tool parameters.
 - `constants.ts` — injected Orchestrator instructions and child-agent protocol.
@@ -48,7 +50,9 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 - Child panes start with `HERDR_AGENT_CHILD=1` and `PROCESS_LAUNCHED_BY_Q=1`: delegation tools stay disabled, final responses are persisted, zsh selects `HISTFILE=/dev/null` from the child marker, and Kiro's terminal wrapper cannot hide the real shell from `herdr agent start`.
 - `HERDR_PANE_ID` is preferred over focused pane detection. Focus can move while a tool is running.
 - New agents start through `herdr agent start`; prompts use atomic `herdr agent prompt` (no `--wait`), then wait for a newer `state_change_seq` with `working`/`blocked` (or settled idle/done), with one Enter nudge only while idle and `interactive_ready`, before `herdr agent wait --until idle --until done`. This avoids Herdr's hardcoded 5s `agent_prompt_stalled` gate. Abort / Herdr wait timeout returns a soft re-wait hint (child stays); re-wait uses `herdr agent wait` only.
-- `lifecycle: "oneshot"` requires `wait: true`, because the Orchestrator must wait before closing the one-shot pane or tab.
+- `lifecycle: "oneshot"` requires `wait: true` only in headless sessions (`!ctx.hasUI`), because nobody is around to collect a detached result. With a UI, oneshot + `wait: false` is valid: the widget poller delivers the outcome and closes the target. `/council` depends on that path.
+- `herdr_agent` accepts a fresh-spawn-only `model` override that replaces the profile model for that spawn.
+- `/council <question>` reads `council.json` from `getAgentDir()` (`~/.pi/agent/council.json` by default). It injects a persisted user message with the question and a per-model spawn contract (`researcher`, `wait: false`, `tabLabel: "Council — <model>"`). The Orchestrator consolidates after every council answer is delivered. Empty question shows usage; a busy Orchestrator or empty/unreadable config warns and injects nothing.
 - Layout defaults to `pane`. Set `HERDR_AGENTS_LAYOUT=tab` before starting Pi to use the legacy tab layout; the model receives no layout parameter.
 - Pane mode splits the Orchestrator 60/40 on the first spawn and stacks additional agents down the right column. The placement lock is held through `agent start`, managed-state recording, and rebalancing so parallel calls cannot create competing right columns.
 - Persistent agent reuse is label-based: the default label is the title-cased agent profile name unless `tabLabel` is provided. Reuse requires an exact managed-agent label match. Managed agents also receive a short unique Herdr automation name; legacy panes fall back to pane IDs.

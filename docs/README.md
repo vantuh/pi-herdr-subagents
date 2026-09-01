@@ -195,6 +195,7 @@ Use `pane` or remove the variable to return to the default. Restart Pi after cha
   timeoutMs?: number;
   lifecycle?: "oneshot" | "persistent";
   resumeClosed?: boolean;
+  model?: string; // fresh-spawn-only override of the profile model
 }
 ```
 
@@ -218,6 +219,27 @@ Typical tool call:
   "tabLabel": "HR Correctness",
   "task": "Review the current diff for correctness and regressions...",
   "wait": true,
+  "lifecycle": "oneshot"
+}
+```
+
+### `/council` command
+
+Ask one question to every model in `~/.pi/agent/council.json` (`getAgentDir()`) and consolidate the answers. The command injects a persisted user message with the question and spawn contract; the Orchestrator calls `herdr_agent` once per model in parallel (`wait: false`) and synthesizes the result.
+
+```text
+/council Why is X better than Y?
+```
+
+Typical per-model tool call:
+
+```json
+{
+  "agent": "researcher",
+  "model": "opus-5",
+  "tabLabel": "Council — opus-5",
+  "task": "Why is X better than Y?",
+  "wait": false,
   "lifecycle": "oneshot"
 }
 ```
