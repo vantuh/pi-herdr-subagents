@@ -1,5 +1,7 @@
+import { join } from "node:path";
 import {
   DynamicBorder,
+  getAgentDir,
   type AgentToolUpdateCallback,
   type ExtensionAPI,
   type ExtensionCommandContext,
@@ -21,7 +23,7 @@ import {
   resolveProfileSkills,
 } from "./agents.ts";
 import { registerChildMode } from "./child.ts";
-import { getHerdrAgentsLayout } from "./config.ts";
+import { getHerdrAgentsLayout, readCouncilConfig } from "./config.ts";
 import {
   buildRunTurnInstructions,
   CHILD_PROTOCOL,
@@ -29,7 +31,9 @@ import {
   GLOBAL_INSTRUCTIONS,
 } from "./constants.ts";
 import {
+  formatCouncilUserMessage,
   formatRunUserMessage,
+  parseCouncilArgs,
   parseRunArgs,
   type RunDelegationRequest,
 } from "./run.ts";
@@ -347,6 +351,7 @@ async function buildChildPiArgs(options: {
   systemFile: string;
   cwd: string;
   sessionFile?: string;
+  modelOverride?: string;
 }): Promise<{ piArgs: string[]; spawnWarnings: string[] }> {
   const spawnWarnings: string[] = [];
   const piArgs: string[] = [];
@@ -355,7 +360,8 @@ async function buildChildPiArgs(options: {
   } else {
     piArgs.push("--session", options.sessionFile);
   }
-  if (options.agent.model) piArgs.push("--model", options.agent.model);
+  const model = options.modelOverride ?? options.agent.model;
+  if (model) piArgs.push("--model", model);
   if (options.agent.thinking) {
     const level = resolveThinkingLevel(options.agent.thinking);
     if (level) {
@@ -1257,6 +1263,42 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
     },
   });
 
+  pi.registerCommand("council", {
+    description: "Ask one question to several models in parallel and consolidate",
+    handler: async (args, ctx) => {
+      const question = parseCouncilArgs(args);
+      if (!question) {
+        ctx.ui.notify(
+          "Usage: /council <question> — asked to every model in council.json",
+          "warning",
+        );
+        return;
+      }
+
+      if (!ctx.isIdle()) {
+        ctx.ui.notify(
+          "Agent is busy. Wait for the current turn to finish.",
+          "warning",
+        );
+        return;
+      }
+
+      const configPath = join(getAgentDir(), "council.json");
+      const { models, error } = await readCouncilConfig(configPath);
+      if (models.length === 0) {
+        ctx.ui.notify(
+          error
+            ? `council.json could not be read (${error})`
+            : `No council models configured in ${configPath} — add {"models":["..."]}`,
+          "warning",
+        );
+        return;
+      }
+
+      pi.sendUserMessage(formatCouncilUserMessage(question, models));
+    },
+  });
+
   pi.registerCommand("herdr-agents", {
     description: "Show and kill Herdr agents in the current workspace",
     handler: async (_args, ctx) => {
@@ -1764,6 +1806,7 @@ function registerHerdrAgentTool(
             tabLabel,
             systemFile: systemFile!,
             cwd: resumeClaim?.cwd ?? ctx.cwd,
+            ...(params.model?.trim() ? { modelOverride: params.model.trim() } : {}),
             ...(resumeClaim
               ? { sessionFile: resumeClaim.childSessionFile }
               : {}),
