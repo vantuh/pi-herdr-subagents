@@ -1337,7 +1337,7 @@ function registerHerdrAgentTool(
     name: "herdr_agent",
     label: "Herdr Agent",
     description:
-      "Spawn a one-shot Herdr agent or reuse a persistent Herdr agent with a named profile from ~/.pi/agent/agents.",
+      "Spawn a one-shot Herdr agent or reuse a persistent Herdr agent with a named profile from ~/.pi/agent/agents. Reusing a persistent agent requires lifecycle: 'persistent' and the same tabLabel on every follow-up call.",
     promptSnippet:
       "Delegate exploration, research, planning, review, and isolated implementation to a one-shot or persistent Herdr agent.",
     promptGuidelines: [
@@ -1506,6 +1506,35 @@ function registerHerdrAgentTool(
             (await bestEffort(undefined, () =>
               readAgentQuestion(candidateRecord.resultFile),
             )) !== undefined;
+
+          // A task addressed by label to a live persistent agent without
+          // lifecycle: "persistent" is almost certainly a failed reuse: the
+          // default oneshot lifecycle would silently spawn a duplicate
+          // agent ("... #2") instead of sending the task to the existing
+          // pane. Fail loudly with the fix instead.
+          if (
+            !persistent &&
+            !resumeClosed &&
+            !answeringQuestion &&
+            candidatePane &&
+            candidateRecord?.lifecycle === "persistent"
+          ) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `A live persistent Herdr agent named "${baseLabel}" exists. To send this task to it, repeat lifecycle: "persistent" with the same tabLabel — omitting lifecycle defaults to "oneshot", which would spawn a duplicate agent instead of reusing it. If you actually want a fresh one-shot agent, keep lifecycle unset but pass a different tabLabel.`,
+                },
+              ],
+              details: {
+                tabLabel: baseLabel,
+                paneId: candidatePane.pane_id,
+                existingLifecycle: "persistent",
+                waited: false,
+              },
+              isError: true,
+            };
+          }
 
           if (resumeClosed && candidatePane) {
             const decision = resumeClosedLiveDecision({

@@ -4,7 +4,7 @@ Pick the smallest suitable \`agent\` profile: scout, researcher, planner, worker
 Once you delegate, do not duplicate that work yourself. Launch parallel \`herdr_agent\` calls only for independent reads or disjoint write slices (4–5 max); the limit is independence, not count — go past 2–3 only when every agent has genuinely independent work. Do not recurse. Synthesize results yourself; do not forward raw pane output.
 
 Default \`lifecycle: "oneshot"\` — the agent closes after a successful result.
-Use \`lifecycle: "persistent"\` only for bounded follow-up with a stable scope-specific \`tabLabel\` (e.g. \`Scout — message-bus\`); reuse by exact label.
+Use \`lifecycle: "persistent"\` only for bounded follow-up with a stable scope-specific \`tabLabel\` (e.g. \`Scout — message-bus\`). A persistent agent stays open after finishing a task and waits for the next one — a delivered result does not mean the tab closed. Reuse requires repeating \`lifecycle: "persistent"\` with the same \`tabLabel\` on every follow-up call; omitting \`lifecycle\` defaults to oneshot and spawns a new agent instead of reusing. Closed persistent agents cannot be resumed — to carry context between tasks, include a short summary of earlier findings in the new task text.
 If the user asks to open an agent without a task, do not inspect skills, agent files, or documentation. Immediately call \`herdr_agent\` with \`lifecycle: "persistent"\`, \`wait: false\`, a stable \`tabLabel\`, and a minimal standby \`task\` telling the agent to wait for follow-up and do no work.
 
 Each task must be self-contained: goal, scope, repo paths or source links, constraints, expected output, and read-only vs edit permission.

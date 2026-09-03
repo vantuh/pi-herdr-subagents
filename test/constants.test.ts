@@ -19,7 +19,19 @@ describe("constants", () => {
     assert.ok(GLOBAL_INSTRUCTIONS.includes("herdr_agent"));
     assert.ok(GLOBAL_INSTRUCTIONS.includes('lifecycle: "oneshot"'));
     assert.ok(GLOBAL_INSTRUCTIONS.includes("agent closes after a successful result"));
-    assert.ok(GLOBAL_INSTRUCTIONS.includes("reuse by exact label"));
+    assert.ok(
+      GLOBAL_INSTRUCTIONS.includes(
+        'Reuse requires repeating \`lifecycle: "persistent"\`',
+      ),
+    );
+    assert.ok(
+      GLOBAL_INSTRUCTIONS.includes(
+        "a delivered result does not mean the tab closed",
+      ),
+    );
+    assert.ok(
+      GLOBAL_INSTRUCTIONS.includes("Closed persistent agents cannot be resumed"),
+    );
     assert.ok(
       GLOBAL_INSTRUCTIONS.includes(
         "scout, researcher, planner, worker, reviewer",

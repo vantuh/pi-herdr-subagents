@@ -66,7 +66,7 @@ export function buildHerdrAgentParams(
     lifecycle: Type.Optional(
       Type.Union([Type.Literal("oneshot"), Type.Literal("persistent")], {
         description:
-          "Agent lifecycle. Use 'oneshot' for one-off tasks that close after completion, or 'persistent' to keep/reuse the agent for follow-up tasks. Default: oneshot.",
+          "Agent lifecycle. Use 'oneshot' for one-off tasks that close after completion, or 'persistent' to keep/reuse the agent for follow-up tasks. Default: oneshot. Follow-up tasks to a persistent agent must repeat lifecycle: 'persistent' with the same tabLabel; omitting lifecycle spawns a new one-shot agent instead of reusing it.",
       }),
     ),
     resumeClosed: Type.Optional(

@@ -211,6 +211,46 @@ test("model override replaces the profile model for a fresh spawn", async () => 
   );
 });
 
+test("rejects a task addressed to a live persistent agent without lifecycle: persistent", async () => {
+  await withHarness({}, async (harness) => {
+    const first = await harness.call({
+      agent: "scout",
+      task: "First task",
+      lifecycle: "persistent",
+      tabLabel: "Scout — repo",
+    });
+    assert.equal(first.isError ?? false, false);
+
+    // Omitted lifecycle must not silently spawn a duplicate "#2" agent.
+    const duplicate = await harness.call({
+      agent: "scout",
+      task: "Follow-up task",
+      tabLabel: "Scout — repo",
+    });
+    assert.equal(duplicate.isError, true);
+    assert.match(
+      duplicate.content[0].text,
+      /persistent Herdr agent named "Scout — repo" exists/,
+    );
+    assert.match(duplicate.content[0].text, /lifecycle: "persistent"/);
+    assert.equal(harness.fake.panes.length, 2); // orchestrator + agent
+    assert.equal(harness.fake.callsMatching("agent", "start").length, 1);
+    assert.equal(harness.fake.callsMatching("agent", "prompt").length, 1);
+
+    // The corrected call reuses the existing pane.
+    const fixed = await harness.call({
+      agent: "scout",
+      task: "Follow-up task",
+      lifecycle: "persistent",
+      tabLabel: "Scout — repo",
+    });
+    assert.equal(fixed.isError ?? false, false);
+    assert.equal(fixed.details.reused, true);
+    assert.equal(harness.fake.panes.length, 2);
+    assert.equal(harness.fake.callsMatching("agent", "prompt").length, 2);
+  });
+});
+
 test("returns a child question early, keeps the one-shot parked, and answers it by label", async () => {
   await withHarness({}, async (harness) => {
     harness.fake.setBehavior((turn) =>
