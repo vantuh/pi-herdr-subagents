@@ -23,7 +23,12 @@ import {
   resolveProfileSkills,
 } from "./agents.ts";
 import { registerChildMode } from "./child.ts";
-import { getHerdrAgentsLayout, readCouncilConfig } from "./config.ts";
+import {
+  getHerdrAgentsLayout,
+  getHerdrAgentsWorkspaceLabel,
+  loadHerdrAgentsConfig,
+  readCouncilConfig,
+} from "./config.ts";
 import {
   buildRunTurnInstructions,
   CHILD_PROTOCOL,
@@ -39,9 +44,11 @@ import {
 } from "./run.ts";
 import {
   buildEqualAgentSplitRatios,
+  buildAgentFinishedNotificationArgs,
   chooseAgentColumnSplitTarget,
   execHerdr,
   exportPaneLayout,
+  findAgentsWorkspaceId,
   findReusableAgentPane,
   findReusableAgentTab,
   getCurrentContext,
@@ -50,6 +57,7 @@ import {
   listTabs,
   promptAgent,
   readAgent,
+  resolveAgentsWorkspace,
   setLayoutSplitRatio,
   startAgent,
   uniqueLabel,
@@ -217,9 +225,11 @@ async function closeOneShot(target: {
 
   try {
     await execHerdr(
-      target.layout === "tab"
-        ? ["tab", "close", target.tabId]
-        : ["pane", "close", target.paneId],
+      // Pane layout dissolves one split; tab and workspace layouts close the
+      // agent's whole tab (workspace tabs live in the Agents workspace).
+      target.layout === "pane"
+        ? ["pane", "close", target.paneId]
+        : ["tab", "close", target.tabId],
       target.signal,
     );
   } catch (error) {
@@ -258,7 +268,9 @@ async function closeOneShot(target: {
   }
 
   await bestEffort(undefined, () => removeAgentTempFiles(target.resultFile));
-  if (target.layout !== "tab") {
+  // Only pane-layout closes change a split column; tab/workspace closes remove
+  // whole tabs and must not touch the Orchestrator's pane geometry.
+  if (target.layout === "pane") {
     await bestEffort(undefined, () =>
       rebalanceCurrentPaneAgents(target.signal),
     );
@@ -570,6 +582,22 @@ async function deliverDetachedOutcomes(
     );
     if (!claimed) continue;
 
+    // Nobody was waiting — that is the definition of this delivery path — so
+    // ping the user through Herdr's own notification channel. Pane-layout
+    // agents are already visible on screen, so they stay silent. Best effort:
+    // a missing or failing notification never blocks the result delivery.
+    if (agent.layout !== "pane") {
+      await bestEffort(undefined, () =>
+        execHerdr(
+          buildAgentFinishedNotificationArgs(
+            agent.tabLabel,
+            agent.agent,
+            result,
+          ),
+        ),
+      );
+    }
+
     // Routing through formatAgentOutput (trim + empty-output placeholder) is
     // equivalent to the old `${result}${closeNote}` only because the claim
     // above already proves readAgentResult returned a non-empty trimmed
@@ -694,7 +722,7 @@ async function showNoAgentsDialog(ctx: ExtensionCommandContext): Promise<void> {
         new Text(theme.fg("accent", theme.bold("Herdr Agents")), 1, 0),
       );
       container.addChild(
-        new Text("No Herdr agents in the current workspace.", 1, 0),
+        new Text("No managed Herdr agents.", 1, 0),
       );
       container.addChild(new Text(theme.fg("dim", "enter/esc close"), 1, 0));
       container.addChild(
@@ -831,7 +859,9 @@ async function showHerdrAgentsManager(
       await execHerdr(
         selected.agent.layout === "pane"
           ? ["agent", "focus", selected.agent.paneId]
-          : ["tab", "focus", selected.agent.tabId],
+          : // Tab ids are workspace-qualified, so this reaches Agents-workspace
+            // agents too and makes Herdr switch to that workspace.
+            ["tab", "focus", selected.agent.tabId],
       );
       ctx.ui.notify(`Focused Herdr agent "${selected.agent.tabLabel}"`, "info");
       return;
@@ -944,12 +974,25 @@ async function executeRewait(
   const state = await bestEffort(emptyHerdrAgentsState(), () =>
     persistPrunedAgentsState(current.panes),
   );
-  const tabs =
-    layout === "tab" ? await listTabs(current.workspaceId, signal) : [];
-  const reusableTab =
-    layout === "tab"
-      ? findReusableAgentTab(current, tabs, baseLabel, state)
+  // Tab and workspace layouts reuse by tab label; workspace tabs live in the
+  // dedicated Agents workspace, so they are listed from there. Re-wait is a
+  // pure lookup — it must never create the workspace, so a missing one just
+  // means there is nothing to find.
+  const usesTabs = layout === "tab" || layout === "workspace";
+  const agentsWorkspaceId =
+    layout === "workspace"
+      ? await findAgentsWorkspaceId(
+          getHerdrAgentsWorkspaceLabel(await loadHerdrAgentsConfig()),
+          signal,
+        )
       : undefined;
+  const tabs =
+    usesTabs && (layout !== "workspace" || agentsWorkspaceId)
+      ? await listTabs(agentsWorkspaceId ?? current.workspaceId, signal)
+      : [];
+  const reusableTab = usesTabs
+    ? findReusableAgentTab(current, tabs, baseLabel, state)
+    : undefined;
   const reusablePane =
     layout === "pane"
       ? findReusableAgentPane(current, state, baseLabel)
@@ -1300,7 +1343,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
   });
 
   pi.registerCommand("herdr-agents", {
-    description: "Show and kill Herdr agents in the current workspace",
+    description: "Show, focus, and close managed Herdr agents",
     handler: async (_args, ctx) => {
       try {
         await showHerdrAgentsManager(ctx);
@@ -1369,8 +1412,11 @@ function registerHerdrAgentTool(
         };
       }
 
-      const wait = params.wait ?? true;
-      const layout = getHerdrAgentsLayout();
+      // Detach is the default in UI sessions (the widget poller delivers the
+      // result); headless sessions block because nothing would collect it.
+      const wait = params.wait ?? !ctx.hasUI;
+      const config = await loadHerdrAgentsConfig();
+      const layout = getHerdrAgentsLayout(config);
       const lifecycle = params.lifecycle ?? "oneshot";
       let activeLifecycle = lifecycle;
       const persistent = lifecycle === "persistent";
@@ -1467,16 +1513,65 @@ function registerHerdrAgentTool(
       let resumeDurable = false;
       // Populated only on a fresh spawn: frontmatter fields pi can't honor.
       let spawnWarnings: string[] = [];
+      // Pane spawns need the lock so parallel calls cannot create competing
+      // right columns; workspace spawns serialize the Agents-workspace lookup
+      // through it (within this process) so two parallel first spawns cannot
+      // create it twice. The lock is released once the agent's tab is visible
+      // to listTabs. Label uniqueness is computed client-side via uniqueLabel,
+      // so `agent start` and the wait stay parallel.
       const releasePlacement =
-        layout === "pane" ? await acquirePanePlacementLock() : () => {};
+        layout === "pane" || layout === "workspace"
+          ? await acquirePanePlacementLock()
+          : () => {};
+      let placementReleased = false;
+      const releasePlacementOnce = () => {
+        if (placementReleased) return;
+        placementReleased = true;
+        releasePlacement();
+      };
 
       try {
         // Refresh context only after acquiring the short placement lock so
         // parallel calls see panes and labels created by earlier calls.
         const current = await getCurrentContext(signal);
 
-        const tabs =
-          layout === "tab" ? await listTabs(current.workspaceId, signal) : [];
+        // Resolved on every spawn from the live workspace list: if the user
+        // closed the Agents workspace by hand, a fresh one is created instead
+        // of failing on a stale recorded id.
+        let agentsWorkspaceId: string | undefined;
+        let agentsWorkspaceCreated = false;
+        let agentsWorkspaceRootTabId: string | undefined;
+        if (layout === "workspace") {
+          const resolved = await resolveAgentsWorkspace(
+            getHerdrAgentsWorkspaceLabel(config),
+            {
+              cwd: ctx.cwd,
+              signal,
+            },
+          );
+          agentsWorkspaceId = resolved.workspaceId;
+          agentsWorkspaceCreated = resolved.created;
+          agentsWorkspaceRootTabId = resolved.rootTabId;
+          if (agentsWorkspaceId === current.workspaceId) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `The configured workspace.label matches this Orchestrator's own workspace. Change workspace.label in herdr-agents.json so agents spawn into a dedicated workspace instead of the Orchestrator's.`,
+                },
+              ],
+              details: {
+                workspaceId: agentsWorkspaceId,
+                waited: false,
+              },
+              isError: true,
+            };
+          }
+        }
+        const usesTabs = layout === "tab" || layout === "workspace";
+        const tabs = usesTabs
+          ? await listTabs(agentsWorkspaceId ?? current.workspaceId, signal)
+          : [];
         const state = await bestEffort(emptyHerdrAgentsState(), () =>
           persistPrunedAgentsState(current.panes),
         );
@@ -1486,14 +1581,12 @@ function registerHerdrAgentTool(
         // answer arrives as a normal `task`, and without reuse it would spawn a
         // second agent and orphan the parked one forever.
         {
-          const candidateTab =
-            layout === "tab"
-              ? findReusableAgentTab(current, tabs, baseLabel, state)
-              : undefined;
-          const candidatePane =
-            layout === "tab"
-              ? candidateTab?.pane
-              : findReusableAgentPane(current, state, baseLabel);
+          const candidateTab = usesTabs
+            ? findReusableAgentTab(current, tabs, baseLabel, state)
+            : undefined;
+          const candidatePane = usesTabs
+            ? candidateTab?.pane
+            : findReusableAgentPane(current, state, baseLabel);
           const candidateKey = candidatePane
             ? paneStateKey(candidatePane)
             : undefined;
@@ -1692,14 +1785,14 @@ function registerHerdrAgentTool(
           systemFile = tempFiles.systemFile;
         }
 
-        if (!reused && layout === "tab") {
+        if (!reused && usesTabs) {
           if (!resumeClaim) tabLabel = uniqueLabel(baseLabel, tabs);
           const createOutput = await execHerdr(
             [
               "tab",
               "create",
               "--workspace",
-              current.workspaceId,
+              agentsWorkspaceId ?? current.workspaceId,
               "--label",
               tabLabel,
               "--cwd",
@@ -1732,9 +1825,37 @@ function registerHerdrAgentTool(
             typeof rootPane.tab_id === "string" ? rootPane.tab_id : undefined;
 
           if (!tabId) {
-            const createdTabs = await listTabs(current.workspaceId, signal);
+            const createdTabs = await listTabs(
+              agentsWorkspaceId ?? current.workspaceId,
+              signal,
+            );
             tabId = createdTabs.find((tab) => tab.label === tabLabel)?.tab_id;
           }
+        }
+
+        // The agent's tab now exists and is visible to the next `listTabs`,
+        // so workspace spawns no longer need the placement lock. Uniqueness of
+        // the label is computed client-side (uniqueLabel) — releasing here
+        // still leaves a same-label parallel persistent-spawn window, which the
+        // reuse contract already rules out (reuse is sequential by tabLabel).
+        // Best effort: close the known root shell tab `workspace create`
+        // starts every new workspace with. Only the creating spawn does this,
+        // and only by id — never by "empty pane" heuristics, which can race
+        // a sibling spawn whose agent is not started yet.
+        if (layout === "workspace") {
+          if (
+            agentsWorkspaceCreated &&
+            !reused &&
+            agentsWorkspaceRootTabId
+          ) {
+            await bestEffort(undefined, () =>
+              execHerdr(
+                ["tab", "close", agentsWorkspaceRootTabId],
+                signal,
+              ),
+            );
+          }
+          releasePlacementOnce();
         }
 
         if (!reused && layout === "pane") {
@@ -1914,9 +2035,9 @@ function registerHerdrAgentTool(
           if (paneId && tabId) {
             closedPartial = await bestEffort(false, async () => {
               await execHerdr(
-                layout === "tab"
-                  ? ["tab", "close", tabId!]
-                  : ["pane", "close", paneId!],
+                layout === "pane"
+                  ? ["pane", "close", paneId!]
+                  : ["tab", "close", tabId!],
                 cleanupSignal,
               );
               return true;
@@ -1932,7 +2053,7 @@ function registerHerdrAgentTool(
         }
         throw error;
       } finally {
-        releasePlacement();
+        releasePlacementOnce();
       }
 
       ensureAgentsWidget(pi, ctx);

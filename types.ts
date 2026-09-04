@@ -36,7 +36,14 @@ export interface TabInfo {
 }
 
 export type HerdrAgentLifecycle = "oneshot" | "persistent";
-export type HerdrAgentLayout = "pane" | "tab";
+/** "workspace" keeps every agent tab in a dedicated Agents workspace. */
+export type HerdrAgentLayout = "pane" | "tab" | "workspace";
+
+export interface WorkspaceInfo {
+  workspace_id: string;
+  label?: string;
+  focused?: boolean;
+}
 
 export interface HerdrAgentInfo {
   tabId: string;

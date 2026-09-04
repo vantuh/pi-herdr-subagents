@@ -8,6 +8,7 @@ import type {
   PaneInfo,
   ReusableAgentTab,
   TabInfo,
+  WorkspaceInfo,
 } from "./types.ts";
 import { isManagedHerdrTempPath, SESSION_META_ENV } from "./utils.ts";
 
@@ -329,6 +330,150 @@ export async function listTabs(
   return JSON.parse(output).result.tabs as TabInfo[];
 }
 
+export function parseWorkspaceListOutput(output: string): WorkspaceInfo[] {
+  let parsed: { result?: { workspaces?: unknown } };
+  try {
+    parsed = JSON.parse(output);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Malformed Herdr workspace list output: ${message}`);
+  }
+  const workspaces = parsed.result?.workspaces;
+  if (!Array.isArray(workspaces)) {
+    throw new Error(
+      "Malformed Herdr workspace list output: expected result.workspaces.",
+    );
+  }
+  return workspaces
+    .filter(
+      (item): item is WorkspaceInfo & { workspace_id: string } =>
+        !!item &&
+        typeof item === "object" &&
+        typeof (item as WorkspaceInfo).workspace_id === "string",
+    )
+    .map(({ workspace_id, label, focused }) => ({
+      workspace_id,
+      ...(typeof label === "string" ? { label } : {}),
+      ...(focused === true ? { focused: true } : {}),
+    }));
+}
+
+export async function listWorkspaces(
+  signal?: AbortSignal,
+): Promise<WorkspaceInfo[]> {
+  return parseWorkspaceListOutput(await execHerdr(["workspace", "list"], signal));
+}
+
+/**
+ * Read-only workspace lookup: never creates. Re-wait is a pure search, so a
+ * missing Agents workspace simply means "no agents to find".
+ */
+export async function findAgentsWorkspaceId(
+  label: string,
+  signal?: AbortSignal,
+): Promise<string | undefined> {
+  return (await listWorkspaces(signal)).find(
+    (workspace) => workspace.label === label,
+  )?.workspace_id;
+}
+
+/** Parse `workspace create` output for the new workspace and its root tab. */
+export function parseCreatedWorkspace(output: string): {
+  workspaceId?: string;
+  rootTabId?: string;
+} {
+  try {
+    const parsed = JSON.parse(output) as {
+      result?: {
+        workspace?: { workspace_id?: unknown };
+        tab?: { tab_id?: unknown };
+      };
+    };
+    const workspaceId = parsed.result?.workspace?.workspace_id;
+    const rootTabId = parsed.result?.tab?.tab_id;
+    return {
+      ...(typeof workspaceId === "string" && workspaceId.length > 0
+        ? { workspaceId }
+        : {}),
+      ...(typeof rootTabId === "string" && rootTabId.length > 0
+        ? { rootTabId }
+        : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Find the managed agents workspace by label, creating it when missing.
+ *
+ * Resolved on every spawn from the live `workspace list`: if the user closed
+ * the workspace by hand, the next spawn creates a fresh one instead of failing
+ * on a stale recorded id.
+ */
+export async function resolveAgentsWorkspace(
+  label: string,
+  options: { cwd?: string; signal?: AbortSignal } = {},
+): Promise<{ workspaceId: string; created: boolean; rootTabId?: string }> {
+  const { cwd, signal } = options;
+  const existing = (await listWorkspaces(signal)).find(
+    (workspace) => workspace.label === label,
+  );
+  if (existing?.workspace_id) {
+    return { workspaceId: existing.workspace_id, created: false };
+  }
+
+  const output = await execHerdr(
+    [
+      "workspace",
+      "create",
+      "--label",
+      label,
+      ...(cwd ? ["--cwd", cwd] : []),
+      "--no-focus",
+    ],
+    signal,
+  );
+  const parsed = parseCreatedWorkspace(output);
+  if (parsed.workspaceId) {
+    return {
+      workspaceId: parsed.workspaceId,
+      created: true,
+      ...(parsed.rootTabId ? { rootTabId: parsed.rootTabId } : {}),
+    };
+  }
+
+  // Some versions may omit the id: fall back to a label re-scan.
+  // Missing rootTabId degrades gracefully (caller skips root-tab cleanup).
+  const rescanned = (await listWorkspaces(signal)).find(
+    (workspace) => workspace.label === label,
+  );
+  if (rescanned?.workspace_id) {
+    return { workspaceId: rescanned.workspace_id, created: true };
+  }
+  throw new Error(
+    `Malformed Herdr workspace create output: missing result.workspace.workspace_id. Output: ${output}`,
+  );
+}
+
+export function buildAgentFinishedNotificationArgs(
+  tabLabel: string,
+  agent: string,
+  resultExcerpt: string,
+): string[] {
+  const trimmed = resultExcerpt.trim();
+  const body = trimmed.length > 400
+    ? `${trimmed.slice(0, 400).trimEnd()}…`
+    : trimmed;
+  return [
+    "notification",
+    "show",
+    `Pi · ${tabLabel} finished`,
+    "--body",
+    body || `${agent} finished with an empty result.`,
+  ];
+}
+
 export function uniqueLabel(baseLabel: string, tabs: TabInfo[]): string {
   const labels = new Set(tabs.map((tab) => tab.label));
   if (!labels.has(baseLabel)) return baseLabel;
@@ -353,28 +498,59 @@ export function findReusableAgentTab(
   baseLabel: string,
   state: HerdrAgentsState,
 ): ReusableAgentTab | undefined {
-  const tab = tabs.find(
-    (item) => item.label === baseLabel && item.tab_id !== context.currentTab,
-  );
-  if (!tab) return undefined;
-
-  const pane = choosePaneForTab(context.panes, tab.tab_id);
-  if (!pane || pane.agent !== "pi") return undefined;
-  const key = paneStateKey(pane);
-  const record = key ? state.agents[key] : undefined;
-  if (
-    !record ||
-    !isAgentOwnedBy(
-      record,
-      context.currentPane.terminal_id,
-      pane.tab_id,
-      context.currentTab,
-    )
-  ) {
-    return undefined;
+  // Record-driven first: the recorded tabLabel is authoritative (uniqueLabel
+  // may have renamed the tab at spawn time), and ownership keeps a second
+  // Orchestrator sharing the Agents workspace from adopting a foreign agent.
+  for (const [key, record] of Object.entries(state.agents)) {
+    if (record.tabLabel !== baseLabel) continue;
+    // Only tab/workspace agents are reusable through this tab-based lookup;
+    // pane-layout agents belong to the Orchestrator's own split column.
+    if (record.layout !== "tab" && record.layout !== "workspace") continue;
+    const terminalId = key.startsWith("terminal:")
+      ? key.slice("terminal:".length)
+      : undefined;
+    const pane = terminalId
+      ? context.panes.find((item) => item.terminal_id === terminalId)
+      : undefined;
+    if (!pane || pane.agent !== "pi") continue;
+    if (
+      !isAgentOwnedBy(
+        record,
+        context.currentPane.terminal_id,
+        pane.tab_id,
+        context.currentTab,
+      )
+    ) {
+      continue;
+    }
+    const tab = tabs.find((item) => item.tab_id === pane.tab_id);
+    return {
+      pane,
+      tab: tab ?? { tab_id: pane.tab_id, label: record.tabLabel },
+    };
   }
 
-  return { tab, pane };
+  // Fall back to a live label scan, skipping tabs owned by other sessions.
+  for (const tab of tabs) {
+    if (tab.label !== baseLabel || tab.tab_id === context.currentTab) continue;
+    const pane = choosePaneForTab(context.panes, tab.tab_id);
+    if (!pane || pane.agent !== "pi") continue;
+    const key = paneStateKey(pane);
+    const record = key ? state.agents[key] : undefined;
+    if (
+      !record ||
+      !isAgentOwnedBy(
+        record,
+        context.currentPane.terminal_id,
+        pane.tab_id,
+        context.currentTab,
+      )
+    ) {
+      continue;
+    }
+    return { tab, pane };
+  }
+  return undefined;
 }
 
 export function findReusableAgentPane(
@@ -415,12 +591,19 @@ export function listManagedWorkspaceAgents(
   const agents: HerdrAgentInfo[] = [];
 
   for (const pane of context.panes) {
-    if (pane.workspace_id !== context.workspaceId) continue;
     if (pane.pane_id === context.currentPane.pane_id) continue;
 
     const key = paneStateKey(pane);
     const record = key ? state.agents[key] : undefined;
     if (!record) continue;
+    // Workspace-layout agents live in the dedicated Agents workspace, so they
+    // are matched by record rather than by the current workspace id.
+    if (
+      pane.workspace_id !== context.workspaceId &&
+      record.layout !== "workspace"
+    ) {
+      continue;
+    }
     if (
       !isAgentOwnedBy(
         record,

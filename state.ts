@@ -261,7 +261,7 @@ function isLifecycle(value: unknown): value is HerdrAgentLifecycle {
 }
 
 function isLayout(value: unknown): value is HerdrAgentLayout {
-  return value === "pane" || value === "tab";
+  return value === "pane" || value === "tab" || value === "workspace";
 }
 
 // terminal_id is used as the durable state key (rather than pane_id/tab_id)
@@ -476,7 +476,10 @@ export async function persistPrunedAgentsState(
  * Stamped records match `ownerTerminalId` to this pane's terminal. Legacy
  * records without an owner stay visible in pane layout only when they live
  * in the current tab; tab-layout leftovers stay visible until restamped so
- * persistent agents keep working across `/reload` of this change.
+ * persistent agents keep working across `/reload`. Workspace layout has no
+ * pre-stamping era, so an unstamped record cannot be a legacy leftover and
+ * is NOT treated as owned — otherwise it would be visible, closable, and
+ * label-stealable from every Orchestrator.
  */
 export function isAgentOwnedBy(
   record: HerdrAgentStateRecord,
