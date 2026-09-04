@@ -77,9 +77,23 @@ session name.
 
 ## 6. The extension creates or reuses a Herdr target
 
-Layout is internal configuration and is not exposed in `herdr_agent` parameters. `HERDR_AGENTS_LAYOUT` accepts `pane` or `tab`; unset and unsupported values use `pane`.
+Layout is internal configuration and is not exposed in `herdr_agent` parameters. It comes from `herdr-agents.json` in the Pi agent dir: `layout` accepts `workspace` (default), `pane`, or `tab`; unsupported values fall back to `workspace`. The subagents workspace label comes from `workspace.label` (default `subagents`).
 
-In default pane mode, the first agent splits the Orchestrator pane to the right with ratio `0.6`, leaving the new agent 40%:
+Default workspace mode resolves the subagents workspace from `herdr workspace list` (recreating it if the user closed it) and gives every agent its own tab there, so the Orchestrator's workspace never changes:
+
+```bash
+herdr workspace list
+herdr workspace create --label subagents --no-focus      # only when missing
+herdr tab create --workspace <agents-workspace> --label <label> --no-focus
+```
+
+When the extension itself created the workspace, it closes exactly the root
+shell tab `workspace create` starts new workspaces with — identified by the
+tab id from the create response, never by a shape guess, and never for a
+workspace it merely adopted. With only one-shot agents, the whole workspace
+disappears once its last tab closes (real Herdr removes emptied workspaces).
+
+In pane mode, the first agent splits the Orchestrator pane to the right with ratio `0.6`, leaving the new agent 40%:
 
 ```bash
 herdr pane split <orchestrator-pane> --direction right --ratio 0.6 --no-focus
@@ -87,13 +101,13 @@ herdr pane split <orchestrator-pane> --direction right --ratio 0.6 --no-focus
 
 Additional agents split the largest managed pane downward, keeping them in the right column. The extension then uses `layout.set_split_ratio` to give every managed agent equal height, and repeats that rebalance after an agent closes. For new pane agents, the placement lock remains held through `agent start`, managed-state recording, and rebalancing; this ensures parallel calls see previously created agents before choosing a split direction or label.
 
-Legacy tab mode creates a sibling tab as before:
+Legacy tab mode creates a sibling tab in the Orchestrator's workspace:
 
 ```bash
 herdr tab create --workspace <workspace-id> --label <label> --no-focus
 ```
 
-`lifecycle: "oneshot"` always creates a fresh target. `lifecycle: "persistent"` first looks for a managed agent with the exact requested `tabLabel`; pane mode searches the Orchestrator tab and tab mode searches sibling tabs. The default label is the title-cased profile name. Duplicate fresh labels receive `#2`, `#3`, etc.
+`lifecycle: "oneshot"` always creates a fresh target. `lifecycle: "persistent"` first looks for a managed agent with the exact requested `tabLabel`; pane mode searches the Orchestrator tab, tab mode searches sibling tabs, and workspace mode searches tabs in the subagents workspace. The default label is the title-cased profile name. Duplicate fresh labels receive `#2`, `#3`, etc.
 
 ## 7. The extension prepares prompts and a result artifact
 
@@ -215,7 +229,7 @@ This is intentional:
 - the Orchestrator can reuse the managed target later;
 - Herdr works as a visible persistent workspace, not a hidden subprocess runner.
 
-For `lifecycle: "oneshot"`, the extension closes only the target created by the current tool call after it has successfully waited and read output: `pane close` in pane mode or `tab close` in tab mode. After a successful close, it removes that agent's temp directory. Closing a managed persistent agent through `/herdr-agents` also removes its temp directory.
+For `lifecycle: "oneshot"`, the extension closes only the target created by the current tool call after it has successfully waited and read output: `pane close` in pane mode or `tab close` in tab and workspace mode. After a successful close, it removes that agent's temp directory. Closing a managed persistent agent through `/herdr-agents` also removes its temp directory.
 
 Timeout, abort, or execution errors leave the one-shot target open for debugging.
 

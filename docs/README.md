@@ -2,7 +2,7 @@
 
 `herdr-agents` is a Pi extension that turns Herdr into a one-shot or persistent delegation layer.
 
-It registers a `herdr_agent` tool. The tool creates Herdr panes by default, starts named Pi agents through Herdr's agent automation API, gives them role-specific prompts from `~/.pi/agent/agents/*.md`, waits atomically for their result, and returns a persisted result artifact (or terminal output fallback) to the Orchestrator. One-shot agents close after a successful result; persistent agents stay open and are reused for matching follow-up tasks. Set `HERDR_AGENTS_LAYOUT=tab` before starting Pi to restore the legacy tab layout; layout is intentionally absent from the tool schema.
+It registers a `herdr_agent` tool. The tool spawns agents into a dedicated subagents workspace by default (one tab per agent, invisible until focused), starts named Pi agents through Herdr's agent automation API, gives them role-specific prompts from `~/.pi/agent/agents/*.md`, waits atomically for their result, and returns a persisted result artifact (or terminal output fallback) to the Orchestrator. One-shot agents close after a successful result; persistent agents stay open and are reused for matching follow-up tasks. `herdr-agents.json` in the Pi agent dir selects `layout: "pane"` or `"tab"` to restore the legacy split-pane or per-tab layouts; layout is intentionally absent from the tool schema.
 
 ## Why this exists
 
@@ -57,7 +57,7 @@ The extension does not rename the current Herdr tab; `extensions/herdr-tab-name.
 
 A child Pi process launched in a managed Herdr pane or tab.
 
-The internal layout defaults to `pane`: the first agent splits the Orchestrator pane to the right at 60/40, and additional agents split the largest managed pane downward in the right column. After spawn or close, the extension rebalances that column to equal heights (for example, three agents use thirds). For new pane agents, placement is serialized through successful `agent start`, managed-state recording, and rebalancing so parallel tool calls preserve that structure. `HERDR_AGENTS_LAYOUT=tab` selects the legacy one-tab-per-agent behavior.
+The internal layout defaults to `workspace`: every agent gets its own tab inside a dedicated subagents workspace (label from `herdr-agents.json` → `workspace.label`, default `subagents`), so the Orchestrator's workspace never gains splits or tabs. The workspace is resolved from `herdr workspace list` on every spawn and recreated if the user closed it by hand. `/herdr-agents` lists managed agents across all workspaces and focuses an agent with `tab focus` on its workspace-qualified tab id; an agent that finishes unseen also raises a `herdr notification show`. `layout: "pane"` selects the legacy split layout: the first agent splits the Orchestrator pane to the right at 60/40, and additional agents split the largest managed pane downward in the right column. After spawn or close, the extension rebalances that column to equal heights (for example, three agents use thirds). For new pane agents, placement is serialized through successful `agent start`, managed-state recording, and rebalancing so parallel tool calls preserve that structure. `layout: "tab"` selects one-tab-per-agent inside the current workspace.
 
 Lifecycle modes are independent of layout:
 
@@ -174,13 +174,30 @@ A global `/parallel-review` Pi prompt uses this extension's `herdr_agent` tool, 
 
 ### Layout configuration
 
-Pane mode is the default and requires no environment variable. To temporarily restore legacy tab mode, set this before starting Pi (for example in `zsh/.zshrc.d/10-env.zsh`):
+Layout and the subagents-workspace label are read from `herdr-agents.json` in the
+Pi agent dir (`~/.pi/agent/herdr-agents.json`, kept in the dotfiles `pi`
+package). A missing or invalid file falls back to the defaults:
 
-```sh
-export HERDR_AGENTS_LAYOUT=tab
+```json
+{
+  "layout": "workspace",
+  "workspace": {
+    "label": "subagents"
+  }
+}
 ```
 
-Use `pane` or remove the variable to return to the default. Restart Pi after changing a shell environment variable; `/reload` reloads extension code but cannot import environment changes from the parent shell.
+`layout` accepts `workspace` (default), `pane`, or `tab`. The config is read
+per spawn, so edits apply to new tool calls without a restart. Note that
+switching `layout` while agents are live orphans them — they remain visible
+and closable via `/herdr-agents`, but re-wait and persistent reuse only find
+agents matching the currently configured layout. Close live agents before
+changing `layout`. The checked-in `herdr-agents.json` equals the built-in
+defaults (documentation-by-example); deleting it changes nothing.
+Environment variables no longer control layout — stale `HERDR_AGENTS_LAYOUT`
+exports are ignored. The state-file internals (`HERDR_AGENTS_STATE_PATH`,
+`HERDR_AGENTS_LOCK_WAIT_MS`, `HERDR_AGENTS_CLAIM_LEASE_MS`) stay
+environment-only for test harnesses and debugging.
 
 ## Tool parameters
 
