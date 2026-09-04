@@ -42,8 +42,9 @@ describe("constants", () => {
   it("GLOBAL_INSTRUCTIONS handles agents opened without a task", () => {
     assert.ok(GLOBAL_INSTRUCTIONS.includes("do not inspect skills"));
     assert.ok(GLOBAL_INSTRUCTIONS.includes('lifecycle: "persistent"'));
-    assert.ok(GLOBAL_INSTRUCTIONS.includes("wait: false"));
     assert.ok(GLOBAL_INSTRUCTIONS.includes("minimal standby"));
+    assert.ok(GLOBAL_INSTRUCTIONS.includes("By default"));
+    assert.ok(GLOBAL_INSTRUCTIONS.includes("pass `wait: true`"));
   });
 
   it("GLOBAL_INSTRUCTIONS does not use proactive delegation", () => {

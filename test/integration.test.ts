@@ -524,6 +524,48 @@ test("refuses a detached one-shot without a UI poller to collect it", async () =
   });
 });
 
+test("refuses a detached persistent agent without a UI poller to collect it", async () => {
+  await withHarness({ hasUI: false }, async (harness) => {
+    const result = await harness.call({
+      agent: "scout",
+      task: "Find it",
+      lifecycle: "persistent",
+      wait: false,
+    });
+
+    assert.equal(result.isError, true);
+    assert.match(
+      result.content[0].text,
+      /requires wait: true in a headless session/,
+    );
+    assert.equal(harness.fake.calls.length, 0);
+  });
+});
+
+test("a default call detaches in a UI session", async () => {
+  await withHarness({}, async (harness) => {
+    const started = await harness.callRaw({
+      agent: "scout",
+      task: "Background job",
+    });
+
+    assert.equal(started.details.waited, false);
+    const record = Object.values((await harness.readState()).agents)[0];
+    assert.equal(record?.detached, true);
+  });
+});
+
+test("a default call blocks in a headless session", async () => {
+  await withHarness({ hasUI: false }, async (harness) => {
+    const result = await harness.callRaw({
+      agent: "scout",
+      task: "Find it",
+    });
+
+    assert.equal(result.details.waited, true);
+  });
+});
+
 test("delivers a detached result through the widget poller and closes the one-shot", async () => {
   await withHarness({}, async (harness) => {
     const started = await harness.call({

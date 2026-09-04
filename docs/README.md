@@ -2,7 +2,7 @@
 
 `herdr-agents` is a Pi extension that turns Herdr into a one-shot or persistent delegation layer.
 
-It registers a `herdr_agent` tool. The tool spawns agents into a dedicated subagents workspace by default (one tab per agent, invisible until focused), starts named Pi agents through Herdr's agent automation API, gives them role-specific prompts from `~/.pi/agent/agents/*.md`, waits atomically for their result, and returns a persisted result artifact (or terminal output fallback) to the Orchestrator. One-shot agents close after a successful result; persistent agents stay open and are reused for matching follow-up tasks. `herdr-agents.json` in the Pi agent dir selects `layout: "pane"` or `"tab"` to restore the legacy split-pane or per-tab layouts; layout is intentionally absent from the tool schema.
+It registers a `herdr_agent` tool. The tool spawns agents into a dedicated subagents workspace by default (one tab per agent, invisible until focused), starts named Pi agents through Herdr's agent automation API, and gives them role-specific prompts from `~/.pi/agent/agents/*.md`. In UI sessions the tool detaches by default: the widget poller delivers the persisted result artifact (or terminal output fallback) and closes one-shot targets. Headless sessions block until the result is ready. Pass `wait: true` when the answer is needed before continuing this turn. Persistent agents stay open and are reused for matching follow-up tasks. `herdr-agents.json` in the Pi agent dir selects `layout: "pane"` or `"tab"` to restore the legacy split-pane or per-tab layouts; layout is intentionally absent from the tool schema.
 
 ## Why this exists
 
@@ -75,11 +75,12 @@ The child receives:
 
 ### Async delivery
 
-With `wait: false` the tool returns as soon as the prompt is accepted and the
-widget poller takes over: once the agent settles (`idle`/`done`) the poller
-delivers its outcome and closes the target if it was a one-shot that actually
-finished. This is why `oneshot` no longer requires `wait: true` — it still does
-in headless sessions, where no poller runs.
+Detaching is the default in UI sessions (`wait` defaults to false). The tool
+returns as soon as the prompt is accepted and the widget poller takes over:
+once the agent settles (`idle`/`done`) the poller delivers its outcome and
+closes the target if it was a one-shot that actually finished. Pass `wait: true`
+when the answer is needed before continuing this turn. Headless sessions default
+to `wait: true` and reject an explicit `wait: false`, because no poller runs.
 
 The poller checks for a question before a result, the same order the blocking
 path uses, and delivers it as `herdr_agent_question` instead. A detached agent

@@ -59,6 +59,11 @@ export interface E2eHarness {
     params: Record<string, unknown>,
     options?: { signal?: AbortSignal },
   ): Promise<any>;
+  /** Same as call, but without the wait:true injection — pins the real defaults. */
+  callRaw(
+    params: Record<string, unknown>,
+    options?: { signal?: AbortSignal },
+  ): Promise<any>;
   fire(event: string, payload?: Record<string, unknown>): Promise<unknown>;
   /** Live snapshot from the real Herdr server. */
   snapshot(): Promise<HerdrSessionSnapshot>;
@@ -261,7 +266,17 @@ export async function createE2eHarness(
     orchestratorPaneId,
     messages: host.messages,
     events: host.events,
+    // Legacy tests pin the blocking path explicitly; the detached default
+    // is pinned separately through callRaw, which passes params untouched.
     call: (params, callOptions) =>
+      tool.execute(
+        `call-${Math.random().toString(36).slice(2)}`,
+        { wait: true, ...params },
+        callOptions?.signal,
+        undefined,
+        host.ctx,
+      ),
+    callRaw: (params, callOptions) =>
       tool.execute(
         `call-${Math.random().toString(36).slice(2)}`,
         params,

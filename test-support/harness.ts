@@ -65,6 +65,11 @@ export interface Harness {
     params: Record<string, unknown>,
     options?: { signal?: AbortSignal },
   ): Promise<any>;
+  /** Same as call, but without the wait:true injection — pins the real defaults. */
+  callRaw(
+    params: Record<string, unknown>,
+    options?: { signal?: AbortSignal },
+  ): Promise<any>;
   /** Fire an extension lifecycle event (e.g. `session_start`). */
   fire(event: string, payload?: Record<string, unknown>): Promise<unknown>;
   /** The currently registered tool — re-registration replaces it by name. */

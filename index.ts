@@ -1484,14 +1484,14 @@ function registerHerdrAgentTool(
 
       const task = params.task;
 
-      // A detached one-shot is closed by the poller after it delivers the
-      // result, so this only has to stay forbidden where no poller runs.
-      if (lifecycle === "oneshot" && !wait && !ctx.hasUI) {
+      // Detached collection needs the widget poller, so any explicit
+      // wait: false is forbidden where no poller runs.
+      if (!wait && !ctx.hasUI) {
         return {
           content: [
             {
               type: "text",
-              text: "lifecycle: 'oneshot' requires wait: true in a headless session: without the agents widget poller nothing would deliver the result or close the agent.",
+              text: "wait: false requires a UI session with the agents widget poller; requires wait: true in a headless session because nothing would deliver the result or close the agent.",
             },
           ],
           details: { lifecycle, waited: false },

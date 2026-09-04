@@ -51,6 +51,15 @@ test("declares parameter types the provider can validate", () => {
   assert.equal(properties.timeoutMs?.type, "number");
 });
 
+test("wait description matches the detached-by-default contract", () => {
+  const wait = HerdrAgentParams.properties.wait as { description?: string };
+  assert.match(wait.description ?? "", /Default: false/);
+  assert.match(
+    wait.description ?? "",
+    /Headless sessions require wait: true; an explicit false is rejected/,
+  );
+});
+
 test("describes every parameter for the model", () => {
   for (const [name, schema] of Object.entries(
     HerdrAgentParams.properties as Record<string, { description?: string }>,
