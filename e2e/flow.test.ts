@@ -255,3 +255,124 @@ test("resumes a closed real one-shot with prior conversation context", async () 
     assert.match(historyText, /Remember the token ALPHA-42/);
   });
 });
+
+test("spawns a real child into the Agents workspace and never touches the Orchestrator's tab", async () => {
+  await withE2e({ layout: "workspace" }, async (harness) => {
+    const before = await harness.snapshot();
+    assert.equal(before.panes.length, 1);
+
+    const result = await harness.call({
+      agent: "scout",
+      task: "Report the magic word.",
+    });
+
+    assert.equal(result.isError, undefined);
+    assert.match(result.content[0].text, /MOCK_CHILD_OK/);
+    assert.equal(result.details.closed, true);
+
+    // The child ran in the dedicated Agents workspace, not beside the
+    // Orchestrator. The spawn drops the empty root tab, and collection closes
+    // the agent tab — real Herdr then removes the emptied workspace itself.
+    const workspaces = JSON.parse(await harness.herdr(["workspace", "list"]));
+    const agentsWorkspace = (workspaces?.result?.workspaces ?? []).find(
+      (workspace: { label?: string }) => workspace.label === "subagents",
+    );
+    assert.equal(
+      agentsWorkspace,
+      undefined,
+      `expected the emptied Agents workspace to be gone, got ${JSON.stringify(workspaces?.result?.workspaces)}`,
+    );
+
+    const after = await harness.snapshot();
+    const orchestratorWsId = harness.orchestratorPaneId.split(":")[0];
+    assert.deepEqual(
+      after.panes
+        .filter((pane) => pane.workspace_id === orchestratorWsId)
+        .map((pane) => pane.pane_id),
+      [harness.orchestratorPaneId],
+    );
+    assert.deepEqual((await harness.readState()).agents, {});
+  });
+});
+
+test("delivers an unseen real child that finishes in the background", async () => {
+  // Real-Herdr coverage for background completion: nobody waits and the
+  // child's tab is never focused by any UI. The poller has to notice the
+  // settled child, read its artifact, push the result into the session and
+  // close the tab. Herdr reports such work as `done`; in a fully headless
+  // harness its seen/unseen heuristic is not deterministic run-to-run, so the
+  // strict `done` semantics are pinned by the FakeHerdr integration test and
+  // cross-checked here with a server-side wait witness.
+  await withE2e({ layout: "workspace" }, async (harness) => {
+    const started = await harness.call({
+      agent: "scout",
+      task: "Report the magic word.",
+      wait: false,
+    });
+    assert.equal(started.details.waited, false);
+
+    // Server-side witness: resolves only if the unseen child really reached
+    // Herdr's `done` state while its tab was still open. If the poller closes
+    // it first, the wait reports unknown-agent and the snapshot statuses below
+    // are the remaining evidence.
+    const record = Object.values((await harness.readState()).agents)[0];
+    assert.ok(record?.automationName);
+    const doneWitness = harness
+      .herdr([
+        "agent",
+        "wait",
+        record.automationName!,
+        "--until",
+        "done",
+        "--timeout",
+        "30000",
+      ])
+      .then(() => true)
+      .catch(() => false);
+
+    const seenStatuses = new Set<string>();
+    await harness.waitFor(
+      async () => {
+        const snapshot = await harness.snapshot();
+        for (const pane of snapshot.panes) {
+          if (pane.agent === "pi" && pane.pane_id !== harness.orchestratorPaneId) {
+            seenStatuses.add(pane.agent_status ?? "");
+          }
+        }
+        return harness.messages.length > 0;
+      },
+      "detached delivery from an unseen real child",
+      60000,
+    );
+
+    // Whatever Herdr called the settled state, it was a finished one, and the
+    // child really reached `done` server-side in the witnessed runs.
+    assert.ok(
+      seenStatuses.has("done") ||
+        seenStatuses.has("idle") ||
+        (await doneWitness),
+      `expected a settled unseen child, saw: ${[...seenStatuses].join(", ") || "nothing"}`,
+    );
+
+    const [message] = harness.messages;
+    assert.equal(message?.customType, "herdr_agent_result");
+    assert.match(message?.content ?? "", /MOCK_CHILD_OK/);
+    assert.equal(message?.triggerTurn, true);
+
+    await harness.waitFor(
+      async () => {
+        const snapshot = await harness.snapshot();
+        const orchestratorWsId = harness.orchestratorPaneId.split(":")[0];
+        const remaining = snapshot.panes.filter(
+          (pane) =>
+            pane.workspace_id === orchestratorWsId &&
+            pane.pane_id !== harness.orchestratorPaneId,
+        );
+        return remaining.length === 0;
+      },
+      "the unseen one-shot tab to be closed by the poller",
+      15000,
+    );
+    assert.deepEqual((await harness.readState()).agents, {});
+  });
+});

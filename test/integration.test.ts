@@ -548,6 +548,8 @@ test("delivers a detached result through the widget poller and closes the one-sh
     assert.match(message?.content ?? "", /finished on its own/);
     assert.match(message?.content ?? "", /Result from scout_/);
     assert.equal(message?.triggerTurn, true);
+    // Pane-layout agents are visible on screen, so no notification ping.
+    assert.equal(harness.fake.callsMatching("notification", "show").length, 0);
     assert.equal(message?.details.tabLabel, "Scout");
 
     // Delivered exactly once, pane closed, state pruned.
@@ -603,6 +605,385 @@ test("uses tabs instead of panes when the tab layout is configured", async () =>
     assert.equal(harness.fake.callsMatching("tab", "close").length, 1);
     // No pane column to rebalance in tab layout.
     assert.equal(harness.fake.ratioUpdates.length, 0);
+  });
+});
+
+test("spawns a one-shot into the Agents workspace and closes its tab", async () => {
+  await withHarness({ layout: "workspace" }, async (harness) => {
+    const result = await harness.call({ agent: "scout", task: "Find it" });
+
+    assert.equal(result.details.closed, true);
+
+    // The Agents workspace was resolved live and created once, unfocused.
+    assert.ok(
+      harness.fake.callsMatching("workspace", "list").length >= 1,
+      "expected a workspace list lookup",
+    );
+    const create = harness.fake.callsMatching("workspace", "create")[0];
+    assert.ok(create, "expected the Agents workspace to be created");
+    assert.equal(flagValue(create, "--label"), "subagents");
+    assert.ok(create.includes("--no-focus"));
+
+    const workspaceCreate = harness.fake.callsMatching("workspace", "create")[0];
+    assert.ok(workspaceCreate, "expected a workspace create");
+
+    // The agent got its own tab in the new Agents workspace, not a split and
+    // not a tab next to the Orchestrator.
+    const tabCreate = harness.fake.callsMatching("tab", "create")[0];
+    assert.ok(tabCreate, "expected a tab create");
+    const agentsWorkspaceId = flagValue(tabCreate, "--workspace");
+    assert.ok(
+      agentsWorkspaceId && agentsWorkspaceId !== harness.fake.workspaceId,
+      `expected a separate Agents workspace id, got ${agentsWorkspaceId}`,
+    );
+    assert.equal(flagValue(tabCreate, "--label"), "Scout");
+    assert.ok(tabCreate.includes("--no-focus"));
+    assert.equal(harness.fake.callsMatching("pane", "split").length, 0);
+    assert.equal(harness.fake.ratioUpdates.length, 0);
+
+    // Collection closed the agent tab, and the spawn dropped the empty root
+    // shell tab the workspace started with; the Orchestrator workspace is
+    // untouched, and real Herdr (and the fake) remove a workspace once its
+    // last tab closes, so nothing is left behind.
+    assert.equal(harness.fake.callsMatching("tab", "close").length, 2);
+    assert.deepEqual(
+      harness.fake.panes
+        .filter((pane) => pane.workspace_id === harness.fake.workspaceId)
+        .map((pane) => pane.pane_id),
+      [harness.fake.orchestratorPane.pane_id],
+    );
+    assert.equal(
+      harness.fake.workspaces.find(
+        (workspace) => workspace.label === "subagents",
+      ),
+      undefined,
+    );
+    const history = (await harness.readState()).closedHistory;
+    assert.equal(history[0]?.layout, "workspace");
+    assert.equal(history[0]?.tabLabel, "Scout");
+  });
+});
+
+test("recreates the Agents workspace after the user closed it by hand", async () => {
+  await withHarness({ layout: "workspace" }, async (harness) => {
+    await harness.call({
+      agent: "scout",
+      task: "stay",
+      lifecycle: "persistent",
+      tabLabel: "Scout One",
+    });
+    const first = harness.fake.workspaces.find(
+      (workspace) => workspace.label === "subagents",
+    );
+    assert.ok(first);
+    assert.equal(harness.fake.callsMatching("workspace", "create").length, 1);
+
+    // The user closes the whole workspace; the next spawn must recover.
+    assert.ok(harness.fake.closeWorkspaceById(first.workspace_id));
+
+    const result = await harness.call({
+      agent: "scout",
+      task: "second",
+      tabLabel: "Scout Two",
+    });
+    assert.equal(result.details.closed, true);
+    assert.equal(harness.fake.callsMatching("workspace", "create").length, 2);
+    const secondWorkspaceId = flagValue(
+      harness.fake.callsMatching("tab", "create").at(-1)!,
+      "--workspace",
+    );
+    assert.ok(secondWorkspaceId);
+    assert.notEqual(secondWorkspaceId, first.workspace_id);
+    // The second workspace emptied itself out again after the one-shot closed.
+    assert.equal(
+      harness.fake.workspaces.find(
+        (workspace) => workspace.label === "subagents",
+      ),
+      undefined,
+    );
+  });
+});
+
+test("delivers an unseen done completion, notifies, and closes the one-shot", async () => {
+  await withHarness({ layout: "workspace" }, async (harness) => {
+    // The child settles as `done` — Herdr's marker for background work the
+    // user has never seen — instead of `idle`.
+    harness.fake.setBehavior(() => ({
+      result: "Background done.",
+      settleStatus: "done",
+    }));
+
+    const started = await harness.call({
+      agent: "scout",
+      task: "Background job",
+      wait: false,
+    });
+    assert.equal(started.details.waited, false);
+
+    await harness.waitFor(
+      () => harness.messages.length > 0,
+      "detached done-status delivery",
+    );
+
+    const [message] = harness.messages;
+    assert.equal(message?.customType, "herdr_agent_result");
+    assert.match(message?.content ?? "", /Background done\./);
+    assert.equal(message?.triggerTurn, true);
+
+    // Unseen completions ping the user through Herdr's own notifications.
+    const notify = harness.fake.callsMatching("notification", "show")[0];
+    assert.ok(notify, "expected a Herdr notification");
+    assert.equal(notify[2], "Pi · Scout finished");
+    assert.equal(flagValue(notify, "--body"), "Background done.");
+
+    // Delivered exactly once, tab closed, state pruned.
+    await harness.fire("session_start");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal(harness.messages.length, 1);
+    // Only the agent's own tab existed; the poller closed it and the emptied
+    // workspace vanished with it.
+    assert.equal(
+      harness.fake.workspaces.find(
+        (workspace) => workspace.label === "subagents",
+      ),
+      undefined,
+    );
+    assert.deepEqual((await harness.readState()).agents, {});
+  });
+});
+
+test("/herdr-agents focuses an Agents-workspace agent via tab focus", async () => {
+  await withHarness(
+    { layout: "workspace", dialogInputs: [["\r"]] },
+    async (harness) => {
+      await harness.call({
+        agent: "scout",
+        task: "stay",
+        lifecycle: "persistent",
+        tabLabel: "Scout Ws",
+      });
+
+      await harness.runCommand("herdr-agents");
+
+      const focus = harness.fake.callsMatching("tab", "focus")[0];
+      assert.ok(focus, `expected a tab focus, calls: ${JSON.stringify(harness.fake.calls.slice(-4))}`);
+      const agentsWorkspace = harness.fake.workspaces.find(
+        (workspace) => workspace.label === "subagents",
+      );
+      assert.ok(agentsWorkspace);
+      assert.ok(
+        focus[2]?.startsWith(`${agentsWorkspace.workspace_id}:`),
+        `expected a cross-workspace tab id, got ${focus[2]}`,
+      );
+      assert.match(
+        harness.notifications.at(-1)?.message ?? "",
+        /Focused Herdr agent "Scout Ws"/,
+      );
+      // The empty root tab was dropped at spawn; focusing must not close the
+      // agent itself.
+      assert.equal(
+        harness.fake.panes.filter(
+          (pane) => pane.workspace_id === agentsWorkspace.workspace_id,
+        ).length,
+        1,
+      );
+    },
+  );
+});
+
+test("serializes parallel workspace spawns into one workspace and unique labels", async () => {
+  await withHarness({ layout: "workspace" }, async (harness) => {
+    // Keep all three agents live past the last placement so the assertions
+    // describe three simultaneously existing tabs. Delay agent start so it
+    // lands after other spawns' cleanup windows — pane.agent is unset until
+    // start returns, which is what used to make a sibling spawn close a live
+    // agent tab as "empty".
+    harness.fake.delayAgentStart(400);
+    harness.fake.setBehavior((turn) => ({
+      result: `Result from ${turn.agentName}`,
+      delayMs: 1200,
+    }));
+
+    const results = await Promise.all([
+      harness.call({ agent: "scout", task: "one" }),
+      harness.call({ agent: "scout", task: "two" }),
+      harness.call({ agent: "scout", task: "three" }),
+    ]);
+    for (const result of results) {
+      assert.equal(result.isError, undefined);
+      assert.equal(result.details.closed, true);
+    }
+
+    // One shared Agents workspace, created exactly once.
+    assert.equal(harness.fake.callsMatching("workspace", "create").length, 1);
+    // Every agent got its own tab there, with a unique label.
+    const creates = harness.fake.callsMatching("tab", "create");
+    assert.equal(creates.length, 3);
+    assert.deepEqual(
+      creates.map((argv) => flagValue(argv, "--label")).sort(),
+      ["Scout", "Scout #2", "Scout #3"],
+    );
+    assert.ok(creates.every((argv) => argv.includes("--no-focus")));
+    assert.equal(harness.fake.callsMatching("pane", "split").length, 0);
+
+    const calls = harness.fake.calls;
+    const tabCreateIdx = calls.flatMap((argv, index) =>
+      argv[0] === "tab" && argv[1] === "create" ? [index] : [],
+    );
+    const agentStartIdx = calls.flatMap((argv, index) =>
+      argv[0] === "agent" && argv[1] === "start" ? [index] : [],
+    );
+    const tabCloseIdx = calls.flatMap((argv, index) =>
+      argv[0] === "tab" && argv[1] === "close" ? [index] : [],
+    );
+    assert.equal(tabCreateIdx.length, 3);
+    assert.equal(agentStartIdx.length, 3);
+    // Root tab once (creating spawn) plus the three agent tabs at collection.
+    assert.equal(tabCloseIdx.length, 4);
+    const rootCloseId = calls[tabCloseIdx[0]!]![2];
+    const collectionCloseIds = tabCloseIdx.slice(1).map((index) => calls[index]![2]);
+    assert.ok(rootCloseId, "expected the creating spawn to close the root tab");
+    assert.equal(collectionCloseIds.length, 3);
+    assert.ok(
+      collectionCloseIds.every((id) => id !== rootCloseId),
+      "collection must close agent tabs, not the root tab again",
+    );
+    // Later spawns must not close anything between their tab create and
+    // agent start — that window is where the empty-tab heuristic used to
+    // kill a sibling whose agent was not started yet.
+    for (let spawn = 1; spawn < 3; spawn++) {
+      const createAt = tabCreateIdx[spawn]!;
+      const startAt = agentStartIdx[spawn]!;
+      const intervening = tabCloseIdx.filter(
+        (index) => index > createAt && index < startAt,
+      );
+      assert.equal(
+        intervening.length,
+        0,
+        `spawn ${spawn + 1} closed a tab between tab create and agent start`,
+      );
+    }
+  });
+});
+
+test("re-wait in workspace mode is a pure lookup and never creates the workspace", async () => {
+  await withHarness({ layout: "workspace" }, async (harness) => {
+    const ghost = await harness.call({ agent: "scout", tabLabel: "Ghost" });
+    assert.equal(ghost.isError, true);
+    assert.match(ghost.content[0].text, /No running Herdr agent named "Ghost"/);
+    // A missing workspace means "nothing to find", not a fresh workspace.
+    assert.equal(harness.fake.callsMatching("workspace", "create").length, 0);
+
+    // A live detached persistent agent is still findable and re-waitable.
+    harness.fake.setBehavior(() => ({ neverSettle: true }));
+    await harness.call({
+      agent: "scout",
+      task: "stay",
+      lifecycle: "persistent",
+      tabLabel: "Scout Live",
+      wait: false,
+    });
+    const rewait = await harness.call({
+      agent: "scout",
+      tabLabel: "Scout Live",
+      wait: false,
+    });
+    assert.match(rewait.content[0].text, /is still running/);
+    // Still exactly the one workspace the spawn above created — the re-wait
+    // added none.
+    assert.equal(harness.fake.callsMatching("workspace", "create").length, 1);
+  });
+});
+
+test("reuses a persistent agent by label across tasks in workspace mode", async () => {
+  await withHarness({ layout: "workspace" }, async (harness) => {
+    const first = await harness.call({
+      agent: "scout",
+      task: "first",
+      lifecycle: "persistent",
+      tabLabel: "Scout Ws",
+    });
+    assert.equal(first.details.reused, false);
+
+    const second = await harness.call({
+      agent: "scout",
+      task: "second",
+      lifecycle: "persistent",
+      tabLabel: "Scout Ws",
+    });
+    assert.equal(second.details.reused, true);
+    // Same agent tab, no duplicate workspace or spawn.
+    assert.equal(harness.fake.callsMatching("tab", "create").length, 1);
+    assert.equal(harness.fake.callsMatching("workspace", "create").length, 1);
+  });
+});
+
+test("persistent follow-up reuse performs no spawn-phase tab close", async () => {
+  await withHarness({ layout: "workspace" }, async (harness) => {
+    await harness.call({
+      agent: "scout",
+      task: "first",
+      lifecycle: "persistent",
+      tabLabel: "Scout Ws",
+    });
+    const closesAfterFirst = harness.fake.callsMatching("tab", "close").length;
+    // Creating spawn closes the workspace root tab; the agent tab stays open.
+    assert.equal(closesAfterFirst, 1);
+
+    await harness.call({
+      agent: "scout",
+      task: "second",
+      lifecycle: "persistent",
+      tabLabel: "Scout Ws",
+    });
+    assert.equal(
+      harness.fake.callsMatching("tab", "close").length,
+      closesAfterFirst,
+      "reuse must not close tabs during spawn",
+    );
+  });
+});
+
+test("refuses a workspace.label that matches the Orchestrator's own workspace", async () => {
+  await withHarness({ layout: "workspace" }, async (harness) => {
+    const agentDir = process.env.PI_CODING_AGENT_DIR;
+    assert.ok(agentDir, "expected the harness to set PI_CODING_AGENT_DIR");
+    await fs.writeFile(
+      path.join(agentDir, "herdr-agents.json"),
+      `${JSON.stringify({ layout: "workspace", workspace: { label: "main" } })}\n`,
+    );
+
+    const result = await harness.call({ agent: "scout", task: "nope" });
+    assert.equal(result.isError, true);
+    assert.match(
+      result.content[0].text,
+      /workspace\.label matches this Orchestrator's own workspace/,
+    );
+    assert.match(result.content[0].text, /herdr-agents\.json/);
+    assert.equal(harness.fake.callsMatching("tab", "create").length, 0);
+  });
+});
+
+test("resumeClosed archives and resumes in workspace mode", async () => {
+  await withHarness({ layout: "workspace" }, async (harness) => {
+    const first = await harness.call({
+      agent: "scout",
+      task: "Remember the token ALPHA-42.",
+      tabLabel: "Scout Ws Resume",
+    });
+    assert.equal(first.details.closed, true);
+    const history = (await harness.readState()).closedHistory;
+    assert.equal(history.length, 1);
+
+    const resumed = await harness.call({
+      agent: "scout",
+      task: "What token did I ask you to remember?",
+      tabLabel: "Scout Ws Resume",
+      resumeClosed: true,
+    });
+    assert.equal(resumed.details.resumed, true);
+    assert.equal(resumed.details.closed, true);
+    assert.match(resumed.content[0].text, /Result from scout_/);
   });
 });
 

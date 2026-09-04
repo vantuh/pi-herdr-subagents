@@ -150,6 +150,20 @@ test("legacy tab records without owner stay visible until restamped", () => {
   assert.equal(isAgentOwnedBy(record, "term-b", "tab-worker", "tab-a"), true);
 });
 
+test("workspace records without owner are never treated as owned", () => {
+  // Workspace layout has no pre-stamping era, so an unstamped record cannot
+  // be a leftover from an older version — it must stay invisible (and
+  // unstealable) to every Orchestrator.
+  const record = {
+    lifecycle: "persistent" as const,
+    layout: "workspace" as const,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  // A workspace record's pane lives in the Agents workspace, never in the
+  // Orchestrator's current tab, so the pane-locality fallback cannot claim it.
+  assert.equal(isAgentOwnedBy(record, "term-a", "tab-worker", "tab-a"), false);
+});
+
 test("clears spawn warnings after a successful collect", async () => {
   const filePath = await tempStatePath();
   const agentPane = pane();

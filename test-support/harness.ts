@@ -34,8 +34,11 @@ const SHIM_PATH = path.join(
 export interface HarnessOptions {
   /** Agent profiles written to the fixture project. Defaults to `scout`. */
   profiles?: AgentProfileFixture[];
-  /** "tab" sets HERDR_AGENTS_LAYOUT; defaults to the pane layout. */
-  layout?: "pane" | "tab";
+  /**
+   * Layout written to the fixture's herdr-agents.json. Existing tests default
+   * to "pane"; "workspace" exercises the extension's real default explicitly.
+   */
+  layout?: "pane" | "tab" | "workspace";
   hasUI?: boolean;
   isIdle?: boolean;
   /** Keystrokes per `ctx.ui.custom` overlay, for the `/herdr-agents` manager. */
@@ -92,6 +95,12 @@ export async function createHarness(
     path.join(cwd, ".pi", "agents"),
     options.profiles ?? [{ name: "scout" }],
   );
+  // Layout config lives in the agent dir (herdr-agents.json), not in env.
+  await fs.writeFile(
+    path.join(agentDir, "herdr-agents.json"),
+    `${JSON.stringify({ layout: options.layout ?? "pane" })}\n`,
+    "utf8",
+  );
 
   const fake = new FakeHerdr();
   const { cliSocketPath, apiSocketPath } = await fake.start(root);
@@ -106,7 +115,9 @@ export async function createHarness(
     HERDR_PANE_ID: options.paneIdEnv ?? fake.orchestratorPane.pane_id,
     HERDR_AGENTS_STATE_PATH: statePath,
     PI_CODING_AGENT_DIR: agentDir,
-    HERDR_AGENTS_LAYOUT: options.layout === "tab" ? "tab" : undefined,
+    // Neutralize any stale live-session env: layout comes from the config file.
+    HERDR_AGENTS_LAYOUT: undefined,
+    HERDR_AGENTS_WORKSPACE_LABEL: undefined,
     HERDR_AGENT_CHILD: undefined,
   });
 
@@ -134,7 +145,17 @@ export async function createHarness(
     widgets: host.widgets,
     commands: host.commands,
     renderers: host.renderers,
+    // Legacy tests pin the blocking path explicitly; the detached default
+    // is pinned separately through callRaw, which passes params untouched.
     call: (params, callOptions) =>
+      tool.execute(
+        `call-${Math.random().toString(36).slice(2)}`,
+        { wait: true, ...params },
+        callOptions?.signal,
+        undefined,
+        host.ctx,
+      ),
+    callRaw: (params, callOptions) =>
       tool.execute(
         `call-${Math.random().toString(36).slice(2)}`,
         params,

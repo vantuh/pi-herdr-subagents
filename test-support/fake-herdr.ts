@@ -44,6 +44,13 @@ export interface FakeTab {
   focused?: boolean;
 }
 
+export interface FakeWorkspace {
+  workspace_id: string;
+  label?: string;
+  focused?: boolean;
+  active_tab_id?: string;
+}
+
 export interface FakeAgent {
   name: string;
   paneId: string;
@@ -161,6 +168,9 @@ function defaultBehavior(turn: ChildTurn): ChildOutcome {
 
 export class FakeHerdr {
   readonly workspaceId = "w1";
+  readonly workspaces: FakeWorkspace[] = [
+    { workspace_id: "w1", label: "main", focused: true },
+  ];
   readonly panes: FakePane[] = [];
   readonly tabs: FakeTab[] = [];
   /** Every CLI invocation, in order, as argv arrays. */
@@ -196,6 +206,7 @@ export class FakeHerdr {
   private apiServer?: Server;
   private nextPane = 1;
   private nextTab = 1;
+  private nextWorkspace = 2;
   private nextTerminal = 1;
   /** Prompts still being simulated; awaited on stop to avoid stray writes. */
   private readonly inFlight = new Set<Promise<void>>();
@@ -365,12 +376,12 @@ export class FakeHerdr {
     );
   }
 
-  private makePaneId(): string {
-    return `${this.workspaceId}:p${this.nextPane++}`;
+  private makePaneId(workspaceId = this.workspaceId): string {
+    return `${workspaceId}:p${this.nextPane++}`;
   }
 
-  private makeTabId(): string {
-    return `${this.workspaceId}:t${this.nextTab++}`;
+  private makeTabId(workspaceId = this.workspaceId): string {
+    return `${workspaceId}:t${this.nextTab++}`;
   }
 
   private makeTerminalId(): string {
@@ -467,17 +478,122 @@ export class FakeHerdr {
       });
     }
 
+    if (group === "workspace") return this.handleWorkspace(argv);
+    if (group === "notification") {
+      return ok({ shown: argv.slice(2) });
+    }
     if (group === "tab") return this.handleTab(argv);
     if (group === "pane") return this.handlePane(argv);
     if (group === "agent") return await this.handleAgent(argv);
     return fail("unknown_command", `unknown command: ${argv.join(" ")}`);
   }
 
-  private handleTab(argv: string[]): CliResponse {
-    const [, command, target] = argv;
+  private handleWorkspace(argv: string[]): CliResponse {
+    const [, command] = argv;
 
     if (command === "list") {
-      return ok({ tabs: this.tabs });
+      return ok({
+        workspaces: this.workspaces.map((workspace) => ({
+          ...workspace,
+          active_tab_id: this.tabs.find(
+            (tab) => tab.tab_id.startsWith(`${workspace.workspace_id}:`),
+          )?.tab_id,
+          tab_count: this.tabs.filter((tab) =>
+            tab.tab_id.startsWith(`${workspace.workspace_id}:`),
+          ).length,
+        })),
+      });
+    }
+
+    if (command === "create") {
+      const workspaceId = `w${this.nextWorkspace++}`;
+      const workspace: FakeWorkspace = {
+        workspace_id: workspaceId,
+        label: flag(argv, "--label"),
+        focused: false,
+      };
+      this.workspaces.push(workspace);
+      // Like the real server: a workspace starts with one root tab + pane.
+      const tab: FakeTab = { tab_id: this.makeTabId(workspaceId), label: "tab" };
+      this.tabs.push(tab);
+      const pane: FakePane = {
+        pane_id: this.makePaneId(workspaceId),
+        tab_id: tab.tab_id,
+        workspace_id: workspaceId,
+        terminal_id: this.makeTerminalId(),
+        label: tab.label,
+        cwd: flag(argv, "--cwd"),
+        env: parseEnv(argv),
+      };
+      this.panes.push(pane);
+      this.layouts.set(tab.tab_id, { type: "pane", pane_id: pane.pane_id });
+      return ok({
+        workspace,
+        tab,
+        root_pane: { ...pane, env: undefined },
+      });
+    }
+
+    if (command === "focus") {
+      for (const workspace of this.workspaces) {
+        workspace.focused = workspace.workspace_id === argv[2];
+      }
+      return ok({ focused: argv[2] });
+    }
+
+    if (command === "close") {
+      if (!this.closeWorkspaceById(String(argv[2]))) {
+        return fail("workspace_not_found", `unknown workspace ${argv[2]}`);
+      }
+      return ok({ closed: argv[2] });
+    }
+
+    return fail("unknown_command", `unknown workspace command: ${command}`);
+  }
+
+  /** Close a workspace the way a user's manual close would. */
+  closeWorkspaceById(workspaceId: string): boolean {
+    const index = this.workspaces.findIndex(
+      (workspace) => workspace.workspace_id === workspaceId,
+    );
+    if (index < 0) return false;
+    const [removed] = this.workspaces.splice(index, 1);
+    for (const tab of this.tabs.filter((tab) =>
+      tab.tab_id.startsWith(`${removed.workspace_id}:`),
+    )) {
+      this.tabs.splice(this.tabs.indexOf(tab), 1);
+      for (const pane of this.panes.filter(
+        (pane) => pane.tab_id === tab.tab_id,
+      )) {
+        this.removePane(pane.pane_id);
+      }
+      this.layouts.delete(tab.tab_id);
+    }
+    return true;
+  }
+
+  /** Workspaces vanish once their last tab is gone (real Herdr behavior). */
+  private pruneEmptyWorkspaces(): void {
+    for (const workspace of [...this.workspaces]) {
+      const hasTabs = this.tabs.some((tab) =>
+        tab.tab_id.startsWith(`${workspace.workspace_id}:`),
+      );
+      if (!hasTabs) {
+        this.workspaces.splice(this.workspaces.indexOf(workspace), 1);
+      }
+    }
+  }
+
+  private handleTab(argv: string[]): CliResponse {
+    const [, command, target] = argv;
+    const workspaceId = flag(argv, "--workspace") ?? this.workspaceId;
+
+    if (command === "list") {
+      return ok({
+        tabs: this.tabs.filter((tab) =>
+          tab.tab_id.startsWith(`${workspaceId}:`),
+        ),
+      });
     }
 
     if (command === "rename") {
@@ -489,14 +605,14 @@ export class FakeHerdr {
 
     if (command === "create") {
       const tab: FakeTab = {
-        tab_id: this.makeTabId(),
+        tab_id: this.makeTabId(workspaceId),
         label: flag(argv, "--label") ?? "tab",
       };
       this.tabs.push(tab);
       const pane: FakePane = {
-        pane_id: this.makePaneId(),
+        pane_id: this.makePaneId(workspaceId),
         tab_id: tab.tab_id,
-        workspace_id: this.workspaceId,
+        workspace_id: workspaceId,
         terminal_id: this.makeTerminalId(),
         label: tab.label,
         cwd: flag(argv, "--cwd"),
@@ -521,6 +637,8 @@ export class FakeHerdr {
         this.removePane(pane.pane_id);
       }
       this.layouts.delete(String(target));
+      // Like the real server: a workspace disappears once its last tab closes.
+      this.pruneEmptyWorkspaces();
       return ok({ closed: target });
     }
 
@@ -577,10 +695,20 @@ export class FakeHerdr {
     }
 
     if (command === "close") {
-      if (!this.paneById(String(target))) {
+      const pane = this.paneById(String(target));
+      if (!pane) {
         return fail("pane_not_found", `unknown pane ${target}`);
       }
+      const tabId = pane.tab_id;
       this.removePane(String(target));
+      // Real herdr drops a tab whose last pane closes, then drops an emptied
+      // workspace.
+      if (!this.panes.some((item) => item.tab_id === tabId)) {
+        const tabIndex = this.tabs.findIndex((item) => item.tab_id === tabId);
+        if (tabIndex >= 0) this.tabs.splice(tabIndex, 1);
+        this.layouts.delete(tabId);
+      }
+      this.pruneEmptyWorkspaces();
       return ok({ closed: target });
     }
 
@@ -701,8 +829,9 @@ export class FakeHerdr {
     }
 
     if (command === "focus") {
-      for (const pane of this.panes) {
-        pane.focused = pane.pane_id === target;
+      const pane = this.paneById(String(target));
+      for (const item of this.panes) {
+        item.focused = item.pane_id === pane?.pane_id;
       }
       return ok({ focused: target });
     }

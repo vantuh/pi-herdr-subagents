@@ -39,6 +39,11 @@ const EXTENSION_DIR = path.resolve(
 export interface E2eOptions {
   /** Agent profiles written to the fixture project. Defaults to `scout`. */
   profiles?: AgentProfileFixture[];
+  /**
+   * Layout written to the fixture's herdr-agents.json. Existing scenarios
+   * default to "pane"; "workspace" exercises the extension's real default.
+   */
+  layout?: "pane" | "workspace";
   /** Seconds to wait for the Herdr server socket. */
   serverTimeoutMs?: number;
 }
@@ -104,6 +109,12 @@ export async function createE2eHarness(
   await writeAgentProfiles(
     path.join(cwd, ".pi", "agents"),
     options.profiles ?? [{ name: "scout" }],
+  );
+  // Layout config lives in the agent dir (herdr-agents.json), not in env.
+  await fs.writeFile(
+    path.join(agentDir, "herdr-agents.json"),
+    `${JSON.stringify({ layout: options.layout ?? "pane" })}\n`,
+    "utf8",
   );
 
   // The children load the extension under test from their own config dir.
@@ -230,10 +241,11 @@ export async function createE2eHarness(
     HERDR_PANE_ID: orchestratorPaneId,
     HERDR_AGENTS_STATE_PATH: statePath,
     PI_CODING_AGENT_DIR: agentDir,
-    // Use the real binary and the real layout default.
+    // Use the real binary; layout comes from the fixture's herdr-agents.json.
     HERDR_BIN_PATH: undefined,
     HERDR_FAKE_CLI_SOCKET: undefined,
     HERDR_AGENTS_LAYOUT: undefined,
+    HERDR_AGENTS_WORKSPACE_LABEL: undefined,
     HERDR_AGENT_CHILD: undefined,
   });
 

@@ -4,30 +4,124 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  DEFAULT_AGENTS_WORKSPACE_LABEL,
   DEFAULT_HERDR_AGENTS_LAYOUT,
   getHerdrAgentsLayout,
+  getHerdrAgentsWorkspaceLabel,
+  herdrAgentsConfigPath,
+  loadHerdrAgentsConfig,
   readCouncilConfig,
 } from "../config.ts";
 
-test("uses pane layout by default", () => {
-  assert.equal(DEFAULT_HERDR_AGENTS_LAYOUT, "pane");
-  assert.equal(getHerdrAgentsLayout({}), "pane");
+test("uses the workspace layout by default", async () => {
+  assert.equal(DEFAULT_HERDR_AGENTS_LAYOUT, "workspace");
+  assert.equal(getHerdrAgentsLayout({}), "workspace");
+  assert.equal(getHerdrAgentsLayout(await loadHerdrAgentsConfig("/does/not/exist.json")), "workspace");
 });
 
-test("allows tab layout through HERDR_AGENTS_LAYOUT", () => {
-  assert.equal(getHerdrAgentsLayout({ HERDR_AGENTS_LAYOUT: "tab" }), "tab");
-  assert.equal(getHerdrAgentsLayout({ HERDR_AGENTS_LAYOUT: " TAB " }), "tab");
+test("allows pane and tab layouts through the config", () => {
+  assert.equal(getHerdrAgentsLayout({ layout: "pane" }), "pane");
+  assert.equal(getHerdrAgentsLayout({ layout: "tab" }), "tab");
+  assert.equal(getHerdrAgentsLayout({ layout: "workspace" }), "workspace");
 });
 
-test("falls back to pane for unsupported values", () => {
-  assert.equal(getHerdrAgentsLayout({ HERDR_AGENTS_LAYOUT: "other" }), "pane");
+test("falls back to the workspace layout for unsupported values", async () => {
+  assert.equal(
+    getHerdrAgentsLayout(
+      await loadHerdrAgentsConfig(await writeConfigFile('{"layout":"other"}')),
+    ),
+    "workspace",
+  );
 });
 
+test("workspace label defaults to subagents", () => {
+  assert.equal(DEFAULT_AGENTS_WORKSPACE_LABEL, "subagents");
+  assert.equal(getHerdrAgentsWorkspaceLabel({}), "subagents");
+});
+
+test("workspace label is configurable and trimmed", () => {
+  assert.equal(
+    getHerdrAgentsWorkspaceLabel({ workspace: { label: " Pi Agents " } }),
+    "Pi Agents",
+  );
+});
+
+test("blank workspace label falls back to the default", () => {
+  assert.equal(
+    getHerdrAgentsWorkspaceLabel({ workspace: { label: "   " } }),
+    "subagents",
+  );
+});
+
+let configTmp: string | null = null;
 let councilTmp: string | null = null;
 test.after(async () => {
+  if (configTmp) {
+    await rm(configTmp, { recursive: true, force: true });
+  }
   if (councilTmp) {
     await rm(councilTmp, { recursive: true, force: true });
   }
+});
+
+// Lazy on purpose: a top-level await would defer test registration past the
+// first awaited line, which breaks Bun's node:test compat in multi-file runs.
+async function tmpDir(): Promise<string> {
+  configTmp ??= await mkdtemp(join(tmpdir(), "herdr-agents-config-"));
+  return configTmp;
+}
+
+async function writeConfigFile(content: string): Promise<string> {
+  const path = join(await tmpDir(), `config-${crypto.randomUUID()}.json`);
+  await writeFile(path, content, "utf8");
+  return path;
+}
+
+test("config path sits in the given agent dir", () => {
+  assert.equal(herdrAgentsConfigPath("/agents"), "/agents/herdr-agents.json");
+});
+
+test("reads a valid config file", async () => {
+  const path = await writeConfigFile(
+    JSON.stringify({ layout: "tab", workspace: { label: "Pi Agents" } }),
+  );
+  const config = await loadHerdrAgentsConfig(path);
+  assert.equal(getHerdrAgentsLayout(config), "tab");
+  assert.equal(getHerdrAgentsWorkspaceLabel(config), "Pi Agents");
+});
+
+test("returns an empty config for a missing file", async () => {
+  assert.deepEqual(
+    await loadHerdrAgentsConfig(join(await tmpDir(), "missing.json")),
+    {},
+  );
+});
+
+test("returns an empty config for invalid JSON", async () => {
+  assert.deepEqual(
+    await loadHerdrAgentsConfig(await writeConfigFile("{not json")),
+    {},
+  );
+});
+
+test("returns an empty config for a non-object file", async () => {
+  assert.deepEqual(
+    await loadHerdrAgentsConfig(await writeConfigFile(JSON.stringify(["tab"]))),
+    {},
+  );
+  assert.deepEqual(
+    await loadHerdrAgentsConfig(await writeConfigFile('"tab"')),
+    {},
+  );
+});
+
+test("drops unknown layout values but keeps the rest", async () => {
+  const config = await loadHerdrAgentsConfig(
+    await writeConfigFile(
+      JSON.stringify({ layout: "splits", workspace: { label: "X" } }),
+    ),
+  );
+  assert.deepEqual(config, { workspace: { label: "X" } });
 });
 
 // Lazy on purpose: a top-level await would defer test registration past the

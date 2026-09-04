@@ -1,18 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildAgentFinishedNotificationArgs,
   buildAgentPromptArgs,
   buildAgentRenameArgs,
   buildAgentWaitArgs,
   buildEqualAgentSplitRatios,
   chooseAgentColumnSplitTarget,
+  findAgentsWorkspaceId,
   findReusableAgentPane,
   findReusableAgentTab,
   HerdrCliError,
   listManagedWorkspaceAgents,
   mapPromptError,
   parseAgentSnapshot,
+  parseCreatedWorkspace,
   parseStartedAgentSnapshot,
+  parseWorkspaceListOutput,
   promptAcceptanceObserved,
   redactHerdrArgs,
   sanitizeHerdrOutput,
@@ -764,3 +768,132 @@ test("does not list or reuse another orchestrator's agents", () => {
     panes[3],
   );
 });
+
+test("parses the workspace list envelope and drops malformed entries", () => {
+  assert.deepEqual(
+    parseWorkspaceListOutput(
+      JSON.stringify({
+        result: {
+          workspaces: [
+            { workspace_id: "w1", label: "main", focused: true },
+            { workspace_id: "w2", label: "Agents" },
+            { label: "no id" },
+            "junk",
+          ],
+        },
+      }),
+    ),
+    [
+      { workspace_id: "w1", label: "main", focused: true },
+      { workspace_id: "w2", label: "Agents" },
+    ],
+  );
+  assert.throws(() => parseWorkspaceListOutput("this is not json"));
+  assert.throws(() =>
+    parseWorkspaceListOutput(JSON.stringify({ result: {} })),
+  );
+});
+
+test("reads the created workspace id and root tab id from workspace create output", () => {
+  assert.deepEqual(
+    parseCreatedWorkspace(
+      JSON.stringify({
+        result: {
+          workspace: { workspace_id: "w7" },
+          tab: { tab_id: "w7:t1" },
+        },
+      }),
+    ),
+    { workspaceId: "w7", rootTabId: "w7:t1" },
+  );
+  assert.deepEqual(
+    parseCreatedWorkspace(
+      JSON.stringify({ result: { workspace: { workspace_id: "w7" } } }),
+    ),
+    { workspaceId: "w7" },
+  );
+  assert.deepEqual(parseCreatedWorkspace("this is not json"), {});
+  assert.deepEqual(
+    parseCreatedWorkspace(JSON.stringify({ result: { workspace: {} } })),
+    {},
+  );
+});
+
+test("builds the agent-finished notification with a truncated body", () => {
+  assert.deepEqual(
+    buildAgentFinishedNotificationArgs("Scout", "scout_ab12", "All done."),
+    ["notification", "show", "Pi · Scout finished", "--body", "All done."],
+  );
+
+  const long = "x".repeat(500);
+  const args = buildAgentFinishedNotificationArgs("Scout", "scout", long);
+  const body = args.at(-1)!;
+  assert.equal(body.length, 401); // 400 chars + ellipsis
+  assert.ok(body.endsWith("…"));
+  assert.deepEqual(
+    buildAgentFinishedNotificationArgs("Scout", "scout", "   "),
+    [
+      "notification",
+      "show",
+      "Pi · Scout finished",
+      "--body",
+      "scout finished with an empty result.",
+    ],
+  );
+});
+
+test("record-driven reuse synthesizes the tab when it is not in the listed tabs", () => {
+  // A managed record whose tab exists in another workspace (or predates the
+  // current listTabs scope) still resolves reuse from the record, with the
+  // recorded label standing in for the missing TabInfo.
+  const orchA: HerdrContext = {
+    panes: [
+      {
+        pane_id: "pane-orch",
+        tab_id: "tab-orch",
+        workspace_id: "w1",
+        terminal_id: "term-orch",
+        agent: "pi",
+      },
+      {
+        pane_id: "pane-scout",
+        tab_id: "tab-scout",
+        workspace_id: "w2",
+        terminal_id: "term-scout",
+        agent: "pi",
+        agent_status: "idle",
+      },
+    ],
+    currentPane: {
+      pane_id: "pane-orch",
+      tab_id: "tab-orch",
+      workspace_id: "w1",
+      terminal_id: "term-orch",
+      agent: "pi",
+    },
+    workspaceId: "w1",
+    currentTab: "tab-orch",
+  };
+  const state = emptyHerdrAgentsState();
+  state.agents["terminal:term-scout"] = {
+    lifecycle: "persistent",
+    layout: "workspace",
+    tabLabel: "Scout",
+    agent: "scout",
+    ownerTerminalId: "term-orch",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  const reused = findReusableAgentTab(orchA, [], "Scout", state);
+  assert.ok(reused, "expected a record-driven reuse");
+  assert.equal(reused.pane.pane_id, "pane-scout");
+  assert.deepEqual(reused.tab, {
+    tab_id: "tab-scout",
+    label: "Scout",
+  });
+
+  // A foreign owner must not adopt it.
+  state.agents["terminal:term-scout"].ownerTerminalId = "term-someone-else";
+  assert.equal(findReusableAgentTab(orchA, [], "Scout", state), undefined);
+});
+
