@@ -1,8 +1,12 @@
 # herdr-agents documentation
 
-`herdr-agents` is a Pi extension that turns Herdr into a one-shot or persistent delegation layer.
+> **RETIRED 2026-09-04 — not loaded, not maintained.** Migrated to
+> [pi-subagents](https://github.com/nicobailon/pi-subagents) (+ pi-intercom).
+> Kept in `pi/.pi/agent/archive/` for design reference. See `../README.md`.
 
-It registers a `herdr_agent` tool. The tool spawns agents into a dedicated subagents workspace by default (one tab per agent, invisible until focused), starts named Pi agents through Herdr's agent automation API, and gives them role-specific prompts from `~/.pi/agent/agents/*.md`. In UI sessions the tool detaches by default: the widget poller delivers the persisted result artifact (or terminal output fallback) and closes one-shot targets. Headless sessions block until the result is ready. Pass `wait: true` when the answer is needed before continuing this turn. Persistent agents stay open and are reused for matching follow-up tasks. `herdr-agents.json` in the Pi agent dir selects `layout: "pane"` or `"tab"` to restore the legacy split-pane or per-tab layouts; layout is intentionally absent from the tool schema.
+`herdr-agents` is a Pi extension that turns Herdr into a one-shot delegation layer.
+
+It registers a `herdr_agent` tool. The tool spawns agents into a dedicated subagents workspace by default (one tab per agent, invisible until focused), starts named Pi agents through Herdr's agent automation API, and gives them role-specific prompts from `~/.pi/agent/agents/*.md`. In UI sessions the tool detaches by default: the widget poller delivers the persisted result artifact (or terminal output fallback) and closes one-shot targets. Headless sessions block until the result is ready. Pass `wait: true` when the answer is needed before continuing this turn. A closed one-shot can be continued with its context via `resumeClosed`. `herdr-agents.json` in the Pi agent dir selects `layout: "pane"` or `"tab"` to restore the legacy split-pane or per-tab layouts; layout is intentionally absent from the tool schema.
 
 ## Why this exists
 
@@ -14,20 +18,19 @@ This extension moves that workflow into a tool:
 - fewer raw `herdr` CLI calls from the model;
 - consistent target naming and child protocol;
 - fresh context for one-shot delegated agents;
-- persistent Herdr panes or tabs when a role should remain inspectable and reusable.
+- session-file resume, so a closed agent can be continued with its accumulated context.
 
 ## Delegation policy
 
 Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. This extension docs describe **how** Pi/Herdr delegates.
 
-| Situation | `agent` profile | Delegate? | Default lifecycle | Expected output |
-|---|---|:---:|---:|---|
-| Unknown code, entry points, call/data-flow tracing | `scout` | when needed | one-shot | file/line evidence, flow, likely change areas, risks |
-| Official docs, API behavior, library choice, current facts | `researcher` | when needed | one-shot | concise decision brief, primary-source links, gaps |
-| Multi-file approach after code/requirements are understood | `planner` | after scout | one-shot | ordered plan with paths, validations, open questions |
-| Clear and isolated implementation slice | `worker` | after plan | one-shot | minimal diff and actual validation result |
-| Non-trivial/risky final diff, migration, public contract | `reviewer` | when needed | one-shot | evidence-backed Critical / Warnings / Suggestions |
-| Bounded domain with expected follow-up | same role | — | persistent | stable scope-specific `tabLabel` and explicit handoff |
+| Situation | `agent` profile | Delegate? | Expected output |
+|---|---|:---:|---|
+| Unknown code, entry points, call/data-flow tracing | `scout` | when needed | file/line evidence, flow, likely change areas, risks |
+| Official docs, API behavior, library choice, current facts | `researcher` | when needed | concise decision brief, primary-source links, gaps |
+| Multi-file approach after code/requirements are understood | `planner` | after scout | ordered plan with paths, validations, open questions |
+| Clear and isolated implementation slice | `worker` | after plan | minimal diff and actual validation result |
+| Non-trivial/risky final diff, migration, public contract | `reviewer` | when needed | evidence-backed Critical / Warnings / Suggestions |
 
 **When NOT to delegate** (stay direct in Orchestrator tab):
 
@@ -38,12 +41,11 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Thi
 
 **Negative policy:** no parallel workers with overlapping write areas. Parallelize only independent reads or disjoint write slices (4–5 agents max). The limit is independence, not count: past 2–3 agents, each additional one must have genuinely independent work. Five is the upper bound because a fifth pane in the 40% agent column is ~1/5 of terminal height.
 
-**Lifecycle examples:**
+**Continuation examples:**
 
-- One-shot scout: `{ "agent": "scout", "task": "...", "lifecycle": "oneshot" }` — managed target closes after result.
-- Persistent scout: `{ "agent": "scout", "tabLabel": "Scout — message-bus", "task": "...", "lifecycle": "persistent" }` — follow-up reuses the same label.
+- One-shot scout: `{ "agent": "scout", "task": "..." }` — the managed target closes after the result.
+- Continue a closed agent with its context: `{ "agent": "scout", "tabLabel": "Scout — message-bus", "task": "...", "resumeClosed": true }` — only when no live agent with that label exists. A parked question is answered in place; a live working or detached agent must be re-waited or collected first.
 - Re-wait after timeout: `{ "agent": "scout", "tabLabel": "Scout — message-bus" }` with no `task`.
-- Resume a closed one-shot: `{ "agent": "scout", "tabLabel": "Scout — message-bus", "task": "...", "resumeClosed": true }` — only when no live agent with that label exists. A live question is answered in place; a live working or detached agent must be re-waited or collected.
 
 ## Main concepts
 
@@ -59,10 +61,7 @@ A child Pi process launched in a managed Herdr pane or tab.
 
 The internal layout defaults to `workspace`: every agent gets its own tab inside a dedicated subagents workspace (label from `herdr-agents.json` → `workspace.label`, default `subagents`), so the Orchestrator's workspace never gains splits or tabs. The workspace is resolved from `herdr workspace list` on every spawn and recreated if the user closed it by hand. `/herdr-agents` lists managed agents across all workspaces and focuses an agent with `tab focus` on its workspace-qualified tab id; an agent that finishes unseen also raises a `herdr notification show`. `layout: "pane"` selects the legacy split layout: the first agent splits the Orchestrator pane to the right at 60/40, and additional agents split the largest managed pane downward in the right column. After spawn or close, the extension rebalances that column to equal heights (for example, three agents use thirds). For new pane agents, placement is serialized through successful `agent start`, managed-state recording, and rebalancing so parallel tool calls preserve that structure. `layout: "tab"` selects one-tab-per-agent inside the current workspace.
 
-Lifecycle modes are independent of layout:
-
-- `lifecycle: "oneshot"` — one-shot task. The extension waits for the result, reads output, then closes the managed target after successful completion.
-- `lifecycle: "persistent"` — reusable role. The target remains open after completion and matching future tasks are sent to it instead of creating a duplicate.
+Every agent is a one-shot: the extension waits for the result (or the poller collects it), reads the output, then closes the managed target after successful completion. Follow-up tasks go through `resumeClosed`, which reopens the archived session with its full context.
 
 The child receives:
 
@@ -107,7 +106,7 @@ The Orchestrator checks `question.md` before the result. When a question is
 present it returns early with the question text and leaves the target open,
 **including one-shots**, which are closed only after a real completion. The
 answer is sent as an ordinary `task` with the same `tabLabel`, so a parked
-target is reusable by label regardless of lifecycle; the stale question is
+target is reachable by label; the stale question is
 cleared before each prompt.
 
 `ask_question` must never block the turn. A session parked on a dialog reports
@@ -191,7 +190,7 @@ package). A missing or invalid file falls back to the defaults:
 `layout` accepts `workspace` (default), `pane`, or `tab`. The config is read
 per spawn, so edits apply to new tool calls without a restart. Note that
 switching `layout` while agents are live orphans them — they remain visible
-and closable via `/herdr-agents`, but re-wait and persistent reuse only find
+and closable via `/herdr-agents`, but re-wait only finds
 agents matching the currently configured layout. Close live agents before
 changing `layout`. The checked-in `herdr-agents.json` equals the built-in
 defaults (documentation-by-example); deleting it changes nothing.
@@ -207,15 +206,16 @@ environment-only for test harnesses and debugging.
 ```ts
 {
   agent: string;
-  task?: string;
+  task?: string; // omit to re-wait on a live agent by tabLabel
   tabLabel?: string;
   wait?: boolean;
-  timeoutMs?: number;
-  lifecycle?: "oneshot" | "persistent";
-  resumeClosed?: boolean;
+  resumeClosed?: boolean; // continue a closed one-shot with its context
   model?: string; // fresh-spawn-only override of the profile model
 }
 ```
+
+The wait timeout is a fixed code constant (600 s); after an interrupt the tool
+returns the soft re-wait hint.
 
 ### `/run` command
 
@@ -236,8 +236,7 @@ Typical tool call:
   "agent": "reviewer",
   "tabLabel": "HR Correctness",
   "task": "Review the current diff for correctness and regressions...",
-  "wait": true,
-  "lifecycle": "oneshot"
+  "wait": true
 }
 ```
 
@@ -257,21 +256,20 @@ Typical per-model tool call:
   "model": "opus-5",
   "tabLabel": "Council — opus-5",
   "task": "Why is X better than Y?",
-  "wait": false,
-  "lifecycle": "oneshot"
+  "wait": false
 }
 ```
 
 ## Known design choices
 
-- `lifecycle: "oneshot"` is the default: use one-shot agents unless the role needs to survive for later tasks.
+- Every agent is a one-shot; there is no persistent lifecycle. Continuation with context goes through `resumeClosed` (session-file resume).
 - One-shot targets are closed only after successful completion and output read; timeout/error/abort leaves them open for debugging.
-- `lifecycle: "persistent"` reuses an existing managed agent by exact label. Pane mode searches the Orchestrator tab; legacy tab mode searches sibling tabs.
-- Fresh context is preferred over forked conversation context for newly created agents.
+- A task explicitly addressed by `tabLabel` to a live agent is rejected with guidance (re-wait, answer the parked question, or `resumeClosed` after it closes) instead of silently spawning a duplicate.
+- Fresh context is preferred over forked conversation context for newly created agents; `resumeClosed` is the deliberate exception that restores an archived session.
 - Child agents are prevented from recursively registering `herdr_agent` by `HERDR_AGENT_CHILD=1`; child mode retains the result-artifact writer and the `ask_question` channel (`child.ts`).
 - Herdr 0.7.5 or newer is required for `agent start`, atomic `agent prompt`, `agent wait`, `agent send-keys`, `agent read`, and `api snapshot`.
-- Human-readable labels remain the persistent reuse key. A separate generated Herdr automation name is the stable command target; legacy agents fall back to pane IDs.
-- Completion output is persisted in a per-agent artifact, so large results do not depend on terminal scrollback. The artifact is cleared before each prompt to prevent stale persistent-agent output; terminal reading remains the fallback when no new artifact is written.
+- Human-readable labels identify agents to the model (re-wait, answer, resume). A separate generated Herdr automation name is the stable command target; legacy agents fall back to pane IDs.
+- Completion output is persisted in a per-agent artifact, so large results do not depend on terminal scrollback. The artifact is cleared before each prompt to prevent stale output; terminal reading remains the fallback when no new artifact is written.
 - The Orchestrator must synthesize child results. Child output should not be blindly forwarded.
 - Raw Herdr CLI remains useful for diagnostics, but normal delegation should go through `herdr_agent`.
 

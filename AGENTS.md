@@ -1,25 +1,28 @@
 # AGENTS.md — herdr-agents extension
 
+> **RETIRED 2026-09-04 — not loaded, not maintained.** Migrated to
+> [pi-subagents](https://github.com/nicobailon/pi-subagents) (+ pi-intercom).
+> Kept in `pi/.pi/agent/archive/` for design reference. See `../README.md`.
+
 This extension belongs to the dotfiles repo and is symlinked into `~/.pi/agent/extensions/herdr-agents` via the `pi` stow package.
 
 ## Purpose
 
-`herdr-agents` gives Pi a `herdr_agent` tool for one-shot or persistent delegation through Herdr panes or tabs. Layout is internal configuration and is not part of the tool schema.
+`herdr-agents` gives Pi a `herdr_agent` tool for one-shot delegation through Herdr panes or tabs. Layout is internal configuration and is not part of the tool schema.
 
 The intended model behavior:
 
 - The main Pi session is the Orchestrator.
 - When isolated context helps, the Orchestrator calls `herdr_agent` instead of raw `herdr` CLI commands.
-- `herdr_agent` starts a Pi process in a named Herdr target using an agent profile from `~/.pi/agent/agents/*.md`.
-- Use `lifecycle: "oneshot"` for one-shot tasks; the extension closes that agent target after a successful result.
-- Use `lifecycle: "persistent"` when a role should stay available for follow-up tasks or accumulate context; the extension reuses a matching target automatically.
+- `herdr_agent` starts a Pi process in a named Herdr target using an agent profile from `~/.pi/agent/agents/*.md`. Every agent is a one-shot: the target closes after a successful result.
+- Continuation with accumulated context goes through `resumeClosed: true` with the same `tabLabel`: the archived child session is reopened, so the resumed agent keeps the prior conversation. A live agent is never resumed over: working agents are re-waited (omit `task`), parked questions are answered in place, settled detached results are collected first.
 - The Orchestrator waits for the child result, reads it, and synthesizes the answer.
 - With `wait: false` nobody waits: the record is marked `detached` and the widget poller delivers the outcome once the agent settles — a result as `herdr_agent_result`, or a question as `herdr_agent_question` (checked first, same order as the blocking path). One-shot targets are closed only when they actually finished. `claimDetachedAgent` clears the flag in one locked read-modify-write, and synchronous collection releases it too, so delivery happens exactly once. Detaching is the default in UI sessions; headless sessions (`!ctx.hasUI`) default to `wait: true` because nobody would collect a detached result, and an explicit `wait: false` there is rejected.
-- A child may instead call `ask_question`, which writes `question.md` beside the result artifact and returns. The child ends its turn and goes idle, the existing wait fires, and the Orchestrator returns the question early while leaving the target open — one-shots included. The answer is a normal `task` with the same `tabLabel`; parked targets are reusable by label whatever their lifecycle.
+- A child may instead call `ask_question`, which writes `question.md` beside the result artifact and returns. The child ends its turn and goes idle, the existing wait fires, and the Orchestrator returns the question early while leaving the target open — one-shots included. The answer is a normal `task` with the same `tabLabel`; the parked target is reachable by label.
 
 ## Delegation policy
 
-Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Role matrix, lifecycle examples, and negative policy live in `docs/README.md`. Orchestrator mechanics are in `constants.ts` (`GLOBAL_INSTRUCTIONS`).
+Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Role matrix, continuation examples, and negative policy live in `docs/README.md`. Orchestrator mechanics are in `constants.ts` (`GLOBAL_INSTRUCTIONS`).
 
 | Situation | `agent` | Delegate? |
 |---|---|:---:|
@@ -50,7 +53,7 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 - Child panes start with `HERDR_AGENT_CHILD=1` and `PROCESS_LAUNCHED_BY_Q=1`: delegation tools stay disabled, final responses are persisted, zsh selects `HISTFILE=/dev/null` from the child marker, and Kiro's terminal wrapper cannot hide the real shell from `herdr agent start`.
 - `HERDR_PANE_ID` is preferred over focused pane detection. Focus can move while a tool is running.
 - New agents start through `herdr agent start`; prompts use atomic `herdr agent prompt` (no `--wait`), then wait for a newer `state_change_seq` with `working`/`blocked` (or settled idle/done), with one Enter nudge only while idle and `interactive_ready`, before `herdr agent wait --until idle --until done`. This avoids Herdr's hardcoded 5s `agent_prompt_stalled` gate. Abort / Herdr wait timeout returns a soft re-wait hint (child stays); re-wait uses `herdr agent wait` only.
-- An explicit `wait: false` in a headless session (`!ctx.hasUI`) is rejected for any lifecycle, because nobody is around to collect a detached result. With a UI, `wait: false` (the default) is valid: the widget poller delivers the outcome and closes one-shot targets. `/council` depends on that path.
+- An explicit `wait: false` in a headless session (`!ctx.hasUI`) is rejected, because nobody is around to collect a detached result. With a UI, `wait: false` (the default) is valid: the widget poller delivers the outcome and closes one-shot targets. `/council` depends on that path.
 - `herdr_agent` accepts a fresh-spawn-only `model` override that replaces the profile model for that spawn.
 - `/council <question>` reads `council.json` from `getAgentDir()` (`~/.pi/agent/council.json` by default). It injects a persisted user message with the question and a per-model spawn contract (`researcher`, `wait: false`, `tabLabel: "Council — <model>"`). The Orchestrator consolidates after every council answer is delivered. Empty question shows usage; a busy Orchestrator or empty/unreadable config warns and injects nothing.
 - Layout defaults to `workspace`, configured via `herdr-agents.json` in the Pi agent dir (`layout: "pane"` or `"tab"` for the legacy layouts); the model receives no layout parameter.
@@ -119,8 +122,9 @@ Both harnesses redirect `TMPDIR`, `HERDR_AGENTS_STATE_PATH` and
 artifacts are never touched.
 
 Covered by the integration layer: one-shot spawn/collect/close, scrollback
-fallback, persistent reuse by label, the `ask_question` round trip (parked
-one-shot answered by label), parallel spawns serialized into one agent column
+fallback, the `ask_question` round trip (parked one-shot answered by label),
+rejection of label-addressed tasks to live agents, parallel spawns serialized
+into one agent column
 with rebalancing, `agent_pane_busy` retry, `agent_kind_mismatch` recovery, the
 single Enter nudge for a stalled prompt, timeout/abort soft re-wait plus the
 re-wait path, detached result and question delivery through the widget poller
@@ -140,7 +144,7 @@ now have tests, with the finding they came from:
 | Split targets `HERDR_PANE_ID`, not the pane Herdr reports as focused | §5 |
 | A reused agent's previous settled state is not accepted as this turn's result | §8 |
 | A child that finishes as `done` rather than `idle` is still collected | §8 |
-| One-shot cleanup removes the managed temp dir; a persistent agent keeps it | §9 |
+| One-shot cleanup removes the managed temp dir; a running detached agent keeps it | §9 |
 | `agent_pane_busy` retry is bounded and gives up without closing anything | §12 |
 | `/herdr-agents` focuses, closes (with temp cleanup), and reports an empty workspace | §9 |
 | Two detached outcomes in one poller tick arrive as one batch, only the last triggering a turn | index.ts |
@@ -151,15 +155,15 @@ successful call; the `agent read` fallback window; a collected result surviving 
 failed pane close (with `closeError`); malformed `pane split` / `tab create` /
 `api snapshot` output; refusing to act when the current pane is unidentifiable;
 the whole flow still completing when the state file is unusable; `wait: false`
-re-wait; detached persistent delivery without closing; a settled detached agent
-with no artifact keeping its claim; tab reuse by label and the `tab list`
+re-wait; detached one-shot delivery closing the agent; a settled detached agent
+with no artifact keeping its claim; tab labels staying unique across spawns and the `tab list`
 fallback when `tab create` omits the id; widget appear/hide/clear including the
 poller stopping; `/run` busy, empty and completion behavior; `/herdr-agents`
 non-TUI and failure notifications; both message renderers; no layout churn for a
 lone agent; state pruning; and `0600` on the state file and artifacts.
 
 Covered by the e2e layer: a real child produces a real result artifact and its
-pane is really closed; a persistent child keeps its context across two tasks
+pane is really closed; a resumed one-shot keeps its context across tasks
 (asserted on the model's request history); a closed one-shot can be resumed
 with `resumeClosed` and still sees prior context; a real `ask_question` tool call
 travels from a tools-restricted child back to the Orchestrator and the answer

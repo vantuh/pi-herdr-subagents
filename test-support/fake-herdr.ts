@@ -199,6 +199,8 @@ export class FakeHerdr {
   private omitTabIdOnCreate = false;
   private omitSessionMeta = false;
   private agentStartDelayMs = 0;
+  /** Caps the --timeout the extension passes to `agent wait` (tests). */
+  waitTimeoutCapMs = Number.POSITIVE_INFINITY;
   /** Prompts whose Enter never fired, keyed by agent name. */
   private readonly stalledPrompts = new Map<string, () => Promise<void>>();
   private behavior: ChildBehavior = defaultBehavior;
@@ -820,7 +822,11 @@ export class FakeHerdr {
 
     if (command === "wait") {
       if (!agent) return fail("agent_not_found", `unknown agent ${target}`);
-      return this.waitForAgent(agent, Number(flag(argv, "--timeout") ?? 30000));
+      const requested = Number(flag(argv, "--timeout") ?? 30000);
+      return this.waitForAgent(
+        agent,
+        Math.min(requested, this.waitTimeoutCapMs),
+      );
     }
 
     if (command === "read") {

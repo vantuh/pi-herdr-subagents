@@ -49,7 +49,7 @@ export function buildHerdrAgentParams(
     model: Type.Optional(
       Type.String({
         description:
-          "Override the agent profile's model for this spawn (e.g. ask the same profile to several different models). Only applies to a fresh spawn; reused agents keep the model they started with.",
+          "Override the agent profile's model for this spawn (e.g. ask the same profile to several different models). Only applies to a fresh spawn.",
       }),
     ),
     wait: Type.Optional(
@@ -58,21 +58,10 @@ export function buildHerdrAgentParams(
           "Wait for the Herdr agent to finish and read its result. Default: false — the tool returns as soon as the prompt is accepted and the result is delivered to you on its own once the agent finishes. Pass true only when you need the answer before continuing this turn. Headless sessions require wait: true; an explicit false is rejected.",
       }),
     ),
-    timeoutMs: Type.Optional(
-      Type.Number({
-        description: "Wait timeout in milliseconds. Default: 600000.",
-      }),
-    ),
-    lifecycle: Type.Optional(
-      Type.Union([Type.Literal("oneshot"), Type.Literal("persistent")], {
-        description:
-          "Agent lifecycle. Use 'oneshot' for one-off tasks that close after completion, or 'persistent' to keep/reuse the agent for follow-up tasks. Default: oneshot. Follow-up tasks to a persistent agent must repeat lifecycle: 'persistent' with the same tabLabel; omitting lifecycle spawns a new one-shot agent instead of reusing it.",
-      }),
-    ),
     resumeClosed: Type.Optional(
       Type.Boolean({
         description:
-          "Resume a closed one-shot agent owned by this Orchestrator session, matched by exact tabLabel. Requires a non-empty task and tabLabel. Never resumes over a live agent: parked questions are answered in place, working agents must be re-waited, settled detached results must be collected, and persistent agents are reused. Omit task to re-wait on a still-running agent — that never resurrects a closed one.",
+          "Continue a closed one-shot agent owned by this Orchestrator session with its accumulated context, matched by exact tabLabel. Requires a non-empty task and tabLabel. This is the way to give a follow-up task to a previous agent. Never resumes over a live agent: parked questions are answered in place, working agents must be re-waited, settled detached results must be collected. Omit task to re-wait on a still-running agent — that never resurrects a closed one.",
       }),
     ),
   });

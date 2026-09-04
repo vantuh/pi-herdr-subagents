@@ -126,7 +126,7 @@ test("falls back to pane scrollback when the child writes no artifact", async ()
   });
 });
 
-test("passes profile model and tool allowlist to the child, and keeps a persistent pane open", async () => {
+test("passes profile model and tool allowlist to the child and closes the one-shot", async () => {
   await withHarness(
     {
       profiles: [
@@ -139,12 +139,9 @@ test("passes profile model and tool allowlist to the child, and keeps a persiste
       ],
     },
     async (harness) => {
-      const first = await harness.call({
-        agent: "worker",
-        task: "Slice one",
-        lifecycle: "persistent",
-      });
-      assert.equal(first.details.closed, false);
+      // Detached: no close, so the spawn-time system prompt stays readable.
+      const first = await harness.callRaw({ agent: "worker", task: "Slice one" });
+      assert.equal(first.details.closed, undefined);
 
       const start = harness.fake.callsMatching("agent", "start")[0];
       assert.ok(start);
@@ -158,24 +155,8 @@ test("passes profile model and tool allowlist to the child, and keeps a persiste
       assert.match(systemPrompt, /WORKER PROFILE BODY/);
       assert.match(systemPrompt, /## Herdr agent protocol/);
 
-      // A second task reuses the same pane by label instead of splitting again.
-      const second = await harness.call({
-        agent: "worker",
-        task: "Slice two",
-        lifecycle: "persistent",
-      });
-      assert.equal(second.details.reused, true);
-      assert.equal(harness.fake.callsMatching("pane", "split").length, 1);
       assert.equal(harness.fake.callsMatching("agent", "start").length, 1);
-      assert.equal(harness.fake.callsMatching("agent", "prompt").length, 2);
-      assert.match(second.content[0].text, /turn 2/);
-
-      const state = await harness.readState();
-      const records = Object.values(state.agents);
-      assert.equal(records.length, 1);
-      assert.equal(records[0]?.lifecycle, "persistent");
-      assert.equal(records[0]?.tabLabel, "Worker");
-      assert.equal(records[0]?.layout, "pane");
+      assert.equal(harness.fake.callsMatching("agent", "prompt").length, 1);
     },
   );
 });
@@ -192,13 +173,13 @@ test("model override replaces the profile model for a fresh spawn", async () => 
       ],
     },
     async (harness) => {
-      const result = await harness.call({
+      const result = await harness.callRaw({
         agent: "worker",
         task: "Slice one",
         model: "opus-5",
-        lifecycle: "persistent",
       });
       assert.equal(result.isError ?? false, false);
+      assert.equal(result.details.waited, false);
 
       const start = harness.fake.callsMatching("agent", "start")[0];
       assert.ok(start);
@@ -211,17 +192,18 @@ test("model override replaces the profile model for a fresh spawn", async () => 
   );
 });
 
-test("rejects a task addressed to a live persistent agent without lifecycle: persistent", async () => {
+test("rejects a task addressed to a live agent by its label", async () => {
   await withHarness({}, async (harness) => {
-    const first = await harness.call({
+    harness.fake.setBehavior(() => ({ neverSettle: true }));
+    const first = await harness.callRaw({
       agent: "scout",
       task: "First task",
-      lifecycle: "persistent",
       tabLabel: "Scout — repo",
     });
     assert.equal(first.isError ?? false, false);
 
-    // Omitted lifecycle must not silently spawn a duplicate "#2" agent.
+    // A task addressed by label to a live agent must not silently spawn a
+    // duplicate "#2" agent.
     const duplicate = await harness.call({
       agent: "scout",
       task: "Follow-up task",
@@ -230,24 +212,28 @@ test("rejects a task addressed to a live persistent agent without lifecycle: per
     assert.equal(duplicate.isError, true);
     assert.match(
       duplicate.content[0].text,
-      /persistent Herdr agent named "Scout — repo" exists/,
+      /live Herdr agent named "Scout — repo" already exists/,
     );
-    assert.match(duplicate.content[0].text, /lifecycle: "persistent"/);
+    assert.match(duplicate.content[0].text, /re-wait/);
+    assert.match(duplicate.content[0].text, /resumeClosed/);
     assert.equal(harness.fake.panes.length, 2); // orchestrator + agent
     assert.equal(harness.fake.callsMatching("agent", "start").length, 1);
     assert.equal(harness.fake.callsMatching("agent", "prompt").length, 1);
 
-    // The corrected call reuses the existing pane.
-    const fixed = await harness.call({
+    // Re-wait without a task still reaches the live agent: settle it first,
+    // as a real child would, then collect.
+    const record = Object.values((await harness.readState()).agents)[0];
+    assert.ok(record?.automationName);
+    await harness.fake.completeAgent(record.automationName, "Late result");
+
+    const reWaited = await harness.call({
       agent: "scout",
-      task: "Follow-up task",
-      lifecycle: "persistent",
       tabLabel: "Scout — repo",
     });
-    assert.equal(fixed.isError ?? false, false);
-    assert.equal(fixed.details.reused, true);
-    assert.equal(harness.fake.panes.length, 2);
-    assert.equal(harness.fake.callsMatching("agent", "prompt").length, 2);
+    assert.equal(reWaited.isError ?? false, false);
+    assert.match(reWaited.content[0].text, /Late result/);
+    assert.equal(reWaited.details.closed, true);
+    assert.equal(harness.fake.callsMatching("agent", "prompt").length, 1);
   });
 });
 
@@ -350,22 +336,21 @@ test("serializes parallel spawns into one agent column and rebalances it", async
 
 test("keeps a single right column when a third agent joins two live ones", async () => {
   await withHarness({}, async (harness) => {
-    await harness.call({
+    // Detached spawns that never settle keep three agents live at once.
+    harness.fake.setBehavior(() => ({ neverSettle: true }));
+    await harness.callRaw({
       agent: "scout",
       task: "one",
-      lifecycle: "persistent",
       tabLabel: "Scout A",
     });
-    await harness.call({
+    await harness.callRaw({
       agent: "scout",
       task: "two",
-      lifecycle: "persistent",
       tabLabel: "Scout B",
     });
-    await harness.call({
+    await harness.callRaw({
       agent: "scout",
       task: "three",
-      lifecycle: "persistent",
       tabLabel: "Scout C",
     });
 
@@ -424,11 +409,13 @@ test("nudges Enter once when the prompt lands in the composer but never submits"
 test("returns a soft re-wait hint on wait timeout and collects the result on re-wait", async () => {
   await withHarness({}, async (harness) => {
     harness.fake.setBehavior(() => ({ neverSettle: true }));
+    // The wait timeout is a code constant now, so the fake caps the timeout
+    // it honors to make the interrupt observable.
+    harness.fake.waitTimeoutCapMs = 50;
 
     const timedOut = await harness.call({
       agent: "scout",
       task: "Long job",
-      timeoutMs: 400,
     });
 
     assert.equal(timedOut.details.interrupted, true);
@@ -440,6 +427,9 @@ test("returns a soft re-wait hint on wait timeout and collects the result on re-
     const record = Object.values((await harness.readState()).agents)[0];
     assert.ok(record?.automationName);
     await harness.fake.completeAgent(record.automationName, "Late result");
+
+    // Restore the real timeout so the re-wait can run to completion.
+    harness.fake.waitTimeoutCapMs = Number.POSITIVE_INFINITY;
 
     const reWaited = await harness.call({ agent: "scout", tabLabel: "Scout" });
 
@@ -512,24 +502,6 @@ test("refuses a detached one-shot without a UI poller to collect it", async () =
     const result = await harness.call({
       agent: "scout",
       task: "Find it",
-      wait: false,
-    });
-
-    assert.equal(result.isError, true);
-    assert.match(
-      result.content[0].text,
-      /requires wait: true in a headless session/,
-    );
-    assert.equal(harness.fake.calls.length, 0);
-  });
-});
-
-test("refuses a detached persistent agent without a UI poller to collect it", async () => {
-  await withHarness({ hasUI: false }, async (harness) => {
-    const result = await harness.call({
-      agent: "scout",
-      task: "Find it",
-      lifecycle: "persistent",
       wait: false,
     });
 
@@ -708,10 +680,11 @@ test("spawns a one-shot into the Agents workspace and closes its tab", async () 
 
 test("recreates the Agents workspace after the user closed it by hand", async () => {
   await withHarness({ layout: "workspace" }, async (harness) => {
-    await harness.call({
+    // A detached, never-settling spawn keeps the first workspace alive.
+    harness.fake.setBehavior(() => ({ neverSettle: true }));
+    await harness.callRaw({
       agent: "scout",
       task: "stay",
-      lifecycle: "persistent",
       tabLabel: "Scout One",
     });
     const first = harness.fake.workspaces.find(
@@ -723,12 +696,12 @@ test("recreates the Agents workspace after the user closed it by hand", async ()
     // The user closes the whole workspace; the next spawn must recover.
     assert.ok(harness.fake.closeWorkspaceById(first.workspace_id));
 
-    const result = await harness.call({
+    const result = await harness.callRaw({
       agent: "scout",
       task: "second",
       tabLabel: "Scout Two",
     });
-    assert.equal(result.details.closed, true);
+    assert.equal(result.details.waited, false);
     assert.equal(harness.fake.callsMatching("workspace", "create").length, 2);
     const secondWorkspaceId = flagValue(
       harness.fake.callsMatching("tab", "create").at(-1)!,
@@ -736,12 +709,11 @@ test("recreates the Agents workspace after the user closed it by hand", async ()
     );
     assert.ok(secondWorkspaceId);
     assert.notEqual(secondWorkspaceId, first.workspace_id);
-    // The second workspace emptied itself out again after the one-shot closed.
-    assert.equal(
+    // The recreated workspace holds a live agent this time, so it stays.
+    assert.ok(
       harness.fake.workspaces.find(
         (workspace) => workspace.label === "subagents",
       ),
-      undefined,
     );
   });
 });
@@ -798,10 +770,10 @@ test("/herdr-agents focuses an Agents-workspace agent via tab focus", async () =
   await withHarness(
     { layout: "workspace", dialogInputs: [["\r"]] },
     async (harness) => {
-      await harness.call({
+      harness.fake.setBehavior(() => ({ neverSettle: true }));
+      await harness.callRaw({
         agent: "scout",
         task: "stay",
-        lifecycle: "persistent",
         tabLabel: "Scout Ws",
       });
 
@@ -916,12 +888,11 @@ test("re-wait in workspace mode is a pure lookup and never creates the workspace
     // A missing workspace means "nothing to find", not a fresh workspace.
     assert.equal(harness.fake.callsMatching("workspace", "create").length, 0);
 
-    // A live detached persistent agent is still findable and re-waitable.
+    // A live detached agent is still findable and re-waitable.
     harness.fake.setBehavior(() => ({ neverSettle: true }));
     await harness.call({
       agent: "scout",
       task: "stay",
-      lifecycle: "persistent",
       tabLabel: "Scout Live",
       wait: false,
     });
@@ -937,51 +908,52 @@ test("re-wait in workspace mode is a pure lookup and never creates the workspace
   });
 });
 
-test("reuses a persistent agent by label across tasks in workspace mode", async () => {
+test("continues a closed workspace agent via resumeClosed", async () => {
   await withHarness({ layout: "workspace" }, async (harness) => {
     const first = await harness.call({
       agent: "scout",
       task: "first",
-      lifecycle: "persistent",
       tabLabel: "Scout Ws",
     });
     assert.equal(first.details.reused, false);
+    assert.equal(first.details.closed, true);
 
     const second = await harness.call({
       agent: "scout",
       task: "second",
-      lifecycle: "persistent",
       tabLabel: "Scout Ws",
+      resumeClosed: true,
     });
-    assert.equal(second.details.reused, true);
-    // Same agent tab, no duplicate workspace or spawn.
-    assert.equal(harness.fake.callsMatching("tab", "create").length, 1);
-    assert.equal(harness.fake.callsMatching("workspace", "create").length, 1);
+    assert.equal(second.details.resumed, true);
+    assert.equal(second.details.closed, true);
+    // The emptied workspace vanished with the first close, so the resume
+    // re-created it, and each task spawned its own agent tab.
+    assert.equal(harness.fake.callsMatching("workspace", "create").length, 2);
+    assert.equal(harness.fake.callsMatching("tab", "create").length, 2);
   });
 });
 
-test("persistent follow-up reuse performs no spawn-phase tab close", async () => {
+test("follow-up spawns perform no extra spawn-phase tab close", async () => {
   await withHarness({ layout: "workspace" }, async (harness) => {
-    await harness.call({
+    harness.fake.setBehavior(() => ({ neverSettle: true }));
+    await harness.callRaw({
       agent: "scout",
       task: "first",
-      lifecycle: "persistent",
       tabLabel: "Scout Ws",
     });
     const closesAfterFirst = harness.fake.callsMatching("tab", "close").length;
     // Creating spawn closes the workspace root tab; the agent tab stays open.
     assert.equal(closesAfterFirst, 1);
 
-    await harness.call({
+    await harness.callRaw({
       agent: "scout",
       task: "second",
-      lifecycle: "persistent",
-      tabLabel: "Scout Ws",
+      tabLabel: "Scout Ws 2",
     });
     assert.equal(
       harness.fake.callsMatching("tab", "close").length,
       closesAfterFirst,
-      "reuse must not close tabs during spawn",
+      "spawn must not close tabs beyond workspace creation",
     );
   });
 });
@@ -1149,30 +1121,23 @@ test("targets the pane from HERDR_PANE_ID, not whatever Herdr reports as focused
 });
 
 test("does not accept a reused agent's previous settled state as this turn's result", async () => {
-  // §8: a persistent child still exposes its prior idle/done status, and the
-  // old artifact is still on disk until this prompt clears it.
+  // §8: a parked one-shot still exposes its prior idle/done status, and the
+  // old artifact is still on disk until this prompt clears it. Reuse happens
+  // on the answer-by-label path now.
   await withHarness({}, async (harness) => {
     harness.fake.setBehavior((turn) =>
       turn.turn === 1
-        ? { result: "FIRST TURN RESULT" }
+        ? { question: "Which approach?" }
         : // Keep reporting the first turn's idle + seq for a while.
           { result: "SECOND TURN RESULT", staleWindowMs: 400 },
     );
 
-    await harness.call({
-      agent: "scout",
-      task: "one",
-      lifecycle: "persistent",
-    });
-    const second = await harness.call({
-      agent: "scout",
-      task: "two",
-      lifecycle: "persistent",
-    });
+    await harness.call({ agent: "scout", task: "one" });
+    const second = await harness.call({ agent: "scout", task: "Approach B" });
 
     assert.equal(second.details.reused, true);
     assert.match(second.content[0].text, /SECOND TURN RESULT/);
-    assert.doesNotMatch(second.content[0].text, /FIRST TURN RESULT/);
+    assert.doesNotMatch(second.content[0].text, /Which approach?/);
     // It really had to wait it out rather than short-circuit on stale idle.
     assert.ok(harness.fake.callsMatching("agent", "wait").length >= 2);
   });
@@ -1193,40 +1158,41 @@ test("collects a child that finishes as done rather than idle", async () => {
   });
 });
 
-test("removes the managed temp directory with a one-shot but keeps it for a persistent agent", async () => {
+test("removes the managed temp directory on close but keeps it while an agent runs", async () => {
   // §9: system.md and result.md share one private temp dir per agent.
-  await withHarness({}, async (harness) => {
-    await harness.call({
-      agent: "scout",
-      task: "keep me",
-      lifecycle: "persistent",
-    });
-    const persistentRecord = Object.values(
-      (await harness.readState()).agents,
-    )[0];
-    const persistentDir = path.dirname(persistentRecord?.resultFile ?? "");
-    assert.ok(persistentRecord?.resultFile);
-    assert.deepEqual((await fs.readdir(persistentDir)).sort(), [
-      "result.md",
-      "session.json",
-      "system.md",
-    ]);
+  await withHarness(
+    { profiles: [{ name: "scout" }, { name: "worker" }] },
+    async (harness) => {
+      // A detached agent that never settles keeps its directory.
+      harness.fake.setBehavior((turn) =>
+        turn.agentName.startsWith("scout")
+          ? { neverSettle: true }
+          : { result: "worker done" },
+      );
+      await harness.callRaw({ agent: "scout", task: "keep me" });
+      const detachedRecord = Object.values(
+        (await harness.readState()).agents,
+      )[0];
+      const detachedDir = path.dirname(detachedRecord?.resultFile ?? "");
+      assert.ok(detachedRecord?.resultFile);
+      // result.md is cleared after spawn and re-created when the child writes.
+      assert.deepEqual((await fs.readdir(detachedDir)).sort(), [
+        "session.json",
+        "system.md",
+      ]);
 
-    await harness.call({
-      agent: "scout",
-      task: "close me",
-      tabLabel: "Scout Oneshot",
-    });
-    // The one-shot's own directory is gone; the persistent one is untouched.
-    const dirs = await fs.readdir(path.dirname(persistentDir));
-    assert.equal(
-      dirs.filter((name) => name.startsWith("herdr-agent-")).length,
-      1,
-    );
-    assert.ok(
-      await fs.stat(path.join(persistentDir, "result.md")).catch(() => null),
-    );
-  });
+      await harness.call({ agent: "worker", task: "close me" });
+      // The closed one-shot's own directory is gone; the running one is kept.
+      const dirs = await fs.readdir(path.dirname(detachedDir));
+      assert.equal(
+        dirs.filter((name) => name.startsWith("herdr-agent-")).length,
+        1,
+      );
+      assert.ok(
+        await fs.stat(path.join(detachedDir, "system.md")).catch(() => null),
+      );
+    },
+  );
 });
 
 test("delivers two detached outcomes as one batch with a single turn trigger", async () => {
@@ -1245,14 +1211,12 @@ test("delivers two detached outcomes as one batch with a single turn trigger", a
       task: "a",
       wait: false,
       tabLabel: "Scout A",
-      lifecycle: "persistent",
     });
     await harness.call({
       agent: "scout",
       task: "b",
       wait: false,
       tabLabel: "Scout B",
-      lifecycle: "persistent",
     });
     await harness.fake.releaseChildren();
 
@@ -1308,11 +1272,8 @@ test("/herdr-agents focuses a managed agent", async () => {
     // enter selects the single listed agent
     { dialogInputs: [["\r"]] },
     async (harness) => {
-      await harness.call({
-        agent: "scout",
-        task: "stay",
-        lifecycle: "persistent",
-      });
+      harness.fake.setBehavior(() => ({ neverSettle: true }));
+      await harness.callRaw({ agent: "scout", task: "stay" });
 
       await harness.runCommand("herdr-agents");
 
@@ -1337,11 +1298,10 @@ test("/herdr-agents closes a managed agent and cleans up its temp directory", as
     // d closes the selected agent, then the reopened list is cancelled
     { dialogInputs: [["d"]] },
     async (harness) => {
-      await harness.call({
-        agent: "scout",
-        task: "stay",
-        lifecycle: "persistent",
-      });
+      // A held child never starts its turn, so the agent is idle and the
+      // manager may close it.
+      harness.fake.holdChildren();
+      await harness.callRaw({ agent: "scout", task: "stay" });
       const record = Object.values((await harness.readState()).agents)[0];
       const tempDir = path.dirname(record?.resultFile ?? "");
       assert.ok(record?.resultFile);

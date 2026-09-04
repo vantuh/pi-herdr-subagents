@@ -56,26 +56,26 @@ test("spawns a real Pi child in a real pane, collects its result and closes the 
   });
 });
 
-test("reuses one persistent child process across two tasks and keeps its context", async () => {
+test("continues a closed one-shot via resumeClosed and keeps its context", async () => {
   await withE2e({}, async (harness) => {
     const first = await harness.call({
       agent: "scout",
       task: "First slice: count the routers.",
-      lifecycle: "persistent",
       tabLabel: "Scout E2E",
     });
     assert.match(first.content[0].text, /MOCK_CHILD_OK/);
-    assert.equal(first.details.closed, false);
+    assert.equal(first.details.closed, true);
 
     const second = await harness.call({
       agent: "scout",
       task: "Second slice: now count the handlers.",
-      lifecycle: "persistent",
       tabLabel: "Scout E2E",
+      resumeClosed: true,
     });
-    assert.equal(second.details.reused, true);
+    assert.equal(second.details.resumed, true);
 
-    // Same Pi process, so the second request carries the first turn's history.
+    // The resumed child runs with the archived session, so the second
+    // request carries the first turn's history.
     const secondRequest = harness.llm.requestsMentioning(
       "Second slice: now count the handlers.",
     )[0];
@@ -83,16 +83,13 @@ test("reuses one persistent child process across two tasks and keeps its context
     const history = JSON.stringify(secondRequest.messages);
     assert.match(history, /First slice: count the routers\./);
 
-    // One pane, one child, still open and reusable.
+    // The continued one-shot closed again after collection.
     const snapshot = await harness.snapshot();
-    assert.equal(snapshot.panes.length, 2);
-    const child = snapshot.panes.find(
-      (pane) => pane.pane_id !== harness.orchestratorPaneId,
+    assert.deepEqual(
+      snapshot.panes.map((pane) => pane.pane_id),
+      [harness.orchestratorPaneId],
     );
-    assert.equal(child?.agent, "pi");
-    const record = Object.values((await harness.readState()).agents)[0];
-    assert.equal(record?.lifecycle, "persistent");
-    assert.equal(record?.tabLabel, "Scout E2E");
+    assert.deepEqual((await harness.readState()).agents, {});
   });
 });
 
@@ -152,17 +149,21 @@ test("carries a real ask_question tool call from the child back to the Orchestra
 
 test("stacks two real agent panes into a single right column", async () => {
   await withE2e({}, async (harness) => {
+    // Children stall long enough to stay live while the layout is checked.
+    harness.llm.setScript(() => ({
+      delayMs: 30000,
+      text: "Still working.",
+    }));
+    // Detached spawns keep both children live while the layout is checked.
     await Promise.all([
-      harness.call({
+      harness.callRaw({
         agent: "scout",
         task: "one",
-        lifecycle: "persistent",
         tabLabel: "Scout One",
       }),
-      harness.call({
+      harness.callRaw({
         agent: "scout",
         task: "two",
-        lifecycle: "persistent",
         tabLabel: "Scout Two",
       }),
     ]);

@@ -89,7 +89,6 @@ import type {
   AgentProfile,
   HerdrAgentInfo,
   HerdrAgentLayout,
-  HerdrAgentLifecycle,
   PaneInfo,
 } from "./types.ts";
 import {
@@ -124,12 +123,6 @@ import {
   type WidgetPaint,
 } from "./widget.ts";
 
-function formatLifecycle(lifecycle?: HerdrAgentLifecycle): string {
-  if (lifecycle === "oneshot") return "one-shot";
-  if (lifecycle === "persistent") return "reusable";
-  return "unknown";
-}
-
 // Lifecycle state persistence (state.ts) is best-effort: a failure to
 // load/save/prune/record/delete must never abort agent execution/output or
 // manager listing. This swallows the error and returns a fallback so callers
@@ -144,6 +137,8 @@ async function bestEffort<T>(fallback: T, task: () => Promise<T>): Promise<T> {
 
 const RESUME_CLEANUP_TIMEOUT_MS = 8_000;
 const FINALIZE_RETRY_ATTEMPTS = 3;
+/** Fixed wait timeout; tuning lives in code, not in the model-facing schema. */
+const DEFAULT_WAIT_TIMEOUT_MS = 600_000;
 
 function independentCleanupSignal(
   timeoutMs = RESUME_CLEANUP_TIMEOUT_MS,
@@ -162,7 +157,6 @@ function resumeClosedLiveDecision(input: {
   answeringQuestion: boolean;
 }): { action: "reuse" } | { action: "reject"; text: string } {
   if (input.answeringQuestion) return { action: "reuse" };
-  if (input.record?.lifecycle === "persistent") return { action: "reuse" };
   const status = input.pane.agent_status;
   if (status === "working" || status === "blocked") {
     return {
@@ -561,7 +555,6 @@ async function deliverDetachedOutcomes(
           tabLabel: agent.tabLabel,
           agent: agent.agent,
           paneId: agent.paneId,
-          lifecycle: agent.lifecycle,
           question,
           ...spawnWarningDetails(spawnWarnings),
         },
@@ -634,7 +627,6 @@ async function deliverDetachedOutcomes(
         tabLabel: agent.tabLabel,
         agent: agent.agent,
         paneId: agent.paneId,
-        lifecycle: agent.lifecycle,
         // The renderer shows this on its own under a header; `content` keeps
         // the attribution inline because that is what the model reads.
         result: resultWithWarnings,
@@ -766,7 +758,6 @@ async function pickAgentAction(
         label: `${agent.tabLabel} (${agent.agent})`,
         description: [
           `status:${colorStatus(agent.status)}`,
-          `mode:${formatLifecycle(agent.lifecycle)}`,
           `pane:${agent.paneId}`,
           agent.cwd,
         ]
@@ -870,14 +861,14 @@ async function showHerdrAgentsManager(
     const question = await readAgentQuestion(selected.agent.resultFile);
     const settled =
       selected.agent.status === "idle" || selected.agent.status === "done";
-    if (selected.agent.lifecycle === "oneshot" && (!settled || question)) {
+    if (!settled || question) {
       ctx.ui.notify(
         `Cannot close "${selected.agent.tabLabel}": it is still running or waiting on a question. Answer it or wait for it to finish so history can be saved.`,
         "warning",
       );
       continue;
     }
-    if (selected.agent.lifecycle === "oneshot") {
+    {
       const closeError = await closeOneShot({
         layout: selected.agent.layout,
         tabId: selected.agent.tabId,
@@ -897,19 +888,6 @@ async function showHerdrAgentsManager(
       ctx.ui.notify(`Closed Herdr agent "${selected.agent.tabLabel}"`, "info");
       continue;
     }
-
-    await execHerdr(
-      selected.agent.layout === "pane"
-        ? ["pane", "close", selected.agent.paneId]
-        : ["tab", "close", selected.agent.tabId],
-    );
-    await bestEffort(undefined, () =>
-      removeAgentTempFiles(selected.agent.resultFile),
-    );
-    if (selected.agent.layout === "pane") {
-      await bestEffort(undefined, () => rebalanceCurrentPaneAgents());
-    }
-    ctx.ui.notify(`Closed Herdr agent "${selected.agent.tabLabel}"`, "info");
   }
 }
 
@@ -1079,7 +1057,6 @@ async function executeRewait(
           tabId,
           paneId: pane.pane_id,
           tabLabel: label,
-          lifecycle: record?.lifecycle,
           closed: false,
           agent,
           waited: true,
@@ -1380,12 +1357,12 @@ function registerHerdrAgentTool(
     name: "herdr_agent",
     label: "Herdr Agent",
     description:
-      "Spawn a one-shot Herdr agent or reuse a persistent Herdr agent with a named profile from ~/.pi/agent/agents. Reusing a persistent agent requires lifecycle: 'persistent' and the same tabLabel on every follow-up call.",
+      "Spawn a one-shot Herdr agent with a named profile from ~/.pi/agent/agents. Agents close after delivering their result; continue a closed one-shot with its context via resumeClosed and the same tabLabel.",
     promptSnippet:
-      "Delegate exploration, research, planning, review, and isolated implementation to a one-shot or persistent Herdr agent.",
+      "Delegate exploration, research, planning, review, and isolated implementation to a one-shot Herdr agent.",
     promptGuidelines: [
       "Use herdr_agent when global Delegation says isolated context helps; call after /run, a named role, or explicit delegation request.",
-      "Follow the Herdr agents system instructions for lifecycle, self-contained tasks, independent parallel calls, avoiding duplicate work, and re-wait.",
+      "Follow the Herdr agents system instructions for self-contained tasks, independent parallel calls, avoiding duplicate work, re-wait, and resume.",
     ],
     parameters: buildHerdrAgentParams(agentDescription),
 
@@ -1417,10 +1394,7 @@ function registerHerdrAgentTool(
       const wait = params.wait ?? !ctx.hasUI;
       const config = await loadHerdrAgentsConfig();
       const layout = getHerdrAgentsLayout(config);
-      const lifecycle = params.lifecycle ?? "oneshot";
-      let activeLifecycle = lifecycle;
-      const persistent = lifecycle === "persistent";
-      const timeoutMs = params.timeoutMs ?? 600000;
+      const timeoutMs = DEFAULT_WAIT_TIMEOUT_MS;
       const baseLabel = params.tabLabel?.trim() || titleCase(agent.name);
       const resumeClosed = params.resumeClosed === true;
       const owner = orchestratorIdentity(ctx);
@@ -1447,18 +1421,6 @@ function registerHerdrAgentTool(
               },
             ],
             details: { resumeClosed: true, waited: false },
-            isError: true,
-          };
-        }
-        if (persistent) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: "resumeClosed is only supported for one-shot agents. Use lifecycle: 'oneshot' or omit lifecycle.",
-              },
-            ],
-            details: { resumeClosed: true, lifecycle, waited: false },
             isError: true,
           };
         }
@@ -1494,7 +1456,7 @@ function registerHerdrAgentTool(
               text: "wait: false requires a UI session with the agents widget poller; requires wait: true in a headless session because nothing would deliver the result or close the agent.",
             },
           ],
-          details: { lifecycle, waited: false },
+          details: { waited: false },
           isError: true,
         };
       }
@@ -1576,10 +1538,10 @@ function registerHerdrAgentTool(
           persistPrunedAgentsState(current.panes),
         );
 
-        // Reuse is normally a persistent-only affordance, but a one-shot parked
-        // on an unanswered question has to be reachable by label too: the
-        // answer arrives as a normal `task`, and without reuse it would spawn a
-        // second agent and orphan the parked one forever.
+        // Reuse by label is only for answering a parked question: the answer
+        // arrives as a normal `task`, and without reuse it would spawn a
+        // second agent and orphan the parked one forever. Everything else
+        // addressed to a live agent by label is rejected with guidance.
         {
           const candidateTab = usesTabs
             ? findReusableAgentTab(current, tabs, baseLabel, state)
@@ -1594,35 +1556,34 @@ function registerHerdrAgentTool(
             ? state.agents[candidateKey]
             : undefined;
           const answeringQuestion =
-            !persistent &&
             !!candidateRecord &&
             (await bestEffort(undefined, () =>
               readAgentQuestion(candidateRecord.resultFile),
             )) !== undefined;
 
-          // A task addressed by label to a live persistent agent without
-          // lifecycle: "persistent" is almost certainly a failed reuse: the
-          // default oneshot lifecycle would silently spawn a duplicate
-          // agent ("... #2") instead of sending the task to the existing
-          // pane. Fail loudly with the fix instead.
+          // A task explicitly addressed by label to a live agent (including
+          // a legacy persistent one left running from before the one-shot-only
+          // change) is almost certainly a failed reuse: silently spawning a
+          // duplicate ("... #2") would orphan the live pane. Default labels
+          // fall through — parallel spawns of one profile get suffixed labels
+          // via uniqueLabel. Fail loudly with the alternatives instead.
           if (
-            !persistent &&
+            params.tabLabel?.trim() &&
             !resumeClosed &&
             !answeringQuestion &&
-            candidatePane &&
-            candidateRecord?.lifecycle === "persistent"
+            candidatePane
           ) {
             return {
               content: [
                 {
                   type: "text",
-                  text: `A live persistent Herdr agent named "${baseLabel}" exists. To send this task to it, repeat lifecycle: "persistent" with the same tabLabel — omitting lifecycle defaults to "oneshot", which would spawn a duplicate agent instead of reusing it. If you actually want a fresh one-shot agent, keep lifecycle unset but pass a different tabLabel.`,
+                  text: `A live Herdr agent named "${baseLabel}" already exists and cannot receive a new task. If it is still working, call herdr_agent again with the same tabLabel and no task to re-wait. If it already settled detached, wait for the result to be delivered, then use resumeClosed: true with the same tabLabel to continue it with its context. If you want a fresh agent, pass a different tabLabel.`,
                 },
               ],
               details: {
                 tabLabel: baseLabel,
                 paneId: candidatePane.pane_id,
-                existingLifecycle: "persistent",
+                existingLifecycle: candidateRecord?.lifecycle,
                 waited: false,
               },
               isError: true,
@@ -1652,17 +1613,8 @@ function registerHerdrAgentTool(
             }
           }
 
-          if (
-            (persistent ||
-              answeringQuestion ||
-              (resumeClosed &&
-                candidateRecord?.lifecycle === "persistent")) &&
-            candidatePane
-          ) {
+          if (answeringQuestion && candidatePane) {
             reused = true;
-            if (candidateRecord?.lifecycle === "persistent") {
-              activeLifecycle = "persistent";
-            }
             tabId = candidateTab?.tab.tab_id ?? candidatePane.tab_id;
             if (candidateTab) tabLabel = candidateTab.tab.label;
             paneId = candidatePane.pane_id;
@@ -1836,7 +1788,7 @@ function registerHerdrAgentTool(
         // The agent's tab now exists and is visible to the next `listTabs`,
         // so workspace spawns no longer need the placement lock. Uniqueness of
         // the label is computed client-side (uniqueLabel) — releasing here
-        // still leaves a same-label parallel persistent-spawn window, which the
+        // still leaves a same-label parallel spawn window, which the
         // reuse contract already rules out (reuse is sequential by tabLabel).
         // Best effort: close the known root shell tab `workspace create`
         // starts every new workspace with. Only the creating spawn does this,
@@ -1972,7 +1924,7 @@ function registerHerdrAgentTool(
               tabId,
               paneId,
               tabLabel,
-              lifecycle,
+              
               reused,
               ...resumedDetails(resumed),
               agent,
@@ -1990,7 +1942,7 @@ function registerHerdrAgentTool(
 
         if (agentPane) {
           const writeLifecycle = () =>
-            recordAgentLifecycle(agentPane!, activeLifecycle, {
+            recordAgentLifecycle(agentPane!, "oneshot", {
               tabLabel,
               agent: agent.name,
               automationName,
@@ -2088,7 +2040,7 @@ function registerHerdrAgentTool(
             text: `${reused ? "Sending task to" : "Waiting for"} Herdr agent ${tabLabel} (${paneId})...`,
           },
         ],
-        details: { tabId, paneId, tabLabel, lifecycle, reused, agent },
+        details: { tabId, paneId, tabLabel, reused, agent },
       });
 
       const blockedLabel = `waiting for ${tabLabel}`;
@@ -2117,7 +2069,7 @@ function registerHerdrAgentTool(
               tabId,
               paneId,
               tabLabel,
-              lifecycle,
+              
               reused,
               ...resumedDetails(resumed),
               agent,
@@ -2151,7 +2103,7 @@ function registerHerdrAgentTool(
               tabId,
               paneId,
               tabLabel,
-              lifecycle,
+              
               reused,
               ...resumedDetails(resumed),
               closed: false,
@@ -2169,19 +2121,17 @@ function registerHerdrAgentTool(
           await bestEffort(false, () => claimDetachedAgent(agentPane!));
         }
 
-        let closed = false;
-        let closeError: string | undefined;
-        if (activeLifecycle === "oneshot") {
-          closeError = await closeOneShot({
-            layout,
-            tabId,
-            paneId,
-            resultFile,
-            lifecyclePane: agentPane,
-            signal,
-          });
-          closed = closeError === undefined;
-        }
+        // Every spawned agent is a one-shot now, including reused parked ones;
+        // closeOneShot itself skips legacy persistent records.
+        const closeError = await closeOneShot({
+          layout,
+          tabId,
+          paneId,
+          resultFile,
+          lifecyclePane: agentPane,
+          signal,
+        });
+        const closed = closeError === undefined;
 
         const text = formatCollectedOutput(
           settled.output,
@@ -2202,7 +2152,7 @@ function registerHerdrAgentTool(
             tabId,
             paneId,
             tabLabel,
-            lifecycle,
+            
             reused,
             ...resumedDetails(resumed),
             closed,
@@ -2229,7 +2179,7 @@ function registerHerdrAgentTool(
               tabId,
               paneId,
               tabLabel,
-              lifecycle,
+              
               reused,
               ...resumedDetails(resumed),
               agent,

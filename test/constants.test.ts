@@ -15,23 +15,13 @@ describe("constants", () => {
     );
   });
 
-  it("GLOBAL_INSTRUCTIONS names herdr_agent and oneshot default", () => {
+  it("GLOBAL_INSTRUCTIONS names herdr_agent and the one-shot contract", () => {
     assert.ok(GLOBAL_INSTRUCTIONS.includes("herdr_agent"));
-    assert.ok(GLOBAL_INSTRUCTIONS.includes('lifecycle: "oneshot"'));
-    assert.ok(GLOBAL_INSTRUCTIONS.includes("agent closes after a successful result"));
+    assert.ok(GLOBAL_INSTRUCTIONS.includes("Subagents are one-shot"));
     assert.ok(
-      GLOBAL_INSTRUCTIONS.includes(
-        'Reuse requires repeating \`lifecycle: "persistent"\`',
-      ),
+      GLOBAL_INSTRUCTIONS.includes("an agent closes after delivering its result"),
     );
-    assert.ok(
-      GLOBAL_INSTRUCTIONS.includes(
-        "a delivered result does not mean the tab closed",
-      ),
-    );
-    assert.ok(
-      GLOBAL_INSTRUCTIONS.includes("Closed persistent agents cannot be resumed"),
-    );
+    assert.ok(GLOBAL_INSTRUCTIONS.includes("resumeClosed: true"));
     assert.ok(
       GLOBAL_INSTRUCTIONS.includes(
         "scout, researcher, planner, worker, reviewer",
@@ -39,10 +29,14 @@ describe("constants", () => {
     );
   });
 
-  it("GLOBAL_INSTRUCTIONS handles agents opened without a task", () => {
-    assert.ok(GLOBAL_INSTRUCTIONS.includes("do not inspect skills"));
-    assert.ok(GLOBAL_INSTRUCTIONS.includes('lifecycle: "persistent"'));
-    assert.ok(GLOBAL_INSTRUCTIONS.includes("minimal standby"));
+  it("GLOBAL_INSTRUCTIONS drops persistent/standby mechanics", () => {
+    assert.ok(!GLOBAL_INSTRUCTIONS.includes("persistent"));
+    assert.ok(!GLOBAL_INSTRUCTIONS.includes("lifecycle:"));
+    assert.ok(!GLOBAL_INSTRUCTIONS.includes("standby"));
+    assert.ok(!GLOBAL_INSTRUCTIONS.includes("timeoutMs"));
+  });
+
+  it("GLOBAL_INSTRUCTIONS covers detached delivery default", () => {
     assert.ok(GLOBAL_INSTRUCTIONS.includes("By default"));
     assert.ok(GLOBAL_INSTRUCTIONS.includes("pass `wait: true`"));
   });
@@ -58,9 +52,10 @@ describe("constants", () => {
     assert.ok(GLOBAL_INSTRUCTIONS.includes("re-wait"));
   });
 
-  it("GLOBAL_INSTRUCTIONS covers closed one-shot resume", () => {
+  it("GLOBAL_INSTRUCTIONS covers closed one-shot resume and duplicate guard", () => {
     assert.ok(GLOBAL_INSTRUCTIONS.includes("resumeClosed: true"));
     assert.ok(GLOBAL_INSTRUCTIONS.includes("never resurrects a closed agent"));
+    assert.ok(GLOBAL_INSTRUCTIONS.includes("do not spawn a duplicate over it"));
   });
 
   it("buildRunTurnInstructions names agent when provided", () => {

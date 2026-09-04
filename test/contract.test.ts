@@ -52,14 +52,12 @@ test("a successful one-shot reports the full details contract", async () => {
       "agent",
       "closeError",
       "closed",
-      "lifecycle",
       "paneId",
       "reused",
       "tabId",
       "tabLabel",
       "waited",
     ]);
-    assert.equal(result.details.lifecycle, "oneshot");
     assert.equal(result.details.tabLabel, "Scout");
     assert.equal(result.details.closeError, undefined);
     // The agent profile travels back whole, not just by name.
@@ -189,10 +187,10 @@ test("runs the whole flow even when the state file is unusable", async () => {
 
 test("re-wait with wait: false only reports that the agent is still running", async () => {
   await withHarness({}, async (harness) => {
-    await harness.call({
+    harness.fake.setBehavior(() => ({ neverSettle: true }));
+    await harness.callRaw({
       agent: "scout",
       task: "long",
-      lifecycle: "persistent",
       tabLabel: "Scout RW",
     });
     const before = harness.fake.calls.length;
@@ -268,30 +266,26 @@ test("omitting task still re-waits and does not resume a closed agent", async ()
 // Detached delivery
 // ---------------------------------------------------------------------------
 
-test("delivers a detached persistent result without closing the agent", async () => {
+test("delivers a detached one-shot result and closes the agent", async () => {
   await withHarness({}, async (harness) => {
-    await harness.call({
+    await harness.callRaw({
       agent: "scout",
       task: "background",
-      wait: false,
-      lifecycle: "persistent",
       tabLabel: "Scout Detached",
     });
 
     await harness.waitFor(
       () => harness.messages.length > 0,
-      "detached persistent delivery",
+      "detached one-shot delivery",
     );
 
     const [message] = harness.messages;
     assert.equal(message?.customType, AGENT_RESULT_MESSAGE_TYPE);
-    assert.equal(message?.details.lifecycle, "persistent");
-    // Still alive and reusable; only one-shots are closed on delivery.
-    assert.equal(harness.fake.panes.length, 2);
-    assert.deepEqual(harness.fake.callsMatching("pane", "close"), []);
-    const record = Object.values((await harness.readState()).agents)[0];
-    assert.equal(record?.detached, undefined);
-    assert.equal(record?.lifecycle, "persistent");
+    assert.equal(message?.details.lifecycle, undefined);
+    // A one-shot is closed by delivery, and its record is pruned.
+    assert.equal(harness.fake.panes.length, 1);
+    assert.deepEqual(harness.fake.callsMatching("pane", "close").length > 0, true);
+    assert.deepEqual((await harness.readState()).agents, {});
   });
 });
 
@@ -312,7 +306,6 @@ test("keeps spawn warnings visible through detached delivery", async () => {
         agent: "worker",
         task: "background",
         wait: false,
-        lifecycle: "persistent",
       });
       assert.match(started.content[0].text, /Spawn warnings:/);
 
@@ -348,7 +341,6 @@ test("keeps spawn warnings out of a detached question body", async () => {
         agent: "worker",
         task: "background",
         wait: false,
-        lifecycle: "persistent",
       });
 
       await harness.waitFor(
@@ -377,7 +369,6 @@ test("keeps the claim when a detached agent settles with nothing to deliver", as
       agent: "scout",
       task: "background",
       wait: false,
-      lifecycle: "persistent",
       tabLabel: "Scout Silent",
     });
 
@@ -398,42 +389,46 @@ test("keeps the claim when a detached agent settles with nothing to deliver", as
 // Tab layout
 // ---------------------------------------------------------------------------
 
-test("reuses a persistent tab by label and keeps new tab labels unique", async () => {
+test("keeps new tab labels unique across spawns", async () => {
   await withHarness({ layout: "tab" }, async (harness) => {
-    const first = await harness.call({
+    harness.fake.setBehavior(() => ({ neverSettle: true }));
+    await harness.callRaw({
       agent: "scout",
       task: "one",
-      lifecycle: "persistent",
+      tabLabel: "Scout A",
     });
-    assert.equal(first.details.reused, false);
     assert.equal(
       flagValue(
         harness.fake.callsMatching("tab", "create")[0] ?? [],
         "--label",
       ),
+      "Scout A",
+    );
+
+    await harness.callRaw({ agent: "scout", task: "two" });
+    assert.equal(
+      flagValue(
+        harness.fake.callsMatching("tab", "create")[1] ?? [],
+        "--label",
+      ),
       "Scout",
     );
 
-    const reused = await harness.call({
-      agent: "scout",
-      task: "two",
-      lifecycle: "persistent",
-    });
-    assert.equal(reused.details.reused, true);
-    assert.equal(harness.fake.callsMatching("tab", "create").length, 1);
-
-    // A different label cannot reuse it, and the label stays collision-free.
-    await harness.call({
-      agent: "scout",
-      task: "three",
-      lifecycle: "persistent",
-      tabLabel: "Scout",
-    });
-    assert.equal(harness.fake.callsMatching("tab", "create").length, 1);
+    // The default label collides with the live second agent, so the third
+    // spawn gets a suffixed label.
+    await harness.callRaw({ agent: "scout", task: "three" });
+    assert.equal(
+      flagValue(
+        harness.fake.callsMatching("tab", "create")[2] ?? [],
+        "--label",
+      ),
+      "Scout #2",
+    );
+    assert.equal(harness.fake.callsMatching("tab", "create").length, 3);
   });
 });
 
-test("does not reprint spawn warnings on persistent reuse or later re-wait", async () => {
+test("does not reprint spawn warnings on a reused agent's next turn", async () => {
   await withHarness(
     {
       profiles: [
@@ -445,25 +440,22 @@ test("does not reprint spawn warnings on persistent reuse or later re-wait", asy
       ],
     },
     async (harness) => {
+      // First turn asks, so the second call reuses the parked agent.
+      harness.fake.setBehavior((turn) =>
+        turn.turn === 1
+          ? { question: "Which approach?" }
+          : { result: "worker done" },
+      );
       const first = await harness.call({
         agent: "worker",
         task: "one",
-        lifecycle: "persistent",
       });
       assert.equal(first.details.reused, false);
       assert.match(first.content[0].text, /Skills not found: ghost-skill/);
 
-      const rewait = await harness.call({
-        agent: "worker",
-        tabLabel: "Worker",
-      });
-      assert.doesNotMatch(rewait.content[0].text, /Skills not found/);
-      assert.equal(rewait.details.spawnWarnings, undefined);
-
       const reused = await harness.call({
         agent: "worker",
         task: "two",
-        lifecycle: "persistent",
       });
       assert.equal(reused.details.reused, true);
       assert.doesNotMatch(reused.content[0].text, /Skills not found/);
@@ -497,10 +489,12 @@ test("looks the tab up by label when tab create omits the tab id", async () => {
 test("shows live agents in the widget and clears it once none remain", async () => {
   // d closes the selected agent in the manager overlay.
   await withHarness({ dialogInputs: [["d"]] }, async (harness) => {
-    await harness.call({
+    // A held child never starts its turn, so the agent is idle: visible in
+    // the widget and closable by the manager.
+    harness.fake.holdChildren();
+    await harness.callRaw({
       agent: "scout",
       task: "stay",
-      lifecycle: "persistent",
       tabLabel: "Scout Widget",
     });
 
@@ -532,7 +526,6 @@ test("hides an agent from the widget while the Orchestrator blocks on it", async
     const pending = harness.call({
       agent: "scout",
       task: "slow",
-      lifecycle: "persistent",
       tabLabel: "Scout Awaited",
     });
     await harness.waitFor(
@@ -543,10 +536,11 @@ test("hides an agent from the widget while the Orchestrator blocks on it", async
     assert.equal(harness.widgets.has(AGENTS_WIDGET_ID), false);
 
     await pending;
-    // No longer awaited, so it becomes visible again.
+    // The one-shot closed on collection, so the widget clears instead of
+    // reappearing: there is no live agent left to show.
     await harness.waitFor(
-      () => harness.widgets.has(AGENTS_WIDGET_ID),
-      "widget to reappear after the wait ended",
+      () => !harness.widgets.has(AGENTS_WIDGET_ID),
+      "widget to clear after the one-shot closed",
     );
   });
 });
@@ -681,11 +675,9 @@ test("renders delivered results and questions as their own blocks", async () => 
 
 test("does not touch the layout while a single agent is alone in the column", async () => {
   await withHarness({}, async (harness) => {
-    await harness.call({
-      agent: "scout",
-      task: "solo",
-      lifecycle: "persistent",
-    });
+    // A detached agent that never settles stays live in the column.
+    harness.fake.setBehavior(() => ({ neverSettle: true }));
+    await harness.callRaw({ agent: "scout", task: "solo" });
 
     // Rebalancing two or more agents is the only reason to move ratios.
     assert.deepEqual(harness.fake.ratioUpdates, []);
@@ -694,10 +686,11 @@ test("does not touch the layout while a single agent is alone in the column", as
 
 test("prunes state records for panes Herdr no longer reports", async () => {
   await withHarness({}, async (harness) => {
-    await harness.call({
+    // A detached agent that never settles keeps its live record.
+    harness.fake.setBehavior(() => ({ neverSettle: true }));
+    await harness.callRaw({
       agent: "scout",
       task: "one",
-      lifecycle: "persistent",
       tabLabel: "Scout Stale",
     });
     const statePath = harness.statePath;
@@ -723,11 +716,9 @@ test("prunes state records for panes Herdr no longer reports", async () => {
 
 test("writes the state file with owner-only permissions", async () => {
   await withHarness({}, async (harness) => {
-    await harness.call({
-      agent: "scout",
-      task: "one",
-      lifecycle: "persistent",
-    });
+    // A detached agent keeps its record and artifacts alive for the check.
+    harness.fake.setBehavior(() => ({ neverSettle: true }));
+    await harness.callRaw({ agent: "scout", task: "one" });
 
     const stats = await fs.stat(harness.statePath);
     assert.equal(stats.mode & 0o777, 0o600);
@@ -796,11 +787,10 @@ test("a profile with every optional frontmatter field drives the exact spawn arg
         "probe-skill",
       );
 
-      const result = await harness.call({
+      // Detached keeps the temp dir alive so the system file is readable.
+      const result = await harness.callRaw({
         agent: "worker",
         task: "Slice",
-        // Persistent keeps the temp dir alive so the system file is readable.
-        lifecycle: "persistent",
       });
       assert.equal(result.isError, undefined);
 

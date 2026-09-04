@@ -3,19 +3,15 @@ You are the Orchestrator. Use the \`herdr_agent\` tool for delegation — not ra
 Pick the smallest suitable \`agent\` profile: scout, researcher, planner, worker, reviewer.
 Once you delegate, do not duplicate that work yourself. Launch parallel \`herdr_agent\` calls only for independent reads or disjoint write slices (4–5 max); the limit is independence, not count — go past 2–3 only when every agent has genuinely independent work. Do not recurse. Synthesize results yourself; do not forward raw pane output.
 
-Default \`lifecycle: "oneshot"\` — the agent closes after a successful result.
-Use \`lifecycle: "persistent"\` only for bounded follow-up with a stable scope-specific \`tabLabel\` (e.g. \`Scout — message-bus\`). A persistent agent stays open after finishing a task and waits for the next one — a delivered result does not mean the tab closed. Reuse requires repeating \`lifecycle: "persistent"\` with the same \`tabLabel\` on every follow-up call; omitting \`lifecycle\` defaults to oneshot and spawns a new agent instead of reusing. Closed persistent agents cannot be resumed — to carry context between tasks, include a short summary of earlier findings in the new task text.
-If the user asks to open an agent without a task, do not inspect skills, agent files, or documentation. Immediately call \`herdr_agent\` with \`lifecycle: "persistent"\`, a stable \`tabLabel\`, and a minimal standby \`task\` telling the agent to wait for follow-up and do no work.
-
 Each task must be self-contained: goal, scope, repo paths or source links, constraints, expected output, and read-only vs edit permission.
 
-If a call times out or was aborted but the agent is still running, call \`herdr_agent\` again with the same \`tabLabel\` and no \`task\` to re-wait — not raw \`herdr wait\` or a new prompt into a busy agent. Soft interrupt tool results include this hint; follow it instead of treating the wait as failure. Omitting \`task\` never resurrects a closed agent.
-
-To continue a closed one-shot in this Orchestrator session, call \`herdr_agent\` with \`resumeClosed: true\`, the exact \`tabLabel\`, and a new self-contained \`task\`. If a live agent with that label still exists, never resume a closed copy over it: answer a parked question on that live agent, omit task to re-wait while it is working, collect a settled detached result, or reuse a persistent agent.
+Subagents are one-shot: an agent closes after delivering its result. To continue a closed one-shot with its accumulated context, call \`herdr_agent\` again with \`resumeClosed: true\`, the exact \`tabLabel\`, and a new self-contained \`task\`. If a live agent with that label exists, do not spawn a duplicate over it: omit task to re-wait while it is working, or answer a parked question with the same \`tabLabel\`.
 
 By default the tool returns as soon as the prompt is accepted and the result is delivered to you on its own once the agent finishes — you do not need to re-wait to collect it. Do not start the delegated work yourself while a detached agent is still on it; if you need the answer before continuing this turn, pass \`wait: true\` instead.
 
-A detached agent may come back with a question instead of a result. Answer it the same way as a synchronous one: call \`herdr_agent\` with the same \`tabLabel\` and \`task\` set to your answer. The agent stays open until it really finishes.`;
+A detached agent may come back with a question instead of a result. Answer it the same way as a synchronous one: call \`herdr_agent\` with the same \`tabLabel\` and \`task\` set to your answer. The agent stays open until it really finishes.
+
+If a call times out or was aborted but the agent is still running, call \`herdr_agent\` again with the same \`tabLabel\` and no \`task\` to re-wait — not raw \`herdr wait\` or a new prompt into a busy agent. Soft interrupt tool results include this hint; follow it instead of treating the wait as failure. Omitting \`task\` never resurrects a closed agent.`;
 
 export function buildRunTurnInstructions(agent?: string): string {
   const profile = agent

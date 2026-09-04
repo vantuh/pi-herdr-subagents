@@ -12,12 +12,10 @@ const HerdrAgentParams = buildHerdrAgentParams();
 test("exposes exactly the documented parameters", () => {
   assert.deepEqual(Object.keys(HerdrAgentParams.properties).sort(), [
     "agent",
-    "lifecycle",
     "model",
     "resumeClosed",
     "tabLabel",
     "task",
-    "timeoutMs",
     "wait",
   ]);
 });
@@ -27,14 +25,10 @@ test("requires only the agent profile", () => {
   assert.deepEqual(HerdrAgentParams.required, ["agent"]);
 });
 
-test("keeps lifecycle a two-value union", () => {
-  const lifecycle = HerdrAgentParams.properties.lifecycle as {
-    anyOf?: Array<{ const?: string }>;
-  };
-  const values = (lifecycle.anyOf ?? [])
-    .map((variant) => variant.const)
-    .filter((value): value is string => typeof value === "string");
-  assert.deepEqual(values.sort(), ["oneshot", "persistent"]);
+test("has no lifecycle or timeout parameters", () => {
+  const names = Object.keys(HerdrAgentParams.properties);
+  assert.ok(!names.includes("lifecycle"));
+  assert.ok(!names.includes("timeoutMs"));
 });
 
 test("declares parameter types the provider can validate", () => {
@@ -48,7 +42,6 @@ test("declares parameter types the provider can validate", () => {
   assert.equal(properties.tabLabel?.type, "string");
   assert.equal(properties.wait?.type, "boolean");
   assert.equal(properties.resumeClosed?.type, "boolean");
-  assert.equal(properties.timeoutMs?.type, "number");
 });
 
 test("wait description matches the detached-by-default contract", () => {
@@ -58,6 +51,15 @@ test("wait description matches the detached-by-default contract", () => {
     wait.description ?? "",
     /Headless sessions require wait: true; an explicit false is rejected/,
   );
+});
+
+test("resumeClosed description names the continuation contract", () => {
+  const resume = HerdrAgentParams.properties.resumeClosed as {
+    description?: string;
+  };
+  assert.match(resume.description ?? "", /accumulated context/);
+  assert.match(resume.description ?? "", /tabLabel/);
+  assert.match(resume.description ?? "", /Never resumes over a live agent/);
 });
 
 test("describes every parameter for the model", () => {
