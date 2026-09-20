@@ -2,9 +2,10 @@
 
 > **RETIRED 2026-09-04 — not loaded, not maintained.** Migrated to
 > [pi-subagents](https://github.com/nicobailon/pi-subagents) (+ pi-intercom).
-> Kept in `pi/.pi/agent/archive/` for design reference. See `../README.md`.
+> Kept in `home/dot_pi/agent/archive/` for design reference. See `../README.md`.
 
-This extension belongs to the dotfiles repo and is symlinked into `~/.pi/agent/extensions/herdr-agents` via the `pi` stow package.
+This extension is archived source-only. Chezmoi does not apply it into
+`~/.pi/agent/extensions/`.
 
 ## Purpose
 
@@ -64,18 +65,16 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 
 ## Loading
 
-This extension is loaded from the symlinked Pi extension directory:
+This extension is not loaded. Read and test it from the archive directory in the
+repository; do not expect a home-side copy under `~/.pi/agent/extensions/`.
 
-```text
-~/.pi/agent/extensions/herdr-agents/index.ts
-```
-
-A global `/parallel-review` Pi prompt uses this extension's `herdr_agent` tool, but the prompt itself is maintained outside this extension.
+A global `/parallel-review` Pi prompt historically used this extension's
+`herdr_agent` tool; the prompt itself was maintained outside this extension.
 
 ## Tests
 
 ```bash
-cd pi/.pi/agent/extensions/herdr-agents
+cd home/dot_pi/agent/archive/herdr-agents
 bun run test              # unit + integration (fast, no real Herdr)
 bun run test:unit         # pure helpers only, no subprocesses
 bun run test:integration  # full herdr_agent flow against a fake Herdr
@@ -209,7 +208,7 @@ Useful smoke checks:
 
 ```bash
 # Parse/bundle the extension modules.
-bun build pi/.pi/agent/extensions/herdr-agents/index.ts \
+bun build home/dot_pi/agent/archive/herdr-agents/index.ts \
   --target node \
   --outfile /tmp/herdr-agents-check.js \
   --external @earendil-works/pi-coding-agent \
@@ -221,4 +220,5 @@ PI_OFFLINE=1 pi --no-context-files --no-skills --no-prompt-templates --no-themes
   -p 'List exact tool names available. Do not use tools.'
 ```
 
-After changing symlinked files, restart Pi or run `/reload` in the active session.
+After changing archived files, run the tests from this directory. The extension
+is not loaded, so `/reload` has no effect unless it is restored first.

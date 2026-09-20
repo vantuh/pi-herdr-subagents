@@ -2,7 +2,7 @@
 
 > **RETIRED 2026-09-04 — not loaded, not maintained.** Migrated to
 > [pi-subagents](https://github.com/nicobailon/pi-subagents) (+ pi-intercom).
-> Kept in `pi/.pi/agent/archive/` for design reference. See `../README.md`.
+> Kept in `home/dot_pi/agent/archive/` for design reference. See `../README.md`.
 
 `herdr-agents` is a Pi extension that turns Herdr into a one-shot delegation layer.
 
