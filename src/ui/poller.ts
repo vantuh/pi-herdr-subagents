@@ -70,9 +70,23 @@ let widgetTicking = false;
 // keeps pruning the state file and calling Herdr after teardown.
 let widgetTick: Promise<void> | null = null;
 
-/** Resolve once no widget tick is running, so shutdown can wait for one. */
-export async function settleAgentsWidgetPoller(): Promise<void> {
-  await widgetTick;
+/**
+ * Resolve once no widget tick is running, or after `timeoutMs` so a wedged
+ * Herdr call or state lock cannot hold up quit/reload. Never rejects.
+ */
+export async function settleAgentsWidgetPoller(
+  timeoutMs = 3000,
+): Promise<void> {
+  if (!widgetTick) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    widgetTick.catch(() => {}),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, timeoutMs);
+      timer.unref?.();
+    }),
+  ]);
+  clearTimeout(timer);
 }
 
 function startWidgetTick(pi: ExtensionAPI, ctx: ExtensionContext): void {
