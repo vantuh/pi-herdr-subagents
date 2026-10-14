@@ -3,6 +3,15 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { errorMessage } from '../utils.ts';
 import { execHerdr, HerdrCliError } from './cli.ts';
 
+async function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  try {
+    await sleep(ms, undefined, { signal });
+  } catch (error) {
+    if (signal?.aborted) throw new Error('Aborted');
+    throw error;
+  }
+}
+
 type StartedAgentSnapshot = {
   agent: string;
   status: string;
@@ -94,7 +103,7 @@ async function waitForStartedAgent(
         `Herdr did not settle on ${expectedAgent} in pane ${paneId} within ${timeoutMs}ms.`,
       );
     }
-    await sleep(100, undefined, { signal });
+    await delay(100, signal);
   }
 }
 
@@ -146,7 +155,7 @@ export async function startAgent(
         throw error;
       }
       // A newly created pane can exist before its shell reaches the prompt.
-      await sleep(100, undefined, { signal });
+      await delay(100, signal);
     }
   }
 }
