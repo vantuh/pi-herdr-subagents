@@ -1,17 +1,9 @@
 import { join } from 'node:path';
 
-import {
-  type AgentToolUpdateCallback,
-  type ExtensionAPI,
-  type ExtensionContext,
-} from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import type { AutocompleteItem } from '@earendil-works/pi-tui';
 
-import {
-  discoverAgents,
-  resolveThinkingLevel,
-  resolveProfileSkills,
-} from './agents.ts';
+import { discoverAgents } from './agents.ts';
 import {
   assertResumableSessionDir,
   clearAgentQuestion,
@@ -21,7 +13,6 @@ import {
   readAgentQuestion,
   removeAgentTempFiles,
   RESULT_FILE_MARKER,
-  SESSION_META_ENV,
   validateResumableSessionFile,
 } from './artifacts.ts';
 import { registerChildMode } from './child.ts';
@@ -30,7 +21,7 @@ import {
   getHerdrAgentsWorkspaceLabel,
   loadHerdrAgentsConfig,
 } from './config.ts';
-import { promptAgent, startAgent, waitForAgent } from './herdr/agent.ts';
+import { promptAgent, startAgent } from './herdr/agent.ts';
 import { execHerdr } from './herdr/cli.ts';
 import {
   chooseAgentColumnSplitTarget,
@@ -40,7 +31,6 @@ import {
   uniqueLabel,
 } from './herdr/placement.ts';
 import {
-  findAgentsWorkspaceId,
   getCurrentContext,
   listPanes,
   listTabs,
@@ -57,7 +47,6 @@ import {
   parseRunArgs,
   type RunDelegationRequest,
 } from './run.ts';
-import { buildHerdrAgentParams, describeAgentProfiles } from './schema.ts';
 import {
   claimClosedHistory,
   findOwnedClosedHistory,
@@ -71,9 +60,14 @@ import {
   paneStateKey,
   persistPrunedAgentsState,
   recordAgentLifecycle,
-  type HerdrAgentStateRecord,
 } from './state/store.ts';
 import {
+  buildChildPiArgs,
+  herdrChildEnvArgs,
+  orchestratorIdentity,
+} from './tool/child-args.ts';
+import {
+  acquirePanePlacementLock,
   bestEffort,
   closeOneShot,
   dropCollectedSpawnWarnings,
@@ -83,7 +77,13 @@ import {
   rebalanceCurrentPaneAgents,
   spawnWarningDetails,
 } from './tool/one-shot.ts';
-import type { AgentProfile, HerdrAgentLayout, PaneInfo } from './types.ts';
+import {
+  executeRewait,
+  resumeClosedLiveDecision,
+  resumedDetails,
+} from './tool/rewait.ts';
+import { buildHerdrAgentParams, describeAgentProfiles } from './tool/schema.ts';
+import type { PaneInfo } from './types.ts';
 import { showHerdrAgentsManager } from './ui/manager.ts';
 import {
   beginAwaitingAgent,
@@ -94,7 +94,6 @@ import {
 } from './ui/poller.ts';
 import { registerAgentMessageRenderers } from './ui/renderers.ts';
 import {
-  buildChildToolArgs,
   formatSpawnWarnings,
   formatWaitInterrupted,
   isRecoverableWaitInterrupt,
@@ -106,338 +105,7 @@ import {
 /** Fixed wait timeout; tuning lives in code, not in the model-facing schema. */
 const DEFAULT_WAIT_TIMEOUT_MS = 600_000;
 
-function resumeClosedLiveDecision(input: {
-  label: string;
-  pane: PaneInfo;
-  record?: HerdrAgentStateRecord;
-  answeringQuestion: boolean;
-}): { action: 'reuse' } | { action: 'reject'; text: string } {
-  if (input.answeringQuestion) return { action: 'reuse' };
-  const status = input.pane.agent_status;
-  if (status === 'working' || status === 'blocked') {
-    return {
-      action: 'reject',
-      text: `A live Herdr agent named "${input.label}" is still working. Omit task to re-wait; do not resume a closed copy over live work.`,
-    };
-  }
-  if (input.record?.detached) {
-    return {
-      action: 'reject',
-      text: `A live Herdr agent named "${input.label}" already settled and is waiting to be collected. Re-wait or let the widget deliver it; do not resume a closed copy over live work.`,
-    };
-  }
-  return {
-    action: 'reject',
-    text: `A live Herdr agent named "${input.label}" is still open. Re-wait or answer it; do not resume a closed copy over live work.`,
-  };
-}
-
-function herdrChildEnvArgs(sessionMetaFile?: string): string[] {
-  const args = [
-    '--env',
-    'HERDR_AGENT_CHILD=1',
-    '--env',
-    'PROCESS_LAUNCHED_BY_Q=1',
-  ];
-  if (sessionMetaFile) {
-    args.push('--env', `${SESSION_META_ENV}=${sessionMetaFile}`);
-  }
-  return args;
-}
-
-function orchestratorIdentity(ctx: ExtensionContext): {
-  sessionId?: string;
-  sessionFile?: string;
-} {
-  const sessionId = ctx.sessionManager?.getSessionId()?.trim();
-  const sessionFile = ctx.sessionManager?.getSessionFile()?.trim();
-  return {
-    ...(sessionId ? { sessionId } : {}),
-    ...(sessionFile ? { sessionFile } : {}),
-  };
-}
-
-async function buildChildPiArgs(options: {
-  agent: AgentProfile;
-  tabLabel: string;
-  systemFile: string;
-  cwd: string;
-  sessionFile?: string;
-}): Promise<{ piArgs: string[]; spawnWarnings: string[] }> {
-  const spawnWarnings: string[] = [];
-  const piArgs: string[] = [];
-  if (!options.sessionFile) {
-    piArgs.push('--name', options.tabLabel);
-  } else {
-    piArgs.push('--session', options.sessionFile);
-  }
-  if (options.agent.model) piArgs.push('--model', options.agent.model);
-  if (options.agent.thinking) {
-    const level = resolveThinkingLevel(options.agent.thinking);
-    if (level) {
-      piArgs.push('--thinking', level);
-    } else {
-      spawnWarnings.push(
-        `Unknown thinking level "${options.agent.thinking}" ignored.`,
-      );
-    }
-  }
-  if (Array.isArray(options.agent.skills)) {
-    const resolved = await resolveProfileSkills(
-      options.agent.skills,
-      options.cwd,
-    );
-    piArgs.push('--no-skills');
-    for (const skill of resolved.found) {
-      piArgs.push('--skill', skill.filePath);
-    }
-    if (resolved.missing.length > 0) {
-      spawnWarnings.push(`Skills not found: ${resolved.missing.join(', ')}.`);
-    }
-    spawnWarnings.push(...resolved.diagnostics);
-  }
-  piArgs.push(...buildChildToolArgs(options.agent.tools));
-  piArgs.push(
-    options.agent.systemPromptMode === 'replace'
-      ? '--system-prompt'
-      : '--append-system-prompt',
-    options.systemFile,
-  );
-  return { piArgs, spawnWarnings };
-}
-
 let pendingRunDelegation: RunDelegationRequest | null = null;
-let panePlacementQueue: Promise<void> = Promise.resolve();
-
-async function acquirePanePlacementLock(): Promise<() => void> {
-  const previous = panePlacementQueue;
-  let release!: () => void;
-  const current = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  panePlacementQueue = previous.then(() => current);
-  await previous;
-  return release;
-}
-
-function resumedDetails(resumed: boolean): { resumed?: boolean } {
-  return resumed ? { resumed: true } : {};
-}
-
-async function executeRewait(
-  pi: ExtensionAPI,
-  args: {
-    agent: AgentProfile;
-    tabLabel: string | undefined;
-    baseLabel: string;
-    layout: HerdrAgentLayout;
-    wait: boolean;
-    timeoutMs: number;
-    signal?: AbortSignal;
-    onUpdate?: AgentToolUpdateCallback<Record<string, unknown>>;
-  },
-) {
-  const { agent, baseLabel, layout, wait, timeoutMs, signal, onUpdate } = args;
-  if (!args.tabLabel?.trim()) {
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: 'tabLabel is required when task is omitted (re-wait mode).',
-        },
-      ],
-      isError: true,
-    };
-  }
-
-  const current = await getCurrentContext(signal);
-  const state = await bestEffort(emptyHerdrAgentsState(), () =>
-    persistPrunedAgentsState(current.panes),
-  );
-  // Tab and workspace layouts reuse by tab label; workspace tabs live in the
-  // dedicated Agents workspace, so they are listed from there. Re-wait is a
-  // pure lookup — it must never create the workspace, so a missing one just
-  // means there is nothing to find.
-  const usesTabs = layout === 'tab' || layout === 'workspace';
-  const agentsWorkspaceId =
-    layout === 'workspace'
-      ? await findAgentsWorkspaceId(
-          getHerdrAgentsWorkspaceLabel(await loadHerdrAgentsConfig()),
-          signal,
-        )
-      : undefined;
-  const tabs =
-    usesTabs && (layout !== 'workspace' || agentsWorkspaceId)
-      ? await listTabs(agentsWorkspaceId ?? current.workspaceId, signal)
-      : [];
-  const reusableTab = usesTabs
-    ? findReusableAgentTab(current, tabs, baseLabel, state)
-    : undefined;
-  const reusablePane =
-    layout === 'pane'
-      ? findReusableAgentPane(current, state, baseLabel)
-      : undefined;
-  const pane = reusableTab?.pane ?? reusablePane;
-  const tabId = reusableTab?.tab.tab_id ?? reusablePane?.tab_id;
-  const label = reusableTab?.tab.label ?? baseLabel;
-  const stateKey = pane ? paneStateKey(pane) : undefined;
-  const record = stateKey ? state.agents[stateKey] : undefined;
-  const target = record?.automationName ?? pane?.pane_id;
-  if (!pane || !tabId || !target) {
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: `No running Herdr agent named "${baseLabel}" found to re-wait on.`,
-        },
-      ],
-      isError: true,
-    };
-  }
-
-  onUpdate?.({
-    content: [
-      {
-        type: 'text',
-        text: `Reconnecting to existing Herdr agent ${label} (${pane.pane_id})...`,
-      },
-    ],
-    details: { tabId, paneId: pane.pane_id, tabLabel: label, agent },
-  });
-
-  if (!wait) {
-    const spawnWarnings = record?.spawnWarnings ?? [];
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: formatSpawnWarnings(
-            `Herdr agent ${label} (${pane.pane_id}) is still running.`,
-            spawnWarnings,
-          ),
-        },
-      ],
-      details: {
-        tabId,
-        paneId: pane.pane_id,
-        tabLabel: label,
-        agent,
-        waited: false,
-        ...spawnWarningDetails(spawnWarnings),
-      },
-    };
-  }
-
-  const blockedLabel = `waiting for ${label}`;
-  pi.events.emit('herdr:blocked', { active: true, label: blockedLabel });
-  beginAwaitingAgent(label);
-  try {
-    await waitForAgent(target, timeoutMs, signal);
-    const settled = await readSettledAgentOutput(
-      record?.resultFile,
-      target,
-      signal,
-    );
-    if ('question' in settled) {
-      const spawnWarnings = record?.spawnWarnings ?? [];
-      await dropCollectedSpawnWarnings(pane);
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: formatSpawnWarnings(
-              formatAgentQuestion(
-                label,
-                record?.agent ?? agent.name,
-                settled.question,
-              ),
-              spawnWarnings,
-            ),
-          },
-        ],
-        details: {
-          tabId,
-          paneId: pane.pane_id,
-          tabLabel: label,
-          closed: false,
-          agent,
-          waited: true,
-          status: 'question',
-          ...spawnWarningDetails(spawnWarnings),
-        },
-      };
-    }
-    // An explicit re-wait collects the result, so release the poller's claim.
-    await bestEffort(false, () => claimDetachedAgent(pane));
-    let closed = false;
-    let closeError: string | undefined;
-    if (record?.lifecycle === 'oneshot') {
-      closeError = await closeOneShot({
-        layout: record.layout,
-        tabId,
-        paneId: pane.pane_id,
-        resultFile: record.resultFile,
-        lifecyclePane: pane,
-        signal,
-      });
-      closed = closeError === undefined;
-    }
-    const spawnWarnings = record?.spawnWarnings ?? [];
-    const text = formatCollectedOutput(
-      settled.output,
-      label,
-      closeError,
-      spawnWarnings,
-    );
-    await dropCollectedSpawnWarnings(pane);
-    return {
-      content: [{ type: 'text' as const, text }],
-      details: {
-        tabId,
-        paneId: pane.pane_id,
-        tabLabel: label,
-        agent,
-        waited: true,
-        closed,
-        closeError,
-        ...spawnWarningDetails(spawnWarnings),
-      },
-    };
-  } catch (error) {
-    if (isRecoverableWaitInterrupt(error)) {
-      const reason = waitInterruptReason(error);
-      const spawnWarnings = record?.spawnWarnings ?? [];
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: formatSpawnWarnings(
-              formatWaitInterrupted(label, reason),
-              spawnWarnings,
-            ),
-          },
-        ],
-        details: {
-          tabId,
-          paneId: pane.pane_id,
-          tabLabel: label,
-          agent,
-          waited: false,
-          interrupted: true,
-          interruptReason: reason,
-          ...spawnWarningDetails(spawnWarnings),
-        },
-      };
-    }
-    throw error;
-  } finally {
-    endAwaitingAgent(label);
-    pi.events.emit('herdr:blocked', {
-      active: false,
-      label: blockedLabel,
-    });
-  }
-}
 
 export default function herdrAgentsExtension(pi: ExtensionAPI) {
   if (process.env.HERDR_AGENT_CHILD === '1') {

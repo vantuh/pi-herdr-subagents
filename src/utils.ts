@@ -1,33 +1,5 @@
 import { randomBytes } from 'node:crypto';
 
-import { ASK_QUESTION_TOOL } from './artifacts.ts';
-
-/**
- * Keep the question channel available in a restricted profile. Pi preserves
- * unlisted MCP tools unless they are explicitly filtered separately.
- *
- * Returns undefined when the profile does not restrict tools — then no flag is
- * passed at all and `ask_question` is available anyway.
- */
-export function buildChildToolAllowlist(
-  tools: readonly string[] | undefined,
-): string[] | undefined {
-  if (!tools?.length) return undefined;
-  return [...new Set([...tools, ASK_QUESTION_TOOL])];
-}
-
-export function buildChildToolArgs(
-  tools: readonly string[] | undefined,
-): string[] {
-  const allowlist = buildChildToolAllowlist(tools);
-  if (!allowlist) return [];
-  const args = ['--tools', allowlist.join(',')];
-  if (!allowlist.some((name) => name === '*' || name.startsWith('mcp__'))) {
-    args.push('--exclude-tools', 'mcp__*');
-  }
-  return args;
-}
-
 export function makeHerdrAgentName(profileName: string): string {
   const base =
     profileName

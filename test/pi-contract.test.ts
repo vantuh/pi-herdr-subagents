@@ -12,7 +12,7 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
-import { buildChildToolArgs } from '../src/utils.ts';
+import { buildChildToolArgs } from '../src/tool/child-args.ts';
 
 const model = {
   id: 'fixture',

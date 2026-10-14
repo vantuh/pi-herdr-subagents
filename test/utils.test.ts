@@ -24,8 +24,8 @@ import {
   writeAgentResult,
   writeAgentSessionMeta,
 } from '../src/artifacts.ts';
+import { buildChildToolAllowlist } from '../src/tool/child-args.ts';
 import {
-  buildChildToolAllowlist,
   formatAgentOutput,
   formatSpawnWarnings,
   formatWaitInterrupted,

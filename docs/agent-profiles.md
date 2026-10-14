@@ -1,7 +1,7 @@
 # Agent profiles
 
 This page documents profile parsing and child startup in `src/agents.ts`,
-`src/utils.ts`, and `src/index.ts`.
+`src/utils.ts`, and `src/tool/child-args.ts`.
 
 An agent profile is a markdown file: YAML frontmatter plus a body. `herdr_agent`
 selects one by its `agent` parameter and uses it to start the child Pi process.
@@ -97,5 +97,5 @@ unknown-agent error. The profile is still spawnable by exact name.
 ## Related
 
 - [README.md](../README.md#agent-profile) — overview of profiles.
-- `src/agents.ts` — parsing and discovery; `src/utils.ts` — `normalizeTools`,
-  `buildChildToolAllowlist`; `src/index.ts` — `buildChildPiArgs`.
+- `src/agents.ts` — parsing and discovery; `src/utils.ts` — `normalizeTools`;
+  `src/tool/child-args.ts` — `buildChildToolAllowlist`, `buildChildPiArgs`.

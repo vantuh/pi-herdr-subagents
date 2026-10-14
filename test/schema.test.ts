@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 
-import { buildHerdrAgentParams, describeAgentProfiles } from '../src/schema.ts';
+import { buildHerdrAgentParams, describeAgentProfiles } from '../src/tool/schema.ts';
 
 /**
  * The parameter schema is the model-facing contract: renaming a field or

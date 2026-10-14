@@ -41,11 +41,13 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 - `src/herdr/snapshot.ts` — session snapshot, pane/tab/workspace discovery, and Agents workspace resolution.
 - `src/herdr/placement.ts` — label uniqueness, reusable-tab/pane lookup, managed-agent listing, and split-ratio layout helpers.
 - `src/herdr/agent.ts` — named-agent start, prompt, wait, and read wrappers with their snapshot parsers.
-- `src/schema.ts` — TypeBox schema for tool parameters.
+- `src/tool/schema.ts` — TypeBox schema for tool parameters.
 - `src/prompts.ts` — injected Orchestrator instructions and child-agent protocol.
-- `src/tool/one-shot.ts` — one-shot close/staging, collected-output formatting, and best-effort state cleanup helpers.
+- `src/tool/one-shot.ts` — one-shot close/staging, pane-placement lock, collected-output formatting, and best-effort state cleanup helpers.
+- `src/tool/rewait.ts` — re-wait on a running agent and the resume-closed live-agent decision.
+- `src/tool/child-args.ts` — child Pi argv/env construction, the child tool allowlist, and the orchestrator identity.
 - `src/artifacts.ts` — result/question/session-meta file IO and child protocol constants.
-- `src/utils.ts` — agent-name generation, title casing, tool allowlist, and formatting helpers.
+- `src/utils.ts` — agent-name generation, title casing, tool-name normalization, and output/wait formatting helpers.
 - `src/types.ts` — shared TypeScript interfaces.
 - `src/state/store.ts` — managed-agent lifecycle records, state lock, load/save/migrate/prune, and the pure closed-history parser/reconciler.
 - `src/state/closed-history.ts` — closed one-shot archive/stage/finalize/claim/release/find.

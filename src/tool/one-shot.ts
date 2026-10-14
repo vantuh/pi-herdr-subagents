@@ -241,3 +241,16 @@ export async function dropCollectedSpawnWarnings(
   if (!pane?.terminal_id) return;
   await bestEffort(undefined, () => clearAgentSpawnWarnings(pane));
 }
+
+let panePlacementQueue: Promise<void> = Promise.resolve();
+
+export async function acquirePanePlacementLock(): Promise<() => void> {
+  const previous = panePlacementQueue;
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  panePlacementQueue = previous.then(() => current);
+  await previous;
+  return release;
+}
