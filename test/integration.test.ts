@@ -366,6 +366,39 @@ test('keeps a single right column when a third agent joins two live ones', async
   });
 });
 
+test('retries a busy child shell without creating another target or prompt', async () => {
+  await withHarness({ layout: 'workspace' }, async (harness) => {
+    harness.fake.queueStartFailures('agent_pane_busy', 'agent_pane_busy');
+
+    const result = await harness.call({ agent: 'scout', task: 'Find it' });
+
+    assert.equal(result.details.closed, true);
+    assert.equal(harness.fake.callsMatching('agent', 'start').length, 3);
+    assert.equal(harness.fake.callsMatching('tab', 'create').length, 1);
+    assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
+  });
+});
+
+test('aborts busy-shell retries without submitting a prompt', async () => {
+  await withHarness({}, async (harness) => {
+    harness.fake.failEveryStart('agent_pane_busy');
+    const controller = new AbortController();
+    const pending = harness.call(
+      { agent: 'scout', task: 'Find it' },
+      { signal: controller.signal },
+    );
+    const rejected = assert.rejects(pending);
+    await harness.waitFor(
+      () => harness.fake.callsMatching('agent', 'start').length >= 2,
+      'busy-shell retry',
+    );
+    controller.abort();
+    await rejected;
+    assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 0);
+    assert.equal(harness.fake.callsMatching('pane', 'close').length, 0);
+  });
+});
+
 test('recovers from a transient agent kind mismatch by waiting and renaming', async () => {
   await withHarness({}, async (harness) => {
     harness.fake.queueStartFailures('agent_kind_mismatch');
@@ -1302,7 +1335,7 @@ test('delivers two detached outcomes as one batch with a single turn trigger', a
   });
 });
 
-test('leaves a failed startup pane open without retrying the CLI', async () => {
+test('bounds busy-shell retries and leaves the failed startup pane open', async () => {
   await withHarness({}, async (harness) => {
     harness.fake.failEveryStart('agent_pane_busy');
 
@@ -1314,7 +1347,9 @@ test('leaves a failed startup pane open without retrying the CLI', async () => {
       },
     );
 
-    assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
+    assert.ok(harness.fake.callsMatching('agent', 'start').length > 1);
+    assert.equal(harness.fake.callsMatching('pane', 'split').length, 1);
+    assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 0);
     assert.equal(harness.fake.callsMatching('pane', 'close').length, 0);
     // The split pane is left for inspection, and no agent was recorded.
     assert.deepEqual((await harness.readState()).agents, {});

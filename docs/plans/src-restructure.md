@@ -409,12 +409,12 @@ Not part of the restructure; tracked here so they are not lost.
   The same aborted signal covers the poller-restart case: a `herdr_agent` call
   still running at shutdown can call `ensureAgentsWidget` and start a new
   interval after shutdown; `ensureAgentsWidget` refuses once aborted.
-- [ ] No retry on `agent_pane_busy`: `herdr agent start --pane <new pane>` can
-  fail because the new pane's shell is not ready yet, and the failed spawn
-  leaves an empty shell pane behind. Decide between a short bounded retry for
-  this error code and closing the pane on this specific failure (today startup
-  failures intentionally keep the pane, see `AGENTS.md` regressions table;
-  revisit that rule only for panes this call created).
+- [x] Restore `agent_pane_busy` recovery removed in `773a80d`. A new pane may
+  exist before its shell reaches the prompt. Retry this pre-launch rejection
+  every 100ms for up to 5s, retaining the same pane and automation name, honoring
+  abort, and never resubmitting a task. Other startup failures still propagate;
+  exhausted retries leave the pane open for inspection. Regression checks cover
+  transient busy shells, exhausted retries, and cancellation.
 - [ ] Truncated detached result: the Phase 3 worker was delivered as
   "Now the test file imports." (an intermediate assistant message) instead of
   its final report. Possibly a consequence of the state-file wipe above, not

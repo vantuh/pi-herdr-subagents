@@ -115,22 +115,36 @@ export async function startAgent(
     '--',
     ...piArgs,
   ];
-  try {
-    await execHerdr(args, signal);
-  } catch (error) {
-    if (
-      !(error instanceof HerdrCliError) ||
-      error.code !== 'agent_kind_mismatch'
-    ) {
-      throw error;
-    }
-    // A Pi ACP provider can briefly own the foreground; the launch already happened.
+  const shellReadyDeadline = Date.now() + 5_000;
+  while (true) {
     try {
-      await waitForStartedAgent(paneId, 'pi', 30_000, signal);
-      await execHerdr(buildAgentRenameArgs(paneId, name), signal);
-    } catch (settleError) {
-      if (signal?.aborted) throw settleError;
-      throw error;
+      await execHerdr(args, signal);
+      return;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      if (
+        error instanceof HerdrCliError &&
+        error.code === 'agent_kind_mismatch'
+      ) {
+        // The launch already happened; wait for Pi instead of starting it twice.
+        try {
+          await waitForStartedAgent(paneId, 'pi', 30_000, signal);
+          await execHerdr(buildAgentRenameArgs(paneId, name), signal);
+          return;
+        } catch (settleError) {
+          if (signal?.aborted) throw settleError;
+          throw error;
+        }
+      }
+      if (
+        !(error instanceof HerdrCliError) ||
+        error.code !== 'agent_pane_busy' ||
+        Date.now() >= shellReadyDeadline
+      ) {
+        throw error;
+      }
+      // A newly created pane can exist before its shell reaches the prompt.
+      await delay(100, signal);
     }
   }
 }

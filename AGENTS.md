@@ -158,7 +158,8 @@ Covered by the integration layer: one-shot spawn/collect/close, scrollback
 fallback, the `ask_question` round trip (parked one-shot answered by label),
 rejection of label-addressed tasks to live agents, parallel spawns serialized
 into one agent column
-with rebalancing, `agent_kind_mismatch` recovery, the
+with rebalancing, bounded and abortable `agent_pane_busy` retry,
+`agent_kind_mismatch` recovery, the
 delayed and fast prompt acceptance without duplicate Enter, timeout/abort soft re-wait plus the
 re-wait path, detached result and question delivery through the widget poller
 (exactly once), the tab layout, the injected Orchestrator / `/run`
@@ -178,7 +179,7 @@ now have tests, with the finding they came from:
 | A reused agent's previous settled state is not accepted as this turn's result | §8 |
 | A child that finishes as `done` rather than `idle` is still collected | §8 |
 | One-shot cleanup removes the managed temp dir; a running detached agent keeps it | §9 |
-| Startup CLI failures propagate without retrying or closing the pane | §12 |
+| Busy child shells retry for up to 5s; other startup CLI failures propagate without retrying or closing the pane | §12 |
 | `/herdr-agents` focuses, closes (with temp cleanup), and reports an empty workspace | §9 |
 | Two detached outcomes in one poller tick arrive as one batch, only the last triggering a turn | index.ts |
 | Every relative import resolves | §15 |
