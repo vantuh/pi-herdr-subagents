@@ -1,5 +1,8 @@
 # План: друга хвиля портування з pi-interactive-subagents
 
+> Historical implementation notes. See [README.md](../README.md) and
+> [flow.md](flow.md) for the supported runtime and current behavior.
+
 Продовження [`plan-interactive-agents.md`](./plan-interactive-agents.md), де вже
 портовано ліміт паралельних агентів, widget, `ask_question` і асинхронну
 доставку. Джерело те саме —

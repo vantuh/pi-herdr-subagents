@@ -26,16 +26,19 @@ and closes the target.
 
 ## Prerequisites
 
-- [Herdr](https://herdr.dev) and Pi installed. The Herdr agent API
-  (`agent start`, `agent prompt`, `agent wait`, `agent send-keys`, `agent read`,
-  `api snapshot`) was introduced in Herdr 0.7.5; the extension does not check
-  the version itself.
+- Pi `1.2.0` and [Herdr](https://herdr.dev) client/server `0.9.4`.
+  Only current APIs are supported; no older-version compatibility layer.
+- Herdr's official Pi integration `v9`, installed with
+  `herdr integration install pi`. It supplies authoritative lifecycle and
+  session reporting. Install it yourself; tests use an isolated agent directory.
 - The orchestrating Pi session must run inside a Herdr pane.
 - [Bun](https://bun.sh) to run the tests.
 
 ## Loading
 
 The package manifest declares `./src/index.ts` as its Pi extension entrypoint.
+Try it inside Herdr with `pi -e ./src/index.ts`. For persistent loading, run
+`pi install .` from this repository, then `/reload` in Pi.
 Pi supplies the peer dependencies when loading the extension. For local
 development, run `npm ci --ignore-scripts` to install the locked dependencies.
 

@@ -1,9 +1,7 @@
 # Agent profiles
 
-> **RETIRED 2026-09-04 — not loaded, not maintained.** Migrated to
-> [pi-subagents](https://github.com/nicobailon/pi-subagents) (+ pi-intercom).
-> This page documents the archived behavior of `src/agents.ts`, `src/utils.ts`
-> and `src/index.ts`.
+This page documents profile parsing and child startup in `src/agents.ts`,
+`src/utils.ts`, and `src/index.ts`.
 
 An agent profile is a markdown file: YAML frontmatter plus a body. `herdr_agent`
 selects one by its `agent` parameter and uses it to start the child Pi process.

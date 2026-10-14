@@ -1,236 +1,111 @@
 # herdr_agent flow
 
-This document describes the runtime flow of the `herdr_agent` tool.
+Current runtime: Pi `1.2.0`, Herdr client/server `0.9.4`, official Pi integration
+`v9`. See [README.md](../README.md) for loading and tool parameters.
 
-## 1. Pi loads the extension
+## Loading and profiles
 
-Pi loads the extension from the symlinked extension directory:
+Pi loads `src/index.ts` through the package manifest or an explicit
+`pi -e ./src/index.ts`. The main session registers `herdr_agent`, commands,
+renderers, and orchestration guidance. `HERDR_AGENT_CHILD=1` registers only the
+child result/session writer and `ask_question`.
 
-```text
-~/.pi/agent/extensions/herdr-agents/src/index.ts
-```
+`src/agents.ts` discovers profiles on every call from `getAgentDir()/agents`
+and the nearest project `.pi/agents`. Project profiles override user profiles
+by name. See [agent-profiles.md](agent-profiles.md) for fields and precedence.
 
-`index.ts` runs in Orchestrator or child mode. `HERDR_AGENT_CHILD=1` prevents recursive delegation tools inside child panes, but child mode still registers a small result-writer hook. On each assistant `message_end`, that hook writes the latest finalized response to the result artifact named in the task prompt.
+New children have fresh context. The role body and child protocol are written
+to `system.md`, passed through `--append-system-prompt` or `--system-prompt`.
+The task prompt includes the private `HERDR_RESULT_FILE` marker.
 
-## 2. The Orchestrator receives global guidance
+## Target placement and startup
 
-The extension appends Orchestrator guidance from `constants.ts` through `before_agent_start` (abridged here):
+`herdr api snapshot` discovers the session. `HERDR_PANE_ID` takes precedence
+over UI focus because focus can change while a tool runs.
 
-```md
-When isolated context helps, use the `herdr_agent` tool instead of raw Herdr CLI commands.
-Pick the smallest suitable agent profile.
-Use `lifecycle: "oneshot"` for one-off tasks that should close after completion; this is the default.
-Use `lifecycle: "persistent"` when a role should stay available for follow-up tasks or accumulate context. The tool reuses a matching managed target automatically.
-The current tab is Orchestrator.
-Synthesize Herdr agent results yourself; do not blindly forward output.
-```
+Layout comes from `herdr-agents.json`, never the tool parameters:
 
-This replaces the older approach where the full Herdr workflow lived in the global `AGENTS.md`.
+- `workspace` (default): one tab per agent in the dedicated `subagents` workspace.
+- `pane`: first split is right at 60/40; later agents stack down the right column.
+- `tab`: one tab per agent in the orchestrator's workspace.
 
-## 3. The model calls `herdr_agent`
+Creation responses supply IDs; the extension does not predict them. Placement
+is locked through startup, state recording, and pane-column rebalancing so
+parallel spawns see each other's targets. Exact equal-height ratios use
+`layout.export` and `layout.set_split_ratio` through the socket API.
 
-Example:
+Child shells receive `HERDR_AGENT_CHILD=1` and `PROCESS_LAUNCHED_BY_Q=1`. The
+latter prevents Kiro's shell wrapper from obscuring the real shell. A shell's
+history isolation still requires its own child-marker configuration.
 
-```json
-{
-  "agent": "reviewer",
-  "tabLabel": "HR Correctness",
-  "task": "Review the current diff for correctness and regressions. Return concise findings with file/line evidence.",
-  "wait": true,
-  "timeoutMs": 600000,
-  "lifecycle": "oneshot"
-}
-```
-
-The task must be self-contained because newly created child Pi sessions start with fresh context and do not inherit the Orchestrator conversation.
-
-## 4. The extension discovers agent profiles
-
-`agents.ts` reads profiles from:
-
-1. global user profiles: `~/.pi/agent/agents/*.md`;
-2. nearest project profiles: `<repo>/.pi/agents/*.md`, if present.
-
-Project profiles override user profiles with the same `name`.
-
-The profile supplies:
-
-- child model;
-- child tool allowlist;
-- child role/system instructions.
-
-## 5. The extension identifies the Orchestrator pane
-
-`herdr.ts` bootstraps discovery with one machine-readable snapshot:
+Herdr starts a named Pi agent:
 
 ```bash
-herdr api snapshot
+herdr agent start <automation-name> --kind pi --pane <pane-id> --timeout 30000 -- \
+  --name '<label>' --append-system-prompt '<system.md>'
 ```
 
-The snapshot contains panes, tabs, agents, focused IDs, layout metadata, and protocol/version information. The extension prefers `HERDR_PANE_ID` over the snapshot's focused pane.
+Profile model, thinking, skills, and tool restrictions add Pi arguments.
+The automation name is distinct from the display label and terminal ID.
+Herdr returns only when Pi is detected and ready for input.
 
-Reason: focus can move while a tool is running. `HERDR_PANE_ID` identifies the actual pane running the Orchestrator Pi process.
+## Prompt submission and waiting
 
-The extension does not rename that tab; a separate extension
-(`extensions/herdr-tab-name.ts`) keeps the tab label in sync with the Pi
-session name.
-
-## 6. The extension creates or reuses a Herdr target
-
-Layout is internal configuration and is not exposed in `herdr_agent` parameters. It comes from `herdr-agents.json` in the Pi agent dir: `layout` accepts `workspace` (default), `pane`, or `tab`; unsupported values fall back to `workspace`. The subagents workspace label comes from `workspace.label` (default `subagents`).
-
-Default workspace mode resolves the subagents workspace from `herdr workspace list` (recreating it if the user closed it) and gives every agent its own tab there, so the Orchestrator's workspace never changes:
+Every task uses atomic `herdr agent prompt` without `--wait`. The upstream
+`--wait` path has a five-second activity gate, which is too short for some
+Pi transitions. The extension owns the longer acceptance wait, then uses:
 
 ```bash
-herdr workspace list
-herdr workspace create --label subagents --no-focus      # only when missing
-herdr tab create --workspace <agents-workspace> --label <label> --no-focus
+herdr agent wait <target> --until idle --until done --timeout 600000
 ```
 
-When the extension itself created the workspace, it closes exactly the root
-shell tab `workspace create` starts new workspaces with — identified by the
-tab id from the create response, never by a shape guess, and never for a
-workspace it merely adopted. With only one-shot agents, the whole workspace
-disappears once its last tab closes (real Herdr removes emptied workspaces).
+`blocked` is not completion: it may be an approval dialog. `herdr:blocked`
+marks the waiting orchestrator through the official Pi integration.
 
-In pane mode, the first agent splits the Orchestrator pane to the right with ratio `0.6`, leaving the new agent 40%:
+In TUI sessions, task submission detaches by default. The per-second widget
+poller collects settled agents and delivers custom result/question messages.
+Explicit `wait: true` blocks. Non-TUI submission must wait because it has no
+background collector. A taskless `wait: false` re-wait can report status.
 
-```bash
-herdr pane split <orchestrator-pane> --direction right --ratio 0.6 --no-focus
-```
+Timeout or abort leaves the child running. Re-wait with the same `tabLabel`
+and no `task`; this never resubmits the prompt or resurrects a closed agent.
 
-Additional agents split the largest managed pane downward, keeping them in the right column. The extension then uses `layout.set_split_ratio` to give every managed agent equal height, and repeats that rebalance after an agent closes. For new pane agents, the placement lock remains held through `agent start`, managed-state recording, and rebalancing; this ensures parallel calls see previously created agents before choosing a split direction or label.
+## Questions and result collection
 
-Legacy tab mode creates a sibling tab in the Orchestrator's workspace:
+Child `message_end` writes each non-empty finalized assistant response to
+`result.md`. Before a new task, the parent clears old result/question files.
+Session metadata is stored beside the result for durable resume.
 
-```bash
-herdr tab create --workspace <workspace-id> --label <label> --no-focus
-```
+Collection checks `question.md` before `result.md`. `ask_question` writes the
+question, and the child settles without completing its task. The parent
+returns/delivers the question and leaves the one-shot open. Answer by sending
+a normal `task` with the same `tabLabel`.
 
-`lifecycle: "oneshot"` always creates a fresh target. `lifecycle: "persistent"` first looks for a managed agent with the exact requested `tabLabel`; pane mode searches the Orchestrator tab, tab mode searches sibling tabs, and workspace mode searches tabs in the subagents workspace. The default label is the title-cased profile name. Duplicate fresh labels receive `#2`, `#3`, etc.
+If no result artifact exists, the explicit collection path can read terminal
+output through `agent read --source recent-unwrapped --lines 180`. Artifacts
+remain the primary channel because scrollback cannot guarantee complete output.
 
-## 7. The extension prepares prompts and a result artifact
+Detached claims use the shared state lock so synchronous and background
+collection do not deliver the same outcome twice. Outcomes found in one poller
+tick are batched; only the final custom message triggers a turn.
 
-The extension writes `system.md` and reserves `result.md` in one private `${TMPDIR}/herdr-agent-*` directory (`os.tmpdir()` in Node). The task is submitted directly through the Herdr agent API and includes the result path marker. Before every prompt, the parent removes any previous `result.md`; child mode then writes each non-empty finalized assistant message without requiring the profile to have a `write` tool. If a turn produces no artifact, result collection falls back to terminal output instead of returning stale persistent-agent content.
+## Close and resume
 
-The child protocol requires a final report:
+Every new agent is a one-shot. Successful collection stages continuation
+metadata before closing the owned pane/tab. Only then does the extension
+finalize the archived history and clean up temporary files. Close failures
+return the collected output with a warning and leave the target inspectable.
 
-```md
-HERDR_RESULT:
+`resumeClosed: true` requires an explicit `tabLabel` and a non-empty `task`.
+The extension validates session ID/cwd against the native JSONL header and
+claims the matching owner-session history slot. Pi starts with `--session`
+pointing at that file, using the current profile policy from the archived cwd.
+It closes again after the next successful result.
 
-- status: done | blocked
-- summary: <short result>
-- evidence: <files/commands/links inspected>
-- changes: <none | files changed>
-- next: <recommended next step>
-```
+A live label takes precedence: answer a parked question, re-wait active work,
+or collect a detached outcome first. Resume never spawns a closed copy over
+live work. Concurrent resumes have one claim winner.
 
-## 8. The extension starts child Pi
-
-The new pane/tab shell is created with `HERDR_AGENT_CHILD=1` and `PROCESS_LAUNCHED_BY_Q=1`. The child marker makes the zsh history configuration select `HISTFILE=/dev/null`; setting `HISTFILE` through `--env` is insufficient because zsh initializes that special parameter itself. `PROCESS_LAUNCHED_BY_Q` prevents Kiro CLI's nested terminal wrapper from replacing the real shell, which keeps the pane compatible with `herdr agent start`. A fresh Pi is then started through Herdr's agent lifecycle API:
-
-```bash
-herdr agent start <short-unique-name> --kind pi --pane <pane-id> -- \
-  --name '<tab-label>' \
-  --model '<profile-model>' \
-  --tools '<profile-tools>' \
-  --append-system-prompt '<system.md>'
-```
-
-`agent start` waits until Herdr detects Pi and it is ready for input. The short automation name matches `[a-z][a-z0-9_-]{0,31}` and is persisted separately from the human-readable label. Existing legacy agents without such a name fall back to their pane ID.
-
-## 9. The Orchestrator waits
-
-If `wait` is false, the tool returns after starting/sending the task. This is only valid for `lifecycle: "persistent"`; `lifecycle: "oneshot"` requires waiting so the extension can close the managed target.
-
-Every task is submitted through `herdr agent prompt` **without** `--wait`. Herdr's `agent prompt --wait` hardcodes a 5s post-submit lifecycle gate and returns `agent_prompt_stalled` when Pi is slow to leave idle — often looking like "text pasted, Enter never pressed".
-
-If `wait` is true, the extension instead:
-
-```bash
-herdr agent get <name-or-pane>          # snapshot state_change_seq
-herdr agent prompt <name-or-pane> '<task>'
-# poll up to 30s for a newer state_change_seq with working/blocked,
-# or a newer idle/done seq (same-seq working from a prior turn is ignored);
-# after 5s still idle+interactive_ready, nudge once:
-#   herdr agent send-keys <target> enter
-herdr agent wait <name-or-pane> \
-  --until idle --until done --timeout <ms>
-```
-
-Acceptance requires an increased `state_change_seq`, so a reused agent still `working` from a previous turn cannot satisfy a newly submitted prompt. The Enter nudge only fires while the composer is idle and `interactive_ready`. The extension emits `herdr:blocked` around that wait. `blocked` is deliberately not a completion state because it usually means the child needs approval or an answer.
-
-The `herdr:blocked` event is consumed by Herdr's installed Pi state extension. It lets the Herdr UI show that the Orchestrator is blocked while waiting for a child.
-
-### Re-waiting after a timeout or abort
-
-`timeoutMs` (default 600000ms / 10 minutes) bounds a single tool call's wait, not the child agent's
-lifetime. A large delegated task (e.g. spinning up testcontainers and iterating on e2e tests) can
-legitimately still be `working` when the tool call times out. Outer layers can also abort sooner
-(for Cursor models: `PI_CURSOR_MCP_TOOL_TIMEOUT_SECONDS` / pi-tool bridge CallTool deadline), which
-surfaces as `The operation was aborted` while the child keeps running.
-
-On recoverable wait interrupt (abort or Herdr `timeout`), the tool returns a soft result — not
-`isError` — with the exact re-wait instructions. Do not treat that as task failure.
-
-To continue waiting on the same managed target without starting a new one or re-sending the task, call
-`herdr_agent` again with the same `tabLabel` and `task` omitted. This re-wait mode:
-
-- looks up the existing managed pane or tab by exact `tabLabel` (any lifecycle, not just persistent);
-- does not send a new prompt into the pane;
-- calls `herdr agent wait --until idle --until done` against the saved automation name (or legacy pane ID);
-- returns the saved result artifact, with terminal output as fallback;
-- closes a successfully recovered one-shot target.
-
-This avoids two bad alternatives: assuming the timeout means failure, or falling back to raw
-`herdr wait agent-status`/`herdr pane read` bash commands to poll the same pane manually.
-
-Omitting `task` never resurrects a closed agent. To continue a closed one-shot owned by this
-Orchestrator session, call `herdr_agent` with `resumeClosed: true`, the exact `tabLabel`, and a
-new self-contained `task`. Live agents with that label take precedence: parked questions reuse the
-live target, a still-working agent must be re-waited, a settled detached result must be collected,
-and persistent agents are reused. Resume never replaces a live target with a closed copy. Resume
-launches Pi with `--session` pointing at the child's existing JSONL, rebuilds the current profile
-policy from the archived session cwd, and keeps the resumed lifecycle one-shot — after a successful
-result it closes again and updates the same continuation slot.
-
-State-file writes use an exclusive lock directory created with `mkdir` at
-`herdr-agents-state.json.lock`. Acquisition succeeds only when that `mkdir` succeeds; the holder
-then writes an owner sentinel whose name includes a random token and the owner PID. There is no
-automatic stale-lock takeover. A waiter that sees `EEXIST` retries until timeout. Release unlinks
-only that holder's exact sentinel, then `rmdir`s the directory; `rmdir` fails if a replacement
-sentinel is present, so an old holder cannot drop a new lock. A leftover lock *file* at the same
-path (from older versions) is treated as occupied and times out — stop every Pi/herdr-agents
-process first, then remove the directory or legacy file by hand.
-
-## 10. Completion detection
-
-Completion detection is delegated to Herdr 0.7.5's server-owned agent waits. Prompt acceptance requires an increased `state_change_seq` that lands on `working`/`blocked` or settled `idle`/`done`, so a reused agent's previous turn (including still-`working`) cannot satisfy a newly submitted prompt. Standalone `agent wait` pins the current pane occupant, so a replacement process cannot accidentally satisfy a re-wait.
-
-## 11. The extension reads child output
-
-After completion, the extension first reads the agent's `result.md` artifact. This avoids terminal scrollback limits and alternate-screen loss. If the artifact is absent—for example, for a legacy child started before this feature—it falls back to:
-
-```bash
-herdr agent read <name-or-pane> --source recent-unwrapped --lines 180
-```
-
-The tool returns that text to the Orchestrator.
-
-The Orchestrator is expected to synthesize the result, not blindly forward it.
-
-## 12. The extension keeps or closes the target
-
-For `lifecycle: "persistent"`, the extension leaves the managed pane or tab and its temp directory available after completion.
-
-This is intentional:
-
-- the user can inspect child reasoning/output;
-- the Orchestrator can reuse the managed target later;
-- Herdr works as a visible persistent workspace, not a hidden subprocess runner.
-
-For `lifecycle: "oneshot"`, the extension closes only the target created by the current tool call after it has successfully waited and read output: `pane close` in pane mode or `tab close` in tab and workspace mode. After a successful close, it removes that agent's temp directory. Closing a managed persistent agent through `/herdr-agents` also removes its temp directory.
-
-Timeout, abort, or execution errors leave the one-shot target open for debugging.
-
-If closing fails after output was read, the tool still returns the agent output with a warning and leaves the target open for debugging.
+State updates use the existing exclusive directory lock with owner sentinels.
+There is no automatic stale-lock takeover. Native Pi session files are not
+deleted when the extension prunes its bounded closed-history index.

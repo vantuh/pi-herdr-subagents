@@ -1,5 +1,8 @@
 # План: інтерактивні агенти
 
+> Historical implementation notes. See [README.md](../README.md) and
+> [flow.md](flow.md) for the supported runtime and current behavior.
+
 Портування ідей з [pi-interactive-subagents](https://github.com/amosblomqvist/pi-interactive-subagents)
 (форк HazAT) у `herdr-agents`. Джерело — асинхронний tmux-плагін; ми лишаємось на
 Herdr, тому портуємо **фічі**, а не архітектуру.

@@ -1,11 +1,8 @@
-# AGENTS.md — herdr-agents extension
+# AGENTS.md — pi-herdr-subagents
 
-> **RETIRED 2026-09-04 — not loaded, not maintained.** Migrated to
-> [pi-subagents](https://github.com/nicobailon/pi-subagents) (+ pi-intercom).
-> Kept in `home/dot_pi/agent/archive/` for design reference. See `../README.md`.
-
-This extension is archived source-only. Chezmoi does not apply it into
-`~/.pi/agent/extensions/`.
+Actively maintained Pi package for Herdr-backed delegation. Target Pi `1.2.0`,
+Herdr client/server `0.9.4`, and Herdr's official Pi integration `v9`.
+See [README.md](README.md) for loading and usage.
 
 ## Purpose
 
@@ -68,8 +65,9 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 
 ## Loading
 
-This extension is not loaded. Read and test it from the archive directory in the
-repository; do not expect a home-side copy under `~/.pi/agent/extensions/`.
+The package manifest loads `src/index.ts`. For development, run
+`pi -e ./src/index.ts` inside Herdr. For persistent loading, install this local
+package with `pi install .` and reload Pi.
 
 A global `/parallel-review` Pi prompt historically used this extension's
 `herdr_agent` tool; the prompt itself was maintained outside this extension.
@@ -77,7 +75,7 @@ A global `/parallel-review` Pi prompt historically used this extension's
 ## Tests
 
 ```bash
-cd home/dot_pi/agent/archive/herdr-agents
+npm ci --ignore-scripts
 bun run test              # unit + integration (fast, no real Herdr)
 bun run test:unit         # pure helpers only, no subprocesses
 bun run test:integration  # full herdr_agent flow against a fake Herdr
@@ -92,7 +90,7 @@ unit and integration tests use the local packages. E2E additionally requires
 
 Three layers:
 
-- **Unit** (`*.test.ts` next to their module) — pure helpers: arg builders,
+- **Unit** (`test/*.test.ts`) — pure helpers: arg builders,
   snapshot parsing, layout ratios, state records, widget rendering, profile
   discovery precedence, and the child-mode contract. `imports.test.ts` walks
   every module's relative imports, which is the one failure (a dangling sibling
@@ -211,7 +209,7 @@ Useful smoke checks:
 
 ```bash
 # Parse/bundle the extension modules.
-bun build home/dot_pi/agent/archive/herdr-agents/src/index.ts \
+bun build src/index.ts \
   --target node \
   --outfile /tmp/herdr-agents-check.js \
   --external @earendil-works/pi-coding-agent \
@@ -223,5 +221,5 @@ PI_OFFLINE=1 pi --no-context-files --no-skills --no-prompt-templates --no-themes
   -p 'List exact tool names available. Do not use tools.'
 ```
 
-After changing archived files, run the tests from this directory. The extension
-is not loaded, so `/reload` has no effect unless it is restored first.
+Run checks from the repository root. When this package is loaded in Pi,
+`/reload` refreshes the extension runtime.
