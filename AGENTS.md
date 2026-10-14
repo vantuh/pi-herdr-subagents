@@ -49,6 +49,10 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 - `e2e/` — end-to-end scenarios against a real Herdr server and real Pi children.
 - `docs/` — detailed implementation and session notes.
 
+## Plans
+
+Write each plan to `docs/plans/<short-task-name>.md`. The filename names the work, as in `herdr-0.7-agent-api-migration.md`. Do not use `PLAN.md` or any other generic name: a later plan would overwrite it. Revisions of one plan stay in that same file so Plan Diff keeps the history.
+
 ## Important behavior
 
 - Child panes start with `HERDR_AGENT_CHILD=1` and `PROCESS_LAUNCHED_BY_Q=1`: delegation tools stay disabled, final responses are persisted, zsh selects `HISTFILE=/dev/null` from the child marker, and Kiro's terminal wrapper cannot hide the real shell from `herdr agent start`.
