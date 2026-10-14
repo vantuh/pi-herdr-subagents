@@ -210,10 +210,18 @@ Not part of the restructure; tracked here so they are not lost.
 
 - [x] Tests pruned the live state file through a widget tick that outlived
   `session_shutdown` (`552343d`, bounded wait `e1c4e8e`).
-- [ ] Poller restart after shutdown: a `herdr_agent` call still running when
-  `session_shutdown` fires can call `ensureAgentsWidget` again and start a new
-  interval/tick after `settleAgentsWidgetPoller` returned. Candidate fix: a
-  `shuttingDown` flag in `src/ui/poller.ts` checked by `ensureAgentsWidget`.
+- [ ] Cancel the widget tick instead of a timed wait. Today
+  `settleAgentsWidgetPoller` races the in-flight tick against an arbitrary 3s
+  timeout (Pi awaits `session_shutdown` handlers with no timeout of its own);
+  if it fires, the tick keeps running after shutdown. Replace with an
+  `AbortController` owned by the poller: shutdown aborts, the tick passes the
+  signal to `execHerdr` and checks it before each side effect (prune, delivery,
+  close), then shutdown awaits the tick without a timer. `withStateFileLock`
+  does not take a signal yet: add one, or keep a fallback cap only for the lock
+  wait (precedent: `RESUME_CLEANUP_TIMEOUT_MS` + `independentCleanupSignal`).
+  The same aborted signal covers the poller-restart case: a `herdr_agent` call
+  still running at shutdown can call `ensureAgentsWidget` and start a new
+  interval after shutdown; `ensureAgentsWidget` refuses once aborted.
 - [ ] No retry on `agent_pane_busy`: `herdr agent start --pane <new pane>` can
   fail because the new pane's shell is not ready yet, and the failed spawn
   leaves an empty shell pane behind. Decide between a short bounded retry for
