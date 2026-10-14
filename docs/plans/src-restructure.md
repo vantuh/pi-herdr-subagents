@@ -204,6 +204,27 @@ close) and to label lookup (re-wait reports no running agent).
   records without the field keep today's behavior.
 - Test: two simulated servers sharing one state file keep each other's records.
 
+## Follow-up: issues found during the restructure
+
+Not part of the restructure; tracked here so they are not lost.
+
+- [x] Tests pruned the live state file through a widget tick that outlived
+  `session_shutdown` (`552343d`, bounded wait `e1c4e8e`).
+- [ ] Poller restart after shutdown: a `herdr_agent` call still running when
+  `session_shutdown` fires can call `ensureAgentsWidget` again and start a new
+  interval/tick after `settleAgentsWidgetPoller` returned. Candidate fix: a
+  `shuttingDown` flag in `src/ui/poller.ts` checked by `ensureAgentsWidget`.
+- [ ] No retry on `agent_pane_busy`: `herdr agent start --pane <new pane>` can
+  fail because the new pane's shell is not ready yet, and the failed spawn
+  leaves an empty shell pane behind. Decide between a short bounded retry for
+  this error code and closing the pane on this specific failure (today startup
+  failures intentionally keep the pane, see `AGENTS.md` regressions table;
+  revisit that rule only for panes this call created).
+- [ ] Truncated detached result: the Phase 3 worker was delivered as
+  "Now the test file imports." (an intermediate assistant message) instead of
+  its final report. Possibly a consequence of the state-file wipe above, not
+  verified. Reproduce before fixing.
+
 ## Out of scope
 
 - Splitting or rewriting test files.
