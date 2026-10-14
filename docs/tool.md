@@ -38,7 +38,7 @@ Only `agent` is required by the schema. Some modes require more fields at runtim
 
 Schema description of `wait`: *"Default: false — … Headless sessions require wait: true; an explicit false is rejected."* The headless default of `true` comes from `execute` (`params.wait ?? !ctx.hasUI`). The rejection applies to calls with a `task`; see [UI vs headless sessions](#ui-vs-headless-sessions).
 
-There are no `layout`, `lifecycle` or `timeoutMs` parameters. Layout comes from `herdr-agents.json`. The wait timeout is fixed at 600 s.
+There are no `layout`, `lifecycle` or `timeoutMs` parameters. Layout comes from `herdr-agents.json` ([config.md](config.md)). The wait timeout is fixed at 600 s.
 
 ### Modes
 

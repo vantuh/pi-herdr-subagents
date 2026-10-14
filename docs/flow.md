@@ -25,7 +25,7 @@ The task prompt includes the private `HERDR_RESULT_FILE` marker.
 `herdr api snapshot` discovers the session. `HERDR_PANE_ID` takes precedence
 over UI focus because focus can change while a tool runs.
 
-Layout comes from `herdr-agents.json`, never the tool parameters:
+Layout comes from `herdr-agents.json` ([config.md](config.md)), never the tool parameters:
 
 - `workspace` (default): one tab per agent in the dedicated `subagents` workspace.
 - `pane`: first split is right at 60/40; later agents stack down the right column.

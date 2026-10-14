@@ -109,7 +109,8 @@ Lifecycle:
 ## Configuration
 
 Layout is set in `herdr-agents.json` in the Pi agent dir. It is not part of the
-tool schema. A missing or invalid file falls back to the defaults:
+tool schema. Field rules are in [docs/config.md](docs/config.md). A missing or
+invalid file falls back to the defaults:
 
 ```json
 {
@@ -143,6 +144,7 @@ so a live session is not touched.
 
 ## Documentation
 
+- [docs/config.md](docs/config.md) — `herdr-agents.json` fields and defaults.
 - [docs/agent-profiles.md](docs/agent-profiles.md) — profile fields and discovery.
 - [docs/flow.md](docs/flow.md) — runtime lifecycle of `herdr_agent`.
 - [docs/tool.md](docs/tool.md) — exposed tool contract and injected instructions.
