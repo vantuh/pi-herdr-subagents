@@ -18,14 +18,14 @@ export function herdrChildEnvArgs(sessionMetaFile?: string): string[] {
 }
 
 export function orchestratorIdentity(ctx: ExtensionContext): {
-  sessionId?: string;
-  sessionFile?: string;
+  ownerSessionId?: string;
+  ownerSessionFile?: string;
 } {
   const sessionId = ctx.sessionManager?.getSessionId()?.trim();
   const sessionFile = ctx.sessionManager?.getSessionFile()?.trim();
   return {
-    ...(sessionId ? { sessionId } : {}),
-    ...(sessionFile ? { sessionFile } : {}),
+    ...(sessionId ? { ownerSessionId: sessionId } : {}),
+    ...(sessionFile ? { ownerSessionFile: sessionFile } : {}),
   };
 }
 

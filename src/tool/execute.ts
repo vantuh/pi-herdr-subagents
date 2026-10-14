@@ -77,16 +77,14 @@ import {
 } from './child-args.ts';
 import {
   acquirePanePlacementLock,
+  closeTargetArgs,
   independentCleanupSignal,
   rebalanceCurrentPaneAgents,
   spawnWarningDetails,
 } from './one-shot.ts';
+import { textResult } from './result.ts';
 import { buildHerdrAgentParams } from './schema.ts';
-import {
-  executeAgentStatus,
-  resumeClosedLiveDecision,
-  resumedDetails,
-} from './status.ts';
+import { executeAgentStatus, resumeClosedLiveDecision } from './status.ts';
 
 type HerdrAgentParams = Static<ReturnType<typeof buildHerdrAgentParams>>;
 
@@ -142,6 +140,29 @@ type PlacementResolution =
   | { error: AgentToolResult<Record<string, unknown>> }
   | { placement: AgentPlacement };
 
+type SpawnTargetResult =
+  | { error: AgentToolResult<Record<string, unknown>> }
+  | { target: { tabId: string; paneId: string } };
+
+function resumedDetails(resumed: boolean): { resumed?: boolean } {
+  return resumed ? { resumed: true } : {};
+}
+
+function turnDetails(
+  spawn: SpawnState,
+  target: { tabId?: string; paneId?: string },
+): Record<string, unknown> {
+  return {
+    tabId: target.tabId,
+    paneId: target.paneId,
+    tabLabel: spawn.tabLabel,
+    reused: spawn.reused,
+    ...resumedDetails(spawn.resumed),
+    agent: spawn.agent,
+    ...spawnWarningDetails(spawn.spawnWarnings),
+  };
+}
+
 export async function executeHerdrAgent(
   pi: ExtensionAPI,
   params: HerdrAgentParams,
@@ -156,29 +177,19 @@ export async function executeHerdrAgent(
     // name, but they are not offered as options to the Orchestrator.
     const listable = agents.filter((item) => !item.disableModelInvocation);
     const available = listable.map((item) => item.name).join(', ') || 'none';
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Unknown Herdr agent: ${params.agent}. Available: ${available}`,
-        },
-      ],
-      details: { availableAgents: listable },
-      isError: true,
-    };
+    return textResult(
+      `Unknown Herdr agent: ${params.agent}. Available: ${available}`,
+      { availableAgents: listable },
+      true,
+    );
   }
 
   if (ctx.mode !== 'tui') {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: 'herdr_agent requires TUI mode. Non-TUI sessions have no widget poller to deliver the result.',
-        },
-      ],
-      details: {},
-      isError: true,
-    };
+    return textResult(
+      'herdr_agent requires TUI mode. Non-TUI sessions have no widget poller to deliver the result.',
+      {},
+      true,
+    );
   }
 
   const config = await loadHerdrAgentsConfig();
@@ -189,28 +200,18 @@ export async function executeHerdrAgent(
 
   if (resumeClosed) {
     if (!params.task?.trim()) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: 'resumeClosed requires a non-empty task. Omit resumeClosed and task to check the status of a still-running agent.',
-          },
-        ],
-        details: { resumeClosed: true },
-        isError: true,
-      };
+      return textResult(
+        'resumeClosed requires a non-empty task. Omit resumeClosed and task to check the status of a still-running agent.',
+        { resumeClosed: true },
+        true,
+      );
     }
     if (!params.tabLabel?.trim()) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: 'resumeClosed requires an explicit non-empty tabLabel.',
-          },
-        ],
-        details: { resumeClosed: true },
-        isError: true,
-      };
+      return textResult(
+        'resumeClosed requires an explicit non-empty tabLabel.',
+        { resumeClosed: true },
+        true,
+      );
     }
   }
 
@@ -223,7 +224,7 @@ export async function executeHerdrAgent(
       tabLabel: params.tabLabel,
       baseLabel,
       layout,
-      ownerSessionId: owner.sessionId,
+      ownerSessionId: owner.ownerSessionId,
       signal,
     });
   }
@@ -257,6 +258,7 @@ async function runAgentTask(
     settings.layout === 'pane' || settings.layout === 'workspace'
       ? await acquirePanePlacementLock()
       : () => {};
+  let target!: { tabId: string; paneId: string };
   let placementReleased = false;
   const releasePlacementOnce = () => {
     if (placementReleased) return;
@@ -265,13 +267,14 @@ async function runAgentTask(
   };
 
   try {
-    const earlyResult = await prepareSpawnTarget(
+    const prepared = await prepareSpawnTarget(
       invocation,
       settings,
       spawn,
       releasePlacementOnce,
     );
-    if (earlyResult) return earlyResult;
+    if ('error' in prepared) return prepared.error;
+    target = prepared.target;
   } catch (error) {
     if (spawn.resumeClaim && !spawn.resumeDurable) {
       const cleanupSignal = independentCleanupSignal();
@@ -280,9 +283,7 @@ async function runAgentTask(
         const { paneId, tabId } = spawn;
         closedPartial = await bestEffort(false, async () => {
           await execHerdr(
-            settings.layout === 'pane'
-              ? ['pane', 'close', paneId]
-              : ['tab', 'close', tabId],
+            closeTargetArgs(settings.layout, tabId, paneId),
             cleanupSignal,
           );
           return true;
@@ -303,15 +304,7 @@ async function runAgentTask(
 
   ensureAgentsWidget(invocation.pi, invocation.ctx);
 
-  const tabId = spawn.tabId;
-  const paneId = spawn.paneId;
-  if (!tabId || !paneId) {
-    throw new Error(
-      `Could not identify Herdr tab or pane for ${spawn.tabLabel}.`,
-    );
-  }
-
-  return await runAgentTurn(invocation, spawn, { tabId, paneId });
+  return await runAgentTurn(invocation, spawn, target);
 }
 
 async function prepareSpawnTarget(
@@ -319,9 +312,9 @@ async function prepareSpawnTarget(
   settings: SpawnSettings,
   spawn: SpawnState,
   releasePlacementOnce: () => void,
-): Promise<AgentToolResult<Record<string, unknown>> | undefined> {
+): Promise<SpawnTargetResult> {
   const resolved = await resolveAgentPlacement(invocation, settings);
-  if ('error' in resolved) return resolved.error;
+  if ('error' in resolved) return { error: resolved.error };
   const placement = resolved.placement;
 
   const earlyReuse = await reuseParkedAgent(
@@ -330,7 +323,7 @@ async function prepareSpawnTarget(
     spawn,
     placement,
   );
-  if (earlyReuse) return earlyReuse;
+  if (earlyReuse) return { error: earlyReuse };
 
   const earlyClaim = await claimClosedHistoryForResume(
     invocation,
@@ -338,7 +331,7 @@ async function prepareSpawnTarget(
     spawn,
     placement,
   );
-  if (earlyClaim) return earlyClaim;
+  if (earlyClaim) return { error: earlyClaim };
 
   if (!spawn.reused) {
     const profilePrompt = [spawn.agent.systemPrompt, CHILD_PROTOCOL]
@@ -389,6 +382,7 @@ async function prepareSpawnTarget(
       `Could not identify Herdr tab or pane for ${spawn.tabLabel}.`,
     );
   }
+  const tabId = spawn.tabId;
 
   if (!spawn.agentPane?.terminal_id) {
     spawn.agentPane = (await listPanes(invocation.signal)).find(
@@ -397,7 +391,7 @@ async function prepareSpawnTarget(
   }
 
   await startAndRecordAgent(invocation, settings, spawn, placement);
-  return undefined;
+  return { target: { tabId, paneId } };
 }
 
 async function resolveAgentPlacement(
@@ -426,18 +420,11 @@ async function resolveAgentPlacement(
     agentsWorkspaceRootTabId = resolved.rootTabId;
     if (agentsWorkspaceId === current.workspaceId) {
       return {
-        error: {
-          content: [
-            {
-              type: 'text',
-              text: `The configured workspace.label matches this Orchestrator's own workspace. Change workspace.label in herdr-agents.json so agents spawn into a dedicated workspace instead of the Orchestrator's.`,
-            },
-          ],
-          details: {
-            workspaceId: agentsWorkspaceId,
-          },
-          isError: true,
-        },
+        error: textResult(
+          `The configured workspace.label matches this Orchestrator's own workspace. Change workspace.label in herdr-agents.json so agents spawn into a dedicated workspace instead of the Orchestrator's.`,
+          { workspaceId: agentsWorkspaceId },
+          true,
+        ),
       };
     }
   }
@@ -478,19 +465,14 @@ async function reuseParkedAgent(
     current,
     state,
     baseLabel,
-    settings.owner.sessionId,
+    settings.owner.ownerSessionId,
   );
   if (unresolved) {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Owned Herdr target ${unresolved.automationName} is still live, but its legacy owner/pane identity cannot be reconciled safely. Inspect that target; do not resend the task or spawn a replacement.`,
-        },
-      ],
-      details: { tabLabel: baseLabel },
-      isError: true,
-    };
+    return textResult(
+      `Owned Herdr target ${unresolved.automationName} is still live, but its legacy owner/pane identity cannot be reconciled safely. Inspect that target; do not resend the task or spawn a replacement.`,
+      { tabLabel: baseLabel },
+      true,
+    );
   }
 
   const candidateTab = usesTabs
@@ -518,20 +500,15 @@ async function reuseParkedAgent(
     !answeringQuestion &&
     candidatePane
   ) {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `A live Herdr agent named "${baseLabel}" already exists and cannot receive a new task. If it is still working, call herdr_agent again with the same tabLabel and no task to check its status. If it already settled, wait for the result to be delivered, then use resumeClosed: true with the same tabLabel to continue it with its context. If you want a fresh agent, pass a different tabLabel.`,
-        },
-      ],
-      details: {
+    return textResult(
+      `A live Herdr agent named "${baseLabel}" already exists and cannot receive a new task. If it is still working, call herdr_agent again with the same tabLabel and no task to check its status. If it already settled, wait for the result to be delivered, then use resumeClosed: true with the same tabLabel to continue it with its context. If you want a fresh agent, pass a different tabLabel.`,
+      {
         tabLabel: baseLabel,
         paneId: candidatePane.pane_id,
         existingLifecycle: candidateRecord?.lifecycle,
       },
-      isError: true,
-    };
+      true,
+    );
   }
 
   if (resumeClosed && candidatePane) {
@@ -542,17 +519,17 @@ async function reuseParkedAgent(
       answeringQuestion,
     });
     if (decision.action === 'reject') {
-      return {
-        content: [{ type: 'text', text: decision.text }],
-        details: {
+      return textResult(
+        decision.text,
+        {
           resumeClosed: true,
           tabLabel: baseLabel,
           paneId: candidatePane.pane_id,
           liveStatus: candidatePane.agent_status,
           detached: candidateRecord?.detached === true,
         },
-        isError: true,
-      };
+        true,
+      );
     }
   }
 
@@ -580,94 +557,46 @@ async function claimClosedHistoryForResume(
   const { resumeClosed, owner } = settings;
   if (!resumeClosed || spawn.reused) return undefined;
 
-  if (!owner.sessionId) {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: 'Cannot resume a closed agent: this Orchestrator session has no session id.',
-        },
-      ],
-      details: { resumeClosed: true },
-      isError: true,
-    };
+  if (!owner.ownerSessionId) {
+    return textResult(
+      'Cannot resume a closed agent: this Orchestrator session has no session id.',
+      { resumeClosed: true },
+      true,
+    );
   }
   const existing = findOwnedClosedHistory(
     placement.state,
-    owner.sessionId,
+    owner.ownerSessionId,
     params.tabLabel!.trim(),
   );
-  if (!existing) {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `No closed one-shot Herdr agent named "${params.tabLabel!.trim()}" is owned by this Orchestrator session.`,
-        },
-      ],
-      details: { resumeClosed: true },
-      isError: true,
-    };
-  }
-  if (existing.status === 'claimed') {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Closed Herdr agent "${existing.tabLabel}" is already being resumed.`,
-        },
-      ],
-      details: { resumeClosed: true },
-      isError: true,
-    };
-  }
-  if (existing.profileName !== spawn.agent.name) {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Closed Herdr agent "${existing.tabLabel}" was a ${existing.profileName} agent, not ${spawn.agent.name}.`,
-        },
-      ],
-      details: { resumeClosed: true },
-      isError: true,
-    };
-  }
-  const cwdError = await resumableSessionDirError(existing.cwd);
-  const header = cwdError
-    ? undefined
-    : await validateResumableSessionFile(existing.childSessionFile, {
-        sessionId: existing.childSessionId,
-        cwd: existing.cwd,
-      });
-  if (cwdError || !header) {
-    await bestEffort(undefined, () =>
-      markClosedHistoryInvalid(existing.id, existing.claimGeneration),
-    );
-    return {
-      content: [
-        {
-          type: 'text',
-          text: cwdError
-            ? `Cannot resume "${existing.tabLabel}": ${cwdError}`
-            : `Cannot resume "${existing.tabLabel}": child session file is missing, corrupt, or does not match the stored session id/cwd.`,
-        },
-      ],
-      details: { resumeClosed: true },
-      isError: true,
-    };
+  if (existing) {
+    const cwdError = await resumableSessionDirError(existing.cwd);
+    const header = cwdError
+      ? undefined
+      : await validateResumableSessionFile(existing.childSessionFile, {
+          sessionId: existing.childSessionId,
+          cwd: existing.cwd,
+        });
+    if (cwdError || !header) {
+      await bestEffort(undefined, () =>
+        markClosedHistoryInvalid(existing.id, existing.claimGeneration),
+      );
+      return textResult(
+        cwdError
+          ? `Cannot resume "${existing.tabLabel}": ${cwdError}`
+          : `Cannot resume "${existing.tabLabel}": child session file is missing, corrupt, or does not match the stored session id/cwd.`,
+        { resumeClosed: true },
+        true,
+      );
+    }
   }
   const claimed = await claimClosedHistory({
-    ownerSessionId: owner.sessionId,
-    tabLabel: existing.tabLabel,
+    ownerSessionId: owner.ownerSessionId,
+    tabLabel: params.tabLabel!.trim(),
     profileName: spawn.agent.name,
   });
   if (!claimed.ok) {
-    return {
-      content: [{ type: 'text', text: claimed.error }],
-      details: { resumeClosed: true },
-      isError: true,
-    };
+    return textResult(claimed.error, { resumeClosed: true }, true);
   }
 
   spawn.resumeClaim = claimed.record;
@@ -841,16 +770,10 @@ async function startAndRecordAgent(
             : `Starting Herdr agent ${spawn.tabLabel} (${spawn.paneId})...`,
         },
       ],
-      details: {
+      details: turnDetails(spawn, {
         tabId: spawn.tabId,
         paneId: spawn.paneId,
-        tabLabel: spawn.tabLabel,
-
-        reused: spawn.reused,
-        ...resumedDetails(spawn.resumed),
-        agent: spawn.agent,
-        ...spawnWarningDetails(spawn.spawnWarnings),
-      },
+      }),
     });
     await startAgent(spawn.automationName, spawn.paneId!, piArgs, signal);
     spawn.agentPane =
@@ -877,12 +800,7 @@ async function startAndRecordAgent(
         ...(placement.current.currentPane.terminal_id
           ? { ownerTerminalId: placement.current.currentPane.terminal_id }
           : {}),
-        ...(settings.owner.sessionId
-          ? { ownerSessionId: settings.owner.sessionId }
-          : {}),
-        ...(settings.owner.sessionFile
-          ? { ownerSessionFile: settings.owner.sessionFile }
-          : {}),
+        ...settings.owner,
         ...(spawn.resumeClaim
           ? {
               closedHistoryId: spawn.resumeClaim.id,
@@ -951,24 +869,11 @@ async function runAgentTurn(
 
   await promptAgent(promptTarget, taskPrompt, signal);
 
-  return {
-    content: [
-      {
-        type: 'text',
-        text: formatSpawnWarnings(
-          `Herdr agent ${tabLabel} started (${paneId}).`,
-          spawn.spawnWarnings,
-        ),
-      },
-    ],
-    details: {
-      tabId,
-      paneId,
-      tabLabel,
-      reused: spawn.reused,
-      ...resumedDetails(spawn.resumed),
-      agent: spawn.agent,
-      ...spawnWarningDetails(spawn.spawnWarnings),
-    },
-  };
+  return textResult(
+    formatSpawnWarnings(
+      `Herdr agent ${tabLabel} started (${paneId}).`,
+      spawn.spawnWarnings,
+    ),
+    turnDetails(spawn, target),
+  );
 }

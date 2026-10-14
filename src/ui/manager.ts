@@ -180,25 +180,22 @@ export async function showHerdrAgentsManager(
       );
       continue;
     }
-    {
-      const closeError = await closeOneShot({
-        layout: selected.agent.layout,
-        tabId: selected.agent.tabId,
-        paneId: selected.agent.paneId,
-        resultFile: selected.agent.resultFile,
-        lifecyclePane: selected.agent.terminalId
-          ? { terminal_id: selected.agent.terminalId }
-          : undefined,
-      });
-      if (closeError) {
-        ctx.ui.notify(
-          `Could not close Herdr agent "${selected.agent.tabLabel}": ${closeError}`,
-          'error',
-        );
-        continue;
-      }
-      ctx.ui.notify(`Closed Herdr agent "${selected.agent.tabLabel}"`, 'info');
+    const closeError = await closeOneShot({
+      layout: selected.agent.layout,
+      tabId: selected.agent.tabId,
+      paneId: selected.agent.paneId,
+      resultFile: selected.agent.resultFile,
+      lifecyclePane: selected.agent.terminalId
+        ? { terminal_id: selected.agent.terminalId }
+        : undefined,
+    });
+    if (closeError) {
+      ctx.ui.notify(
+        `Could not close Herdr agent "${selected.agent.tabLabel}": ${closeError}`,
+        'error',
+      );
       continue;
     }
+    ctx.ui.notify(`Closed Herdr agent "${selected.agent.tabLabel}"`, 'info');
   }
 }

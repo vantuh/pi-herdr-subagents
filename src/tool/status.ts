@@ -23,10 +23,7 @@ import { paneStateKey, type HerdrAgentStateRecord } from '../state/store.ts';
 import type { AgentProfile, HerdrAgentLayout, PaneInfo } from '../types.ts';
 import { formatSpawnWarnings } from '../utils.ts';
 import { spawnWarningDetails } from './one-shot.ts';
-
-export function resumedDetails(resumed: boolean): { resumed?: boolean } {
-  return resumed ? { resumed: true } : {};
-}
+import { textResult } from './result.ts';
 
 export function resumeClosedLiveDecision(input: {
   label: string;
@@ -64,16 +61,7 @@ export async function executeAgentStatus(args: {
 }) {
   const { agent, baseLabel, layout, signal } = args;
   if (!args.tabLabel?.trim()) {
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: 'tabLabel is required when task is omitted.',
-        },
-      ],
-      details: {},
-      isError: true,
-    };
+    return textResult('tabLabel is required when task is omitted.', {}, true);
   }
 
   const { context: current, state } = await loadContextWithState(signal);
@@ -112,34 +100,24 @@ export async function executeAgentStatus(args: {
       baseLabel,
       args.ownerSessionId,
     );
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: unresolved
-            ? `Owned Herdr target ${unresolved.automationName} is still live, but its legacy owner/pane identity cannot be reconciled safely. Inspect that target; do not resend the task or spawn a replacement.`
-            : `No running Herdr agent named "${baseLabel}" found.`,
-        },
-      ],
-      details: {},
-      isError: true,
-    };
+    return textResult(
+      unresolved
+        ? `Owned Herdr target ${unresolved.automationName} is still live, but its legacy owner/pane identity cannot be reconciled safely. Inspect that target; do not resend the task or spawn a replacement.`
+        : `No running Herdr agent named "${baseLabel}" found.`,
+      {},
+      true,
+    );
   }
 
   const spawnWarnings = record?.spawnWarnings ?? [];
   const question = await readAgentQuestion(record?.resultFile);
   if (question) {
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: formatSpawnWarnings(
-            formatAgentQuestion(label, record?.agent ?? agent.name, question),
-            spawnWarnings,
-          ),
-        },
-      ],
-      details: {
+    return textResult(
+      formatSpawnWarnings(
+        formatAgentQuestion(label, record?.agent ?? agent.name, question),
+        spawnWarnings,
+      ),
+      {
         tabId,
         paneId: pane.pane_id,
         tabLabel: label,
@@ -148,23 +126,18 @@ export async function executeAgentStatus(args: {
         closed: false,
         ...spawnWarningDetails(spawnWarnings),
       },
-    };
+    );
   }
 
   if (record?.collected) {
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: `Herdr agent ${label} was already collected. Close it with /herdr-agents if it is still open, then continue it with resumeClosed and the same tabLabel. Do not resend the previous task.`,
-        },
-      ],
-      details: {
+    return textResult(
+      `Herdr agent ${label} was already collected. Close it with /herdr-agents if it is still open, then continue it with resumeClosed and the same tabLabel. Do not resend the previous task.`,
+      {
         tabId,
         paneId: pane.pane_id,
         tabLabel: label,
       },
-    };
+    );
   }
 
   const snapshot = await getAgentSnapshot(target, signal);
@@ -175,20 +148,12 @@ export async function executeAgentStatus(args: {
   const text = finishedWithoutResult
     ? `Herdr agent ${label} (${pane.pane_id}) finished without a result.\n\n${recent}`
     : `Herdr agent ${label} (${pane.pane_id}) status: ${snapshot.status}.\n\n${recent}`;
-  return {
-    content: [
-      {
-        type: 'text' as const,
-        text: formatSpawnWarnings(text, spawnWarnings),
-      },
-    ],
-    details: {
-      tabId,
-      paneId: pane.pane_id,
-      tabLabel: label,
-      agent,
-      status: snapshot.status,
-      ...spawnWarningDetails(spawnWarnings),
-    },
-  };
+  return textResult(formatSpawnWarnings(text, spawnWarnings), {
+    tabId,
+    paneId: pane.pane_id,
+    tabLabel: label,
+    agent,
+    status: snapshot.status,
+    ...spawnWarningDetails(spawnWarnings),
+  });
 }

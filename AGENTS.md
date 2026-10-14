@@ -42,6 +42,7 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 - `src/herdr/placement.ts` — label uniqueness, reusable-tab/pane lookup, managed-agent listing, and split-ratio layout helpers.
 - `src/herdr/agent.ts` — named-agent start, prompt, and read wrappers with their snapshot parsers.
 - `src/tool/schema.ts` — TypeBox schema for tool parameters.
+- `src/tool/result.ts` — single-text tool result helper (`textResult`).
 - `src/tool/execute.ts` — the `herdr_agent` execute body: profile resolution, spawn/reuse, prompt, and immediate return.
 - `src/prompts.ts` — injected Orchestrator instructions and child-agent protocol.
 - `src/tool/one-shot.ts` — one-shot close/staging, pane-placement lock, collected-output formatting, and best-effort state cleanup helpers.

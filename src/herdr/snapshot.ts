@@ -156,11 +156,9 @@ export async function resolveAgentsWorkspace(
   options: { cwd?: string; signal?: AbortSignal } = {},
 ): Promise<{ workspaceId: string; created: boolean; rootTabId?: string }> {
   const { cwd, signal } = options;
-  const existing = (await listWorkspaces(signal)).find(
-    (workspace) => workspace.label === label,
-  );
-  if (existing?.workspace_id) {
-    return { workspaceId: existing.workspace_id, created: false };
+  const existingId = await findAgentsWorkspaceId(label, signal);
+  if (existingId) {
+    return { workspaceId: existingId, created: false };
   }
 
   const output = await execHerdr(
@@ -185,11 +183,9 @@ export async function resolveAgentsWorkspace(
 
   // Some versions may omit the id: fall back to a label re-scan.
   // Missing rootTabId degrades gracefully (caller skips root-tab cleanup).
-  const rescanned = (await listWorkspaces(signal)).find(
-    (workspace) => workspace.label === label,
-  );
-  if (rescanned?.workspace_id) {
-    return { workspaceId: rescanned.workspace_id, created: true };
+  const rescanned = await findAgentsWorkspaceId(label, signal);
+  if (rescanned) {
+    return { workspaceId: rescanned, created: true };
   }
   throw new Error(
     `Malformed Herdr workspace create output: missing result.workspace.workspace_id. Output: ${output}`,

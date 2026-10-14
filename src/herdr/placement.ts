@@ -64,12 +64,7 @@ export function findReusableAgentTab(
     // Only tab/workspace agents are reusable through this tab-based lookup;
     // pane-layout agents belong to the Orchestrator's own split column.
     if (record.layout !== 'tab' && record.layout !== 'workspace') continue;
-    const terminalId = key.startsWith('terminal:')
-      ? key.slice('terminal:'.length)
-      : undefined;
-    const pane = terminalId
-      ? context.panes.find((item) => item.terminal_id === terminalId)
-      : undefined;
+    const pane = context.panes.find((item) => paneStateKey(item) === key);
     if (!pane || pane.agent !== 'pi') continue;
     if (
       !isAgentOwnedBy(

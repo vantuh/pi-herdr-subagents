@@ -52,6 +52,20 @@ export async function rebalanceCurrentPaneAgents(
 }
 
 /**
+ * Pane layout closes one split; tab and workspace layouts close the agent's
+ * whole tab (workspace tabs live in the Agents workspace).
+ */
+export function closeTargetArgs(
+  layout: HerdrAgentLayout | undefined,
+  tabId: string,
+  paneId: string,
+): string[] {
+  return layout === 'pane'
+    ? ['pane', 'close', paneId]
+    : ['tab', 'close', tabId];
+}
+
+/**
  * Close a one-shot pane/tab after durably staging continuation metadata.
  * Stage first; close only after a successful stage; then atomically finalize
  * history as resumable and delete live state.
@@ -77,11 +91,7 @@ export async function closeOneShot(target: {
 
   try {
     await execHerdr(
-      // Pane layout dissolves one split; tab and workspace layouts close the
-      // agent's whole tab (workspace tabs live in the Agents workspace).
-      target.layout === 'pane'
-        ? ['pane', 'close', target.paneId]
-        : ['tab', 'close', target.tabId],
+      closeTargetArgs(target.layout, target.tabId, target.paneId),
       target.signal,
     );
   } catch (error) {

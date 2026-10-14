@@ -14,6 +14,7 @@ import {
   writeAgentSessionMeta,
 } from './artifacts.ts';
 import { getCurrentContext } from './herdr/snapshot.ts';
+import { textResult } from './tool/result.ts';
 
 export async function captureChildSessionMeta(
   ctx: ExtensionContext,
@@ -104,39 +105,27 @@ export function registerChildMode(pi: ExtensionAPI): void {
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const question = params.question.trim();
       if (!question) {
-        return {
-          content: [{ type: 'text', text: 'question must not be empty.' }],
-          details: {},
-          isError: true,
-        };
+        return textResult('question must not be empty.', {}, true);
       }
 
       // Without a managed result file there is no channel back to the
       // Orchestrator, so asking would silently strand the agent.
       const written = await writeAgentQuestion(resultFile, question);
       if (!written) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No Orchestrator channel is available in this session, so the question cannot be delivered. Decide yourself, state the assumption you made, and continue.',
-            },
-          ],
-          details: {},
-          isError: true,
-        };
+        return textResult(
+          'No Orchestrator channel is available in this session, so the question cannot be delivered. Decide yourself, state the assumption you made, and continue.',
+          {},
+          true,
+        );
       }
 
       if (ctx) await captureChildSessionMeta(ctx);
 
       return {
-        content: [
-          {
-            type: 'text',
-            text: 'Question sent to the Orchestrator. The answer will arrive as your next prompt.',
-          },
-        ],
-        details: { delivered: true },
+        ...textResult(
+          'Question sent to the Orchestrator. The answer will arrive as your next prompt.',
+          { delivered: true },
+        ),
         terminate: true,
       };
     },
