@@ -180,11 +180,18 @@ export function createMockHost(options: {
     commands,
     renderers,
     fire: async (event, payload = {}) => {
+      const input = {
+        type: event,
+        ...(event === "before_agent_start"
+          ? { messageType: "user", prompt: "", systemPromptOptions: { sections: {} } }
+          : {}),
+        ...payload,
+      };
       let last: unknown;
       for (const handler of handlers.get(event) ?? []) {
-        last = await handler({ type: event, ...payload }, ctx);
+        last = await handler(input, ctx);
       }
-      return last;
+      return event === "before_agent_start" ? input : last;
     },
   };
 }

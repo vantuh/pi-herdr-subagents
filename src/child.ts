@@ -23,11 +23,7 @@ export async function captureChildSessionMeta(
   const sessionId = sessionManager.getSessionId()?.trim();
   if (!sessionId) return undefined;
   const sessionFile = sessionManager.getSessionFile()?.trim();
-  const cwd = (
-    "getCwd" in sessionManager && typeof sessionManager.getCwd === "function"
-      ? sessionManager.getCwd()
-      : ctx.cwd
-  )?.trim();
+  const cwd = sessionManager.getCwd().trim();
   if (!cwd) return undefined;
   return writeAgentSessionMeta(dest, {
     sessionId,
@@ -73,7 +69,9 @@ export function registerChildMode(pi: ExtensionAPI): void {
   });
 
   pi.on("before_agent_start", async (event) => {
-    resultFile = findResultFileMarker(event.prompt);
+    if (event.messageType === "user") {
+      resultFile = findResultFileMarker(event.prompt);
+    }
   });
 
   pi.on("message_end", async (event, ctx) => {

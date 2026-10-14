@@ -1224,15 +1224,13 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => {
     let instructions = GLOBAL_INSTRUCTIONS;
 
-    if (pendingRunDelegation) {
+    if (event.messageType === "user" && pendingRunDelegation) {
       const runRequest = pendingRunDelegation;
       pendingRunDelegation = null;
       instructions = `${instructions}\n\n${buildRunTurnInstructions(runRequest.agent)}`;
     }
 
-    return {
-      systemPrompt: `${event.systemPrompt}\n\n${instructions}`,
-    };
+    event.systemPromptOptions.sections.herdr_agents = instructions;
   });
 
   pi.registerCommand("run", {

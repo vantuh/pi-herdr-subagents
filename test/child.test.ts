@@ -48,7 +48,7 @@ test("a child registers the question channel but never delegation", async () => 
       systemPrompt: "BASE",
       prompt: "hi",
     });
-    assert.equal(result, undefined);
+    assert.deepEqual((result as any).systemPromptOptions.sections, {});
   });
 });
 
@@ -88,6 +88,25 @@ test("a child persists its final assistant message to the result artifact", asyn
       message: { role: "assistant", content: [{ type: "text", text: "   " }] },
     });
     assert.equal(await fs.readFile(resultFile, "utf8"), "final");
+  });
+});
+
+test("a custom-message run retains the child result channel", async () => {
+  await withChildHost(async (host, tmp) => {
+    const resultFile = await managedResultFile(tmp);
+    await host.fire("before_agent_start", {
+      messageType: "user",
+      prompt: `Task\n${RESULT_FILE_MARKER} ${resultFile}`,
+    });
+    await host.fire("before_agent_start", {
+      messageType: "custom",
+      prompt: undefined,
+      message: { customType: "notification", content: "Continue" },
+    });
+    await host.fire("message_end", {
+      message: { role: "assistant", content: [{ type: "text", text: "continued" }] },
+    });
+    assert.equal(await fs.readFile(resultFile, "utf8"), "continued");
   });
 });
 

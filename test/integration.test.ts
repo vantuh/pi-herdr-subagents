@@ -1006,9 +1006,12 @@ test("injects Orchestrator instructions, and /run instructions for one turn", as
     const base = (await harness.fire("before_agent_start", {
       systemPrompt: "BASE",
       prompt: "hi",
-    })) as { systemPrompt: string };
-    assert.match(base.systemPrompt, /^BASE\n\n## Herdr agents/);
-    assert.doesNotMatch(base.systemPrompt, /\/run delegation/);
+      systemPromptOptions: { sections: { unrelated: "KEEP" } },
+    })) as any;
+    assert.equal(base.systemPrompt, "BASE");
+    assert.equal(base.systemPromptOptions.sections.unrelated, "KEEP");
+    assert.match(base.systemPromptOptions.sections.herdr_agents, /^## Herdr agents/);
+    assert.doesNotMatch(base.systemPromptOptions.sections.herdr_agents, /\/run delegation/);
 
     const run = harness.commands.get("run");
     assert.ok(run, "expected a /run command");
@@ -1016,31 +1019,34 @@ test("injects Orchestrator instructions, and /run instructions for one turn", as
       isIdle: () => true,
       ui: { notify: () => undefined },
     });
-    assert.deepEqual(harness.userMessages, [
-      "[via /run → scout] find the auth flow",
-    ]);
+    assert.deepEqual(harness.userMessages, ["[via /run → scout] find the auth flow"]);
+
+    const custom = (await harness.fire("before_agent_start", {
+      messageType: "custom",
+      message: { customType: "herdr_agent_result", content: "finished" },
+    })) as any;
+    assert.match(custom.systemPromptOptions.sections.herdr_agents, /## Herdr agents/);
+    assert.doesNotMatch(custom.systemPromptOptions.sections.herdr_agents, /\/run delegation/);
 
     const delegating = (await harness.fire("before_agent_start", {
       systemPrompt: "BASE",
       prompt: "hi",
-    })) as { systemPrompt: string };
-    assert.match(delegating.systemPrompt, /## \/run delegation/);
-    assert.match(delegating.systemPrompt, /agent: "scout"/);
+    })) as any;
+    assert.match(delegating.systemPromptOptions.sections.herdr_agents, /## \/run delegation/);
+    assert.match(delegating.systemPromptOptions.sections.herdr_agents, /agent: "scout"/);
 
     // The /run authorization is single-turn.
     const after = (await harness.fire("before_agent_start", {
       systemPrompt: "BASE",
       prompt: "hi",
-    })) as { systemPrompt: string };
-    assert.doesNotMatch(after.systemPrompt, /\/run delegation/);
+    })) as any;
+    assert.doesNotMatch(after.systemPromptOptions.sections.herdr_agents, /\/run delegation/);
   });
 });
 
 test("/council injects the question and a persisted per-model spawn contract", async () => {
   await withHarness({}, async (harness) => {
-    await writeHarnessCouncilConfig(
-      JSON.stringify({ models: ["model-a", "model-b"] }),
-    );
+    await writeHarnessCouncilConfig(JSON.stringify({ models: ["model-a", "model-b"] }));
     const council = harness.commands.get("council");
     assert.ok(council, "expected a /council command");
     await council.handler("Why is X better than Y?", {
@@ -1058,9 +1064,11 @@ test("/council injects the question and a persisted per-model spawn contract", a
     const after = (await harness.fire("before_agent_start", {
       systemPrompt: "BASE",
       prompt: "hi",
-    })) as { systemPrompt: string };
-    assert.doesNotMatch(after.systemPrompt, /\/council round table/);
-    assert.doesNotMatch(after.systemPrompt, /Models: model-a, model-b/);
+    })) as any;
+    assert.doesNotMatch(after.systemPromptOptions.sections.herdr_agents, /\/council round table/);
+    assert.doesNotMatch(
+      after.systemPromptOptions.sections.herdr_agents, /Models: model-a, model-b/,
+    );
   });
 });
 
