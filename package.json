@@ -1,5 +1,5 @@
 {
-  "name": "herdr-agents",
+  "name": "pi-herdr-subagents",
   "private": true,
   "type": "module",
   "scripts": {
