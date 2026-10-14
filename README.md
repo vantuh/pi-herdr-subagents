@@ -1,285 +1,159 @@
-# herdr-agents documentation
+# pi-herdr-subagents
 
-> **RETIRED 2026-09-04 — not loaded, not maintained.** Migrated to
-> [pi-subagents](https://github.com/nicobailon/pi-subagents) (+ pi-intercom).
-> Kept for design reference.
+> **Retired (2026-09-04): archived, not loaded automatically and not maintained.**
+> Development moved to [pi-subagents](https://github.com/nicobailon/pi-subagents)
+> (with pi-intercom). This repository is kept as source and design reference.
 
-`herdr-agents` is a Pi extension that turns Herdr into a one-shot delegation layer.
+A Pi coding-agent extension (package
+`@vantuh/pi-herdr-subagents`) that delegates one-shot tasks to child Pi agents
+running in [Herdr](https://herdr.dev) panes or tabs.
 
-It registers a `herdr_agent` tool. The tool spawns agents into a dedicated subagents workspace by default (one tab per agent, invisible until focused), starts named Pi agents through Herdr's agent automation API, and gives them role-specific prompts from `~/.pi/agent/agents/*.md`. In UI sessions the tool detaches by default: the widget poller delivers the persisted result artifact (or terminal output fallback) and closes one-shot targets. Headless sessions block until the result is ready. Pass `wait: true` when the answer is needed before continuing this turn. A closed one-shot can be continued with its context via `resumeClosed`. `herdr-agents.json` in the Pi agent dir selects `layout: "pane"` or `"tab"` to restore the legacy split-pane or per-tab layouts; layout is intentionally absent from the tool schema.
+It registers a `herdr_agent` tool. The orchestrating Pi session calls it with an
+agent profile and a self-contained task. The extension starts a child Pi process
+through Herdr's agent automation API, waits for (or later collects) the result,
+and closes the target.
 
-## Why this exists
+## Capabilities
 
-The original Herdr workflow was written as prose in `AGENTS.md`: create tabs, name them, run Pi, wait, read output, keep panes open. That worked, but it asked the model to manually remember Herdr CLI details.
+- `herdr_agent` tool: spawn a child Pi agent from a markdown profile, then
+  collect its result.
+- One-shot agents with fresh context. A closed agent can be continued with its
+  prior context through `resumeClosed`.
+- A question channel: a child can call `ask_question` and the orchestrator
+  answers it with a normal follow-up task.
+- Async delivery: with a UI, results (or questions) are delivered by a widget
+  poller once the agent settles. Headless task submissions wait for the outcome.
+- Result artifacts, so large outputs do not depend on terminal scrollback.
+- Per-spawn `model` override, for asking the same profile to several models.
+- Commands: `/run`, `/council`, `/herdr-agents`.
+- Layouts: a dedicated subagents workspace (default), split panes, or tabs.
 
-This extension moves that workflow into a tool:
+## Prerequisites
 
-- less prompt boilerplate;
-- fewer raw `herdr` CLI calls from the model;
-- consistent target naming and child protocol;
-- fresh context for one-shot delegated agents;
-- session-file resume, so a closed agent can be continued with its accumulated context.
+- [Herdr](https://herdr.dev) and Pi installed. The Herdr agent API
+  (`agent start`, `agent prompt`, `agent wait`, `agent send-keys`, `agent read`,
+  `api snapshot`) was introduced in Herdr 0.7.5; the extension does not check
+  the version itself.
+- The orchestrating Pi session must run inside a Herdr pane.
+- [Bun](https://bun.sh) to run the tests.
 
-## Delegation policy
+## Loading
 
-Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. This extension docs describe **how** Pi/Herdr delegates.
+This archive is not configured to load automatically. The package manifest
+declares `./src/index.ts` as its Pi extension entrypoint. To restore it, resolve
+the peer dependencies listed in `package.json` and configure Pi to load that
+entrypoint. `test-support/link-deps.sh` can link dependencies from a globally
+installed Pi for local development.
 
-| Situation | `agent` profile | Delegate? | Expected output |
-|---|---|:---:|---|
-| Unknown code, entry points, call/data-flow tracing | `scout` | when needed | file/line evidence, flow, likely change areas, risks |
-| Official docs, API behavior, library choice, current facts | `researcher` | when needed | concise decision brief, primary-source links, gaps |
-| Multi-file approach after code/requirements are understood | `planner` | after scout | ordered plan with paths, validations, open questions |
-| Clear and isolated implementation slice | `worker` | after plan | minimal diff and actual validation result |
-| Non-trivial/risky final diff, migration, public contract | `reviewer` | when needed | evidence-backed Critical / Warnings / Suggestions |
+Child agents set `HERDR_AGENT_CHILD=1`. In that mode only `ask_question` and the
+result writer are registered, so children cannot delegate through this extension.
 
-**When NOT to delegate** (stay direct in Orchestrator tab):
+## Agent profile
 
-- needle query: specific file, class, or function in 1–2 files
-- known single-file edit or typo fix
-- one-command check (`git status`, single test run)
-- answer is already in the current conversation context
-
-**Negative policy:** no parallel workers with overlapping write areas. Parallelize only independent reads or disjoint write slices (4–5 agents max). The limit is independence, not count: past 2–3 agents, each additional one must have genuinely independent work. Five is the upper bound because a fifth pane in the 40% agent column is ~1/5 of terminal height.
-
-**Continuation examples:**
-
-- One-shot scout: `{ "agent": "scout", "task": "..." }` — the managed target closes after the result.
-- Continue a closed agent with its context: `{ "agent": "scout", "tabLabel": "Scout — message-bus", "task": "...", "resumeClosed": true }` — only when no live agent with that label exists. A parked question is answered in place; a live working or detached agent must be re-waited or collected first.
-- Re-wait after timeout: `{ "agent": "scout", "tabLabel": "Scout — message-bus" }` with no `task`.
-
-## Main concepts
-
-### Orchestrator
-
-The current/main Pi session. It receives the user's request and decides whether isolated context is useful.
-
-The extension does not rename the current Herdr tab; `extensions/herdr-tab-name.ts` syncs the tab label with the Pi session name.
-
-### Herdr agent
-
-A child Pi process launched in a managed Herdr pane or tab.
-
-The internal layout defaults to `workspace`: every agent gets its own tab inside a dedicated subagents workspace (label from `herdr-agents.json` → `workspace.label`, default `subagents`), so the Orchestrator's workspace never gains splits or tabs. The workspace is resolved from `herdr workspace list` on every spawn and recreated if the user closed it by hand. `/herdr-agents` lists managed agents across all workspaces and focuses an agent with `tab focus` on its workspace-qualified tab id; an agent that finishes unseen also raises a `herdr notification show`. `layout: "pane"` selects the legacy split layout: the first agent splits the Orchestrator pane to the right at 60/40, and additional agents split the largest managed pane downward in the right column. After spawn or close, the extension rebalances that column to equal heights (for example, three agents use thirds). For new pane agents, placement is serialized through successful `agent start`, managed-state recording, and rebalancing so parallel tool calls preserve that structure. `layout: "tab"` selects one-tab-per-agent inside the current workspace.
-
-Every agent is a one-shot: the extension waits for the result (or the poller collects it), reads the output, then closes the managed target after successful completion. Follow-up tasks go through `resumeClosed`, which reopens the archived session with its full context.
-
-The child receives:
-
-1. the normal Pi runtime/tooling;
-2. an agent profile prompt from `~/.pi/agent/agents/<name>.md`;
-3. the `HERDR_RESULT` completion protocol;
-4. a self-contained task prompt from the Orchestrator;
-5. an `ask_question` tool for asking the Orchestrator one clarifying question
-   instead of guessing.
-
-### Async delivery
-
-Detaching is the default in UI sessions (`wait` defaults to false). The tool
-returns as soon as the prompt is accepted and the widget poller takes over:
-once the agent settles (`idle`/`done`) the poller delivers its outcome and
-closes the target if it was a one-shot that actually finished. Pass `wait: true`
-when the answer is needed before continuing this turn. Headless sessions default
-to `wait: true` and reject an explicit `wait: false`, because no poller runs.
-
-The poller checks for a question before a result, the same order the blocking
-path uses, and delivers it as `herdr_agent_question` instead. A detached agent
-that asked stays open exactly like a synchronous one, and `question.md` stays on
-disk so the target remains reusable by label; the answer is a normal `task` with
-the same `tabLabel`.
-
-Delivery is exactly-once. The state record carries a `detached` flag, and
-`claimDetachedAgent` reads and clears it inside one locked read-modify-write, so
-overlapping ticks cannot both deliver and the claim survives `/reload`. Any
-synchronous collection — a normal wait or an explicit re-wait — releases the
-claim too, so whichever path reaches the result first owns it. The claim is
-taken before sending, which trades a lost notification on failure for never
-duplicating one; the artifact remains readable via re-wait.
-
-### Question channel
-
-A child that hits genuine ambiguity calls `ask_question`, which writes
-`question.md` next to its result artifact and returns immediately. The child
-then ends its turn, which makes it idle, which satisfies the wait the
-Orchestrator is already sitting in — no extra polling and no new wait states.
-
-The Orchestrator checks `question.md` before the result. When a question is
-present it returns early with the question text and leaves the target open,
-**including one-shots**, which are closed only after a real completion. The
-answer is sent as an ordinary `task` with the same `tabLabel`, so a parked
-target is reachable by label; the stale question is
-cleared before each prompt.
-
-`ask_question` must never block the turn. A session parked on a dialog reports
-`working`, not `blocked` — Herdr's status is published by the Pi state
-extension, which derives `blocked` solely from the Orchestrator's own
-`herdr:blocked` event — so a blocking implementation would hang until timeout.
-
-`--tools` is a strict allowlist over extension tools too, and a child cannot
-re-enable a filtered tool itself, so `ask_question` is appended to the
-allowlist at spawn time whenever a profile restricts `tools`.
-
-### Agent profile
-
-A markdown file with frontmatter and a body, for example:
+A profile is a markdown file with YAML frontmatter, selected by the `agent`
+parameter. Profiles are read on every call from `<pi agent dir>/agents/*.md`
+(`~/.pi/agent/agents` by default) and from the nearest `.pi/agents` above the
+working directory. A project profile overrides a user profile of the same name.
 
 ```md
 ---
 name: reviewer
 description: Reviews code changes for correctness and regressions.
 tools: read, grep, find, ls, bash
-model: kiro-acp/claude-opus-4.8
+model: provider/model-id
 ---
 
 You are a disciplined senior code reviewer.
-...
+Report Critical / Warnings / Suggestions with file and line evidence.
 ```
 
-The extension uses:
+Replace `provider/model-id` with a model available in your Pi configuration, or
+omit `model` to use Pi's default. `name` and `description` are required; the body
+is appended to the child's system prompt. See
+[docs/agent-profiles.md](docs/agent-profiles.md) for every field.
 
-- `name` to select the profile;
-- `description` for availability/debug details;
-- `tools` to restrict child Pi tools;
-- `model` to select the child model;
-- body as the child system prompt addition.
+## Usage
 
-See [`agent-profiles.md`](./docs/agent-profiles.md) for the full field reference.
+Fields of the `herdr_agent` tool:
 
-## Runtime files
-
-- `src/index.ts` — registers the Pi extension hook and `herdr_agent` tool.
-- `src/constants.ts` — global injected instruction and child protocol text.
-- `src/agents.ts` — profile discovery and frontmatter parsing.
-- `src/herdr.ts` — Herdr CLI calls, session snapshot discovery, named-agent lifecycle, and server-owned waits.
-- `src/schema.ts` — TypeBox tool parameter schema.
-- `src/utils.ts` — shell-safe command building and temp prompt files.
-- `src/types.ts` — shared interfaces.
-
-## Loading
-
-The extension is loaded from the symlinked Pi extension directory:
-
-```text
-~/.pi/agent/extensions/herdr-agents/src/index.ts
-```
-
-Its package metadata declares only the extension entrypoint:
+| Field | Description |
+|---|---|
+| `agent` | Profile name. |
+| `task` | Self-contained task. Omit it to re-wait on a running agent by `tabLabel`. |
+| `tabLabel` | Agent label; defaults to the title-cased profile name. Identifies the agent for re-wait, answers and resume. |
+| `wait` | `true` blocks for the result. Default `false` in UI sessions: the poller delivers the outcome later. Headless task submissions default to `true` and reject an explicit `false`. A taskless re-wait with `false` can report status without waiting. |
+| `resumeClosed` | Continue a closed one-shot, matched by exact `tabLabel`, with its prior context. Requires `task`. |
+| `model` | Overrides the profile model for a fresh spawn only. |
 
 ```json
-{
-  "pi": {
-    "extensions": ["./src/index.ts"]
-  }
-}
+{ "agent": "reviewer", "tabLabel": "Diff review", "task": "Review the current diff for regressions.", "wait": true }
 ```
 
-A global `/parallel-review` Pi prompt uses this extension's `herdr_agent` tool, but the prompt itself is maintained outside this extension.
+Lifecycle:
 
-### Layout configuration
+- Every agent is a one-shot. The target closes after a successful result; on
+  timeout, error or abort it stays open for debugging. The fixed wait timeout
+  is 600 s, after which the tool returns a re-wait hint.
+- A child that calls `ask_question` stays open. Answer with a normal `task` and
+  the same `tabLabel`.
+- A task sent by `tabLabel` to a live agent is rejected rather than spawning a
+  duplicate. Re-wait, answer the question, or use `resumeClosed` after it closes.
+- Detached results and questions are delivered exactly once.
 
-Layout and the subagents-workspace label are read from `herdr-agents.json` in the
-Pi agent dir (`~/.pi/agent/herdr-agents.json`, kept in the dotfiles `pi`
-package). A missing or invalid file falls back to the defaults:
+### Commands
+
+- `/run [agent] <task>` — explicitly delegate a task, for example
+  `/run scout find where auth is handled`.
+- `/council <question>` — ask every model listed in `council.json` in the Pi
+  agent dir (`{ "models": ["provider/model-id", ...] }`) and consolidate the
+  answers. Requires a UI session for detached result delivery. It spawns one
+  `researcher` per model, so a `researcher` profile must exist.
+- `/herdr-agents` — list managed agents across workspaces, focus or close them.
+
+## Configuration
+
+Layout is set in `herdr-agents.json` in the Pi agent dir. It is not part of the
+tool schema. A missing or invalid file falls back to the defaults:
 
 ```json
 {
   "layout": "workspace",
-  "workspace": {
-    "label": "subagents"
-  }
+  "workspace": { "label": "subagents" }
 }
 ```
 
-`layout` accepts `workspace` (default), `pane`, or `tab`. The config is read
-per spawn, so edits apply to new tool calls without a restart. Note that
-switching `layout` while agents are live orphans them — they remain visible
-and closable via `/herdr-agents`, but re-wait only finds
-agents matching the currently configured layout. Close live agents before
-changing `layout`. The checked-in `herdr-agents.json` equals the built-in
-defaults (documentation-by-example); deleting it changes nothing.
-Environment variables no longer control layout — stale `HERDR_AGENTS_LAYOUT`
-exports are ignored. The state-file internals (`HERDR_AGENTS_STATE_PATH`,
-`HERDR_AGENTS_LOCK_WAIT_MS`, `HERDR_AGENTS_CLAIM_LEASE_MS`) stay
-environment-only for test harnesses and debugging.
+| `layout` | Behavior |
+|---|---|
+| `workspace` (default) | One tab per agent in a dedicated workspace, created again if you close it. Your own workspace gains no splits or tabs. |
+| `pane` | The first agent splits the orchestrator pane 60/40; further agents stack in the right column. |
+| `tab` | One tab per agent in the current workspace. |
 
-## Tool parameters
+The file is read on every spawn. **Do not change `layout` while agents are
+live:** they become orphaned. They stay visible and closable through
+`/herdr-agents`, but re-wait only finds agents of the configured layout.
 
-`herdr_agent` accepts:
+## Development
 
-```ts
-{
-  agent: string;
-  task?: string; // omit to re-wait on a live agent by tabLabel
-  tabLabel?: string;
-  wait?: boolean;
-  resumeClosed?: boolean; // continue a closed one-shot with its context
-  model?: string; // fresh-spawn-only override of the profile model
-}
+```bash
+bun run test              # unit + integration, no real Herdr (links Pi peer deps first)
+bun run test:unit         # pure helpers
+bun run test:integration  # herdr_agent flow against a fake Herdr
+bun run test:e2e          # real Herdr server and real Pi children
+bun run test:all          # everything
 ```
 
-The wait timeout is a fixed code constant (600 s); after an interrupt the tool
-returns the soft re-wait hint.
+`test-support/link-deps.sh` symlinks the Pi packages from the globally installed
+`pi` into a local `node_modules`, so `pi` must be on `PATH`. Tests redirect
+`TMPDIR`, state and the Pi agent dir, so a live session is not touched.
 
-### `/run` command
+## Documentation
 
-Explicit delegation via `/run`:
-
-```text
-/run scout find where auth is handled
-/run reviewer check the current diff
-/run implement the login timeout fix
-```
-
-`/run [agent] <task>` injects a one-turn delegation authorization and sends the task as a user message.
-
-Typical tool call:
-
-```json
-{
-  "agent": "reviewer",
-  "tabLabel": "HR Correctness",
-  "task": "Review the current diff for correctness and regressions...",
-  "wait": true
-}
-```
-
-### `/council` command
-
-Ask one question to every model in `~/.pi/agent/council.json` (`getAgentDir()`) and consolidate the answers. The command injects a persisted user message with the question and spawn contract; the Orchestrator calls `herdr_agent` once per model in parallel (`wait: false`) and synthesizes the result.
-
-```text
-/council Why is X better than Y?
-```
-
-Typical per-model tool call:
-
-```json
-{
-  "agent": "researcher",
-  "model": "opus-5",
-  "tabLabel": "Council — opus-5",
-  "task": "Why is X better than Y?",
-  "wait": false
-}
-```
-
-## Known design choices
-
-- Every agent is a one-shot; there is no persistent lifecycle. Continuation with context goes through `resumeClosed` (session-file resume).
-- One-shot targets are closed only after successful completion and output read; timeout/error/abort leaves them open for debugging.
-- A task explicitly addressed by `tabLabel` to a live agent is rejected with guidance (re-wait, answer the parked question, or `resumeClosed` after it closes) instead of silently spawning a duplicate.
-- Fresh context is preferred over forked conversation context for newly created agents; `resumeClosed` is the deliberate exception that restores an archived session.
-- Child agents are prevented from recursively registering `herdr_agent` by `HERDR_AGENT_CHILD=1`; child mode retains the result-artifact writer and the `ask_question` channel (`child.ts`).
-- Herdr 0.7.5 or newer is required for `agent start`, atomic `agent prompt`, `agent wait`, `agent send-keys`, `agent read`, and `api snapshot`.
-- Human-readable labels identify agents to the model (re-wait, answer, resume). A separate generated Herdr automation name is the stable command target; legacy agents fall back to pane IDs.
-- Completion output is persisted in a per-agent artifact, so large results do not depend on terminal scrollback. The artifact is cleared before each prompt to prevent stale output; terminal reading remains the fallback when no new artifact is written.
-- The Orchestrator must synthesize child results. Child output should not be blindly forwarded.
-- Raw Herdr CLI remains useful for diagnostics, but normal delegation should go through `herdr_agent`.
-
-See also:
-
-- [`herdr-0.7-agent-api-migration.md`](./docs/herdr-0.7-agent-api-migration.md) — migration to Herdr's named-agent automation API, compatibility findings, and verification results.
-- [`plan-interactive-agents.md`](./docs/plan-interactive-agents.md) — phased plan for the parallel-agent limit, status widget, bidirectional `ask_question` channel, and async result delivery. All shipped; the loadout snapshot phase was deliberately dropped, with reasons recorded there. Also records the measurement mistakes made along the way and the provider ceilings found.
-- [`plan-upstream-parity.md`](./docs/plan-upstream-parity.md) — second wave of upstream comparison: remaining feature gaps against `pi-interactive-subagents`, phased with gates, plus what is deliberately not ported.
-- [`flow.md`](./docs/flow.md) — detailed lifecycle.
-- [`session-findings.md`](./docs/session-findings.md) — development findings and bug history.
-- [`composer-cursor-sdk-compatibility.md`](./docs/composer-cursor-sdk-compatibility.md) — Composer tool-name adaptation and tool/skill boundary tuning.
+- [AGENTS.md](AGENTS.md) — source map, behavior notes and test layers.
+- [docs/agent-profiles.md](docs/agent-profiles.md) — profile fields and discovery.
+- [docs/flow.md](docs/flow.md) — runtime lifecycle of `herdr_agent`.
+- [docs/herdr-0.7-agent-api-migration.md](docs/herdr-0.7-agent-api-migration.md) — move to Herdr's agent API.
+- [docs/plan-interactive-agents.md](docs/plan-interactive-agents.md) — question channel, widget and async delivery.
+- [docs/plan-upstream-parity.md](docs/plan-upstream-parity.md) — comparison with `pi-interactive-subagents`.
+- [docs/session-findings.md](docs/session-findings.md) — development findings and bug history.
+- [docs/composer-cursor-sdk-compatibility.md](docs/composer-cursor-sdk-compatibility.md) — Composer tool-name adaptation.
+- [PLAN.md](PLAN.md) — API modernization plan.
