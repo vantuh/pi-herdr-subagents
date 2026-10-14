@@ -188,6 +188,22 @@ Done when: no function in `tool/execute.ts` exceeds ~150 lines; unit + e2e
 green; reviewer findings resolved; commit
 `refactor: split herdr_agent execute into phases`.
 
+## Follow-up: scope state pruning to one Herdr server
+
+Not part of the restructure; tracked here so it is not lost.
+
+The state file (`~/.pi/agent/herdr-agents-state.json`) is shared by every
+Orchestrator on the machine, but `pruneHerdrAgentsState` deletes any record
+whose terminal is missing from the *current* Herdr server's snapshot. Two Herdr
+sessions with different sockets therefore delete each other's live records,
+which makes those agents invisible to the poller (no detached delivery, no
+close) and to label lookup (re-wait reports no running agent).
+
+- Record the owning Herdr server (e.g. `HERDR_SOCKET_PATH`) on each agent record.
+- Prune only records that belong to the server whose snapshot is being used;
+  records without the field keep today's behavior.
+- Test: two simulated servers sharing one state file keep each other's records.
+
 ## Out of scope
 
 - Splitting or rewriting test files.
