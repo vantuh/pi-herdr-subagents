@@ -150,8 +150,8 @@ so a live session is not touched.
 - [docs/agent-profiles.md](docs/agent-profiles.md) — profile fields and discovery.
 - [docs/flow.md](docs/flow.md) — runtime lifecycle of `herdr_agent`.
 - [docs/herdr-0.7-agent-api-migration.md](docs/herdr-0.7-agent-api-migration.md) — move to Herdr's agent API.
-- [docs/plan-interactive-agents.md](docs/plan-interactive-agents.md) — question channel, widget and async delivery.
-- [docs/plan-upstream-parity.md](docs/plan-upstream-parity.md) — comparison with `pi-interactive-subagents`.
+- [docs/plans/plan-interactive-agents.md](docs/plans/plan-interactive-agents.md) — question channel, widget and async delivery.
+- [docs/plans/plan-upstream-parity.md](docs/plans/plan-upstream-parity.md) — comparison with `pi-interactive-subagents`.
 - [docs/session-findings.md](docs/session-findings.md) — development findings and bug history.
 - [docs/composer-cursor-sdk-compatibility.md](docs/composer-cursor-sdk-compatibility.md) — Composer tool-name adaptation.
 - [PLAN.md](PLAN.md) — API modernization plan.
