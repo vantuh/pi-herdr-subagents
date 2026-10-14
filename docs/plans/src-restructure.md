@@ -120,7 +120,7 @@ Done when: no import cycle (`imports.test.ts` green); commit
 Done when: `src/herdr.ts` is gone; tests green; commit
 `refactor: split herdr wrappers by concern`.
 
-### [~] Phase 4 — UI out of index
+### [x] Phase 4 — UI out of index (`370bb53`)
 
 - `widget.ts` → `ui/widget.ts`.
 - `ui/renderers.ts`: `AGENT_RESULT_MESSAGE_TYPE`, `AGENT_QUESTION_MESSAGE_TYPE`,
