@@ -69,7 +69,7 @@ afterAll(async () => {
 });
 
 // Lazy on purpose: a top-level await before test() defers registration past
-// the first awaited line, so later tests in this file never register.
+// the first awaited line, so tests below it in this file never register.
 async function tmpDir(): Promise<string> {
   configTmp ??= await mkdtemp(join(tmpdir(), 'herdr-agents-config-'));
   return configTmp;
@@ -129,7 +129,7 @@ test('drops unknown layout values but keeps the rest', async () => {
 });
 
 // Lazy on purpose: a top-level await before test() defers registration past
-// the first awaited line, so later tests in this file never register.
+// the first awaited line, so tests below it in this file never register.
 async function councilDir(): Promise<string> {
   councilTmp ??= await mkdtemp(join(tmpdir(), 'council-config-'));
   return councilTmp;
