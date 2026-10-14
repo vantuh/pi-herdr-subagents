@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 
 import { exportPaneLayout } from '../src/herdr.ts';
 import {
@@ -16,7 +16,7 @@ import {
 /**
  * End-to-end flows against a real Herdr server with real Pi children.
  * Slow by nature (each scenario boots a server and one or more Pi processes);
- * run with `bun run test:e2e`.
+ * run with `npm run test:e2e`.
  */
 
 async function withE2e(

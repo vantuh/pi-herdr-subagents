@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
-import test from 'node:test';
+import { test } from 'vitest';
 
 import {
   AGENT_QUESTION_MESSAGE_TYPE,

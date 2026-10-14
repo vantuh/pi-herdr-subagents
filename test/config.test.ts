@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import { afterAll, test } from 'vitest';
 
 import {
   DEFAULT_AGENTS_WORKSPACE_LABEL,
@@ -59,7 +59,7 @@ test('blank workspace label falls back to the default', () => {
 
 let configTmp: string | null = null;
 let councilTmp: string | null = null;
-test.after(async () => {
+afterAll(async () => {
   if (configTmp) {
     await rm(configTmp, { recursive: true, force: true });
   }
@@ -68,8 +68,8 @@ test.after(async () => {
   }
 });
 
-// Lazy on purpose: a top-level await would defer test registration past the
-// first awaited line, which breaks Bun's node:test compat in multi-file runs.
+// Lazy on purpose: a top-level await before test() defers registration past
+// the first awaited line, so later tests in this file never register.
 async function tmpDir(): Promise<string> {
   configTmp ??= await mkdtemp(join(tmpdir(), 'herdr-agents-config-'));
   return configTmp;
@@ -128,8 +128,8 @@ test('drops unknown layout values but keeps the rest', async () => {
   assert.deepEqual(config, { workspace: { label: 'X' } });
 });
 
-// Lazy on purpose: a top-level await would defer test registration past the
-// first awaited line, which breaks Bun's node:test compat in multi-file runs.
+// Lazy on purpose: a top-level await before test() defers registration past
+// the first awaited line, so later tests in this file never register.
 async function councilDir(): Promise<string> {
   councilTmp ??= await mkdtemp(join(tmpdir(), 'council-config-'));
   return councilTmp;

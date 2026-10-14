@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import test, { after } from 'node:test';
+import { afterAll, test } from 'vitest';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -54,7 +54,7 @@ async function tempStatePath(): Promise<string> {
 // Every test here needs its own state file, so the dirs are removed in one
 // teardown instead of accumulating in the temp root run after run.
 const tempDirs: string[] = [];
-after(async () => {
+afterAll(async () => {
   for (const dir of tempDirs) {
     await fs.rm(dir, { recursive: true, force: true });
   }
