@@ -60,7 +60,8 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 - Layout defaults to `workspace`, configured via `herdr-agents.json` in the Pi agent dir (`layout: "pane"` or `"tab"` for the legacy layouts); the model receives no layout parameter.
 - Workspace mode keeps every agent tab in a dedicated subagents workspace (label from `herdr-agents.json` → `workspace.label`, default `subagents`), so the Orchestrator's screen never gains splits or tabs. The workspace is re-resolved from `herdr workspace list` on every spawn and recreated if the user closed it. `/herdr-agents` lists agents across workspaces and focuses them via `tab focus` (workspace-qualified ids). A detached agent that finishes unseen also raises a native `herdr notification show`.
 - Pane mode splits the Orchestrator 60/40 on the first spawn and stacks additional agents down the right column. The placement lock is held through `agent start`, managed-state recording, and rebalancing so parallel calls cannot create competing right columns; in workspace mode the same lock serializes the subagents-workspace lookup within one Orchestrator process and is released once the agent's tab is visible to the next `listTabs` (label uniqueness is computed client-side by `uniqueLabel`). Across separate Orchestrator processes a duplicate workspace creation degrades gracefully: lookups take the first label match and managed records stay ownership-scoped. Changing `layout` in `herdr-agents.json` while agents are live orphans them (they stay visible/closable via `/herdr-agents`); close live agents before switching.
-- Persistent agent reuse is label-based: the default label is the title-cased agent profile name unless `tabLabel` is provided. Reuse requires an exact managed-agent label match. Managed agents also receive a short unique Herdr automation name; legacy panes fall back to pane IDs.
+- Historical `persistent` records stay stored but unmanaged: no reuse, detached claim, conversion, or automatic closing.
+- Parked one-shot reuse is label-based: the default label is the title-cased agent profile name unless `tabLabel` is provided. Reuse requires an exact managed-agent label match. Managed agents also receive a short unique Herdr automation name; legacy panes fall back to pane IDs.
 - While waiting, the extension emits `pi.events.emit("herdr:blocked", ...)` so Herdr can mark the Orchestrator pane as blocked/waiting.
 
 ## Loading
@@ -125,14 +126,14 @@ Covered by the integration layer: one-shot spawn/collect/close, scrollback
 fallback, the `ask_question` round trip (parked one-shot answered by label),
 rejection of label-addressed tasks to live agents, parallel spawns serialized
 into one agent column
-with rebalancing, `agent_pane_busy` retry, `agent_kind_mismatch` recovery, the
+with rebalancing, `agent_kind_mismatch` recovery, the
 delayed and fast prompt acceptance without duplicate Enter, timeout/abort soft re-wait plus the
 re-wait path, detached result and question delivery through the widget poller
 (exactly once), the tab layout, the injected Orchestrator / `/run`
 instructions, and closed one-shot archive/resume (`resumeClosed`, session
 JSONL, ownership, concurrent claim, question after resurrection).
 
-Regressions from `docs/session-findings.md` that used to be checked by hand and
+Regressions from `docs/plans/session-findings.md` that used to be checked by hand and
 now have tests, with the finding they came from:
 
 | Behavior | Finding |
@@ -145,7 +146,7 @@ now have tests, with the finding they came from:
 | A reused agent's previous settled state is not accepted as this turn's result | §8 |
 | A child that finishes as `done` rather than `idle` is still collected | §8 |
 | One-shot cleanup removes the managed temp dir; a running detached agent keeps it | §9 |
-| `agent_pane_busy` retry is bounded and gives up without closing anything | §12 |
+| Startup CLI failures propagate without retrying or closing the pane | §12 |
 | `/herdr-agents` focuses, closes (with temp cleanup), and reports an empty workspace | §9 |
 | Two detached outcomes in one poller tick arrive as one batch, only the last triggering a turn | index.ts |
 | Every relative import resolves | §15 |
