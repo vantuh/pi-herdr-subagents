@@ -54,15 +54,20 @@ src/
   only when its module is renamed 1:1 (`constants.test.ts` → `prompts.test.ts`).
   `test/state.test.ts` builds child scripts from `'../src/state.ts'` by path
   (lines ~914, ~969, ~1073); update those strings too.
-- Each phase ends green and is committed:
-  `npm test` + the rolldown bundle check from `AGENTS.md`. Phases 5–7 also run
-  `npm run test:e2e`.
+- Each phase ends green and is committed. Phases 1–6 are pure moves, so the
+  worker runs only the fast checks: the rolldown bundle check from `AGENTS.md`
+  and the fast unit subset (`AGENTS.md` → Tests). The Orchestrator then runs the
+  full `npm test` (plus `npm run test:e2e` for phases 5–7) once before
+  reporting; a failure there resumes the worker. Phase 7 changes logic, so its
+  worker runs the full `npm test` itself.
 - Docs updated in the same phase as the move they describe: `AGENTS.md` Files
   section, `docs/agent-profiles.md`, `docs/tool.md`, `docs/flow.md` source refs.
 
 ## Phases
 
-### Phase 1 — prompts and artifacts
+Status: `[x]` done (commit), `[~]` in progress, `[ ]` not started.
+
+### [x] Phase 1 — prompts and artifacts (`3997ba1`)
 
 - `constants.ts` → `prompts.ts`; `test/constants.test.ts` → `test/prompts.test.ts`.
 - New `artifacts.ts` from `utils.ts`: protocol constants, `ChildSessionMeta`,
@@ -78,7 +83,7 @@ src/
 Done when: `utils.ts` has no file IO; tests green; commit
 `refactor: split prompts and artifacts modules`.
 
-### Phase 2 — state
+### [x] Phase 2 — state (`83a07b6`)
 
 - `state.ts` → `state/store.ts` (lines 1–613: records, env, lock, load/save,
   migrate, prune, ownership, lifecycle record ops, `claimDetachedAgent`,
@@ -99,7 +104,7 @@ Done when: `utils.ts` has no file IO; tests green; commit
 Done when: no import cycle (`imports.test.ts` green); commit
 `refactor: split state into store and closed history`.
 
-### Phase 3 — herdr
+### [~] Phase 3 — herdr
 
 - `herdr/cli.ts`: `HerdrCliError`, `delay`, redaction/sanitize, `parseHerdrError`,
   `execHerdr`, `execHerdrApi`.
@@ -115,7 +120,7 @@ Done when: no import cycle (`imports.test.ts` green); commit
 Done when: `src/herdr.ts` is gone; tests green; commit
 `refactor: split herdr wrappers by concern`.
 
-### Phase 4 — UI out of index
+### [ ] Phase 4 — UI out of index
 
 - `widget.ts` → `ui/widget.ts`.
 - `ui/renderers.ts`: `AGENT_RESULT_MESSAGE_TYPE`, `AGENT_QUESTION_MESSAGE_TYPE`,
@@ -137,7 +142,7 @@ Done when: `src/herdr.ts` is gone; tests green; commit
 Done when: `index.ts` has no TUI component imports except via `ui/`; unit + e2e
 green; commit `refactor: move widget, poller and manager into ui`.
 
-### Phase 5 — tool helpers out of index
+### [ ] Phase 5 — tool helpers out of index
 
 - `schema.ts` → `tool/schema.ts`.
 - `tool/child-args.ts`: `herdrChildEnvArgs`, `orchestratorIdentity`,
@@ -157,7 +162,7 @@ Done when: `index.ts` holds only wiring, `pendingRunDelegation`, and
 `registerHerdrAgentTool` with its inline `execute`; unit + e2e green; commit
 `refactor: move tool helpers out of index`.
 
-### Phase 6 — execute out of index
+### [ ] Phase 6 — execute out of index
 
 - Move the `execute` body verbatim into `tool/execute.ts` as
   `executeHerdrAgent(pi, params, signal, onUpdate, ctx)`; `registerHerdrAgentTool`
@@ -166,7 +171,7 @@ Done when: `index.ts` holds only wiring, `pendingRunDelegation`, and
 Done when: `index.ts` is wiring only (target < 300 lines); unit + e2e green;
 commit `refactor: move herdr_agent execute into tool module`.
 
-### Phase 7 — split execute into phases (real refactor)
+### [ ] Phase 7 — split execute into phases (real refactor)
 
 The only phase that changes code shape. Scope is decided after phase 6 by
 reading `tool/execute.ts`; candidate seams: resolve profile/config/mode →
