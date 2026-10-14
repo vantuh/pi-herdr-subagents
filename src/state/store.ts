@@ -24,7 +24,7 @@ export interface HerdrAgentStateRecord {
   /** Spawn-time profile values Pi ignored; retained until the outcome is delivered. */
   spawnWarnings?: string[];
   /**
-   * Not yet collected. Lives in the state file rather than memory so a
+   * Pending collection. Lives in the state file rather than memory so a
    * pending delivery survives `/reload`.
    */
   detached?: boolean;
@@ -45,11 +45,7 @@ export interface HerdrAgentStateRecord {
   updatedAt: string;
 }
 
-type ClosedHistoryStatus =
-  | 'resumable'
-  | 'claimed'
-  | 'invalid'
-  | 'staged';
+type ClosedHistoryStatus = 'resumable' | 'claimed' | 'invalid' | 'staged';
 
 export interface ClosedAgentHistoryRecord {
   id: string;
@@ -145,19 +141,7 @@ function lockSentinelPath(lockDir: string, token: string): string {
   return path.join(lockDir, `owner.${process.pid}.${token}`);
 }
 
-async function releaseExclusiveLock(
-  lockDir: string,
-  sentinelPath: string,
-): Promise<void> {
-  try {
-    await fs.unlink(sentinelPath);
-  } catch {
-    return;
-  }
-  await fs.rmdir(lockDir).catch(() => {});
-}
-
-async function abandonPartialLock(
+async function releaseLock(
   lockDir: string,
   sentinelPath: string,
 ): Promise<void> {
@@ -189,12 +173,12 @@ async function tryAcquireExclusiveLock(
       { flag: 'wx', encoding: 'utf8' },
     );
   } catch (error) {
-    await abandonPartialLock(lockPath, sentinelPath);
+    await releaseLock(lockPath, sentinelPath);
     throw error;
   }
 
   return async () => {
-    await releaseExclusiveLock(lockPath, sentinelPath);
+    await releaseLock(lockPath, sentinelPath);
   };
 }
 
