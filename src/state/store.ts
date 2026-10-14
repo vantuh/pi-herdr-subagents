@@ -7,6 +7,7 @@ import type { HerdrAgentLayout, PaneInfo } from '../types.ts';
 
 export interface HerdrAgentStateRecord {
   lifecycle: 'oneshot' | 'persistent';
+  serverSocketPath?: string;
   tabLabel?: string;
   agent?: string;
   automationName?: string;
@@ -351,6 +352,9 @@ function copyAgentRecords(state: HerdrAgentsState, agents: unknown): void {
 
     state.agents[key] = {
       lifecycle: record.lifecycle,
+      ...(typeof record.serverSocketPath === 'string'
+        ? { serverSocketPath: record.serverSocketPath }
+        : {}),
       ...(typeof record.tabLabel === 'string'
         ? { tabLabel: record.tabLabel }
         : {}),
@@ -439,6 +443,7 @@ export async function saveHerdrAgentsState(
 export function pruneHerdrAgentsState(
   state: HerdrAgentsState,
   panes: PaneInfo[],
+  serverSocketPath = process.env.HERDR_SOCKET_PATH,
 ): boolean {
   const liveKeys = new Set(
     panes
@@ -447,7 +452,10 @@ export function pruneHerdrAgentsState(
   );
 
   let changed = false;
-  for (const key of Object.keys(state.agents)) {
+  for (const [key, record] of Object.entries(state.agents)) {
+    // Legacy records retain snapshot-based pruning until restamped.
+    if (record.serverSocketPath && record.serverSocketPath !== serverSocketPath)
+      continue;
     if (liveKeys.has(key)) continue;
     delete state.agents[key];
     changed = true;
@@ -462,10 +470,11 @@ export function pruneHerdrAgentsState(
 export async function persistPrunedAgentsState(
   panes: PaneInfo[],
   filePath = getHerdrAgentsStatePath(),
+  serverSocketPath = process.env.HERDR_SOCKET_PATH,
 ): Promise<HerdrAgentsState> {
   return withStateFileLock(filePath, async () => {
     const state = await loadHerdrAgentsState(filePath);
-    if (pruneHerdrAgentsState(state, panes)) {
+    if (pruneHerdrAgentsState(state, panes, serverSocketPath)) {
       await saveHerdrAgentsState(state, filePath);
     }
     return state;
@@ -486,6 +495,11 @@ export function isAgentOwnedBy(
   currentTab: string,
 ): record is HerdrAgentStateRecord & { lifecycle: 'oneshot' } {
   if (record.lifecycle !== 'oneshot') return false;
+  if (
+    record.serverSocketPath &&
+    record.serverSocketPath !== process.env.HERDR_SOCKET_PATH
+  )
+    return false;
   if (record.ownerTerminalId) {
     return !!ownerTerminalId && record.ownerTerminalId === ownerTerminalId;
   }
@@ -496,6 +510,7 @@ export function isAgentOwnedBy(
 export async function recordAgentLifecycle(
   pane: PaneInfo,
   metadata: {
+    serverSocketPath?: string;
     tabLabel?: string;
     agent?: string;
     automationName?: string;
@@ -519,9 +534,14 @@ export async function recordAgentLifecycle(
     const state = await loadHerdrAgentsState(filePath);
     const existing = state.agents[key];
     if (existing && existing.lifecycle !== 'oneshot') return;
+    const serverSocketPath =
+      metadata.serverSocketPath ??
+      process.env.HERDR_SOCKET_PATH ??
+      existing?.serverSocketPath;
     state.agents[key] = {
       lifecycle: 'oneshot',
       ...metadata,
+      ...(serverSocketPath ? { serverSocketPath } : {}),
       ...(!metadata.ownerTerminalId && existing?.ownerTerminalId
         ? { ownerTerminalId: existing.ownerTerminalId }
         : {}),

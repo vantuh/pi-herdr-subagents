@@ -74,6 +74,7 @@ test('records and loads agent lifecycle state', async () => {
   await recordAgentLifecycle(
     pane(),
     {
+      serverSocketPath: '/isolated/lifecycle.sock',
       tabLabel: 'Researcher',
       agent: 'researcher',
       automationName: 'researcher_ab12cd34',
@@ -88,6 +89,7 @@ test('records and loads agent lifecycle state', async () => {
   const state = await loadHerdrAgentsState(filePath);
   assert.deepEqual(state.agents['terminal:term-1'], {
     lifecycle: 'oneshot',
+    serverSocketPath: '/isolated/lifecycle.sock',
     tabLabel: 'Researcher',
     agent: 'researcher',
     automationName: 'researcher_ab12cd34',
@@ -231,6 +233,58 @@ test('prunes state for terminals no longer reported by Herdr', () => {
   assert.equal(pruneHerdrAgentsState(state, [pane()]), true);
   assert.deepEqual(Object.keys(state.agents), ['terminal:term-1']);
   assert.equal(pruneHerdrAgentsState(state, [pane()]), false);
+});
+
+test('two server snapshots sharing a state file prune only their own records', async () => {
+  const filePath = await tempStatePath();
+  const serverA = '/isolated/server-a.sock';
+  const serverB = '/isolated/server-b.sock';
+  const childA = pane({ terminal_id: 'child-a' });
+  const childB = pane({ terminal_id: 'child-b' });
+  await recordAgentLifecycle(childA, { serverSocketPath: serverA }, filePath);
+  await recordAgentLifecycle(childB, { serverSocketPath: serverB }, filePath);
+
+  await persistPrunedAgentsState([childA], filePath, serverA);
+  assert.deepEqual(Object.keys((await loadHerdrAgentsState(filePath)).agents), [
+    'terminal:child-a',
+    'terminal:child-b',
+  ]);
+  await persistPrunedAgentsState([childB], filePath, serverB);
+  assert.equal(
+    (await loadHerdrAgentsState(filePath)).agents['terminal:child-a']
+      ?.serverSocketPath,
+    serverA,
+  );
+  await persistPrunedAgentsState([], filePath, serverA);
+  assert.deepEqual(Object.keys((await loadHerdrAgentsState(filePath)).agents), [
+    'terminal:child-b',
+  ]);
+  await persistPrunedAgentsState([], filePath, serverB);
+  assert.deepEqual((await loadHerdrAgentsState(filePath)).agents, {});
+});
+
+test('legacy records retain pruning behavior while foreign stamped records stay untouched', () => {
+  const state = emptyHerdrAgentsState();
+  state.agents['terminal:legacy'] = { lifecycle: 'oneshot', updatedAt: '' };
+  state.agents['terminal:foreign'] = {
+    lifecycle: 'oneshot',
+    serverSocketPath: '/isolated/other.sock',
+    updatedAt: '',
+  };
+  assert.equal(
+    pruneHerdrAgentsState(state, [], '/isolated/current.sock'),
+    true,
+  );
+  assert.deepEqual(Object.keys(state.agents), ['terminal:foreign']);
+  assert.equal(
+    isAgentOwnedBy(
+      state.agents['terminal:foreign'],
+      undefined,
+      'tab-1',
+      'tab-1',
+    ),
+    false,
+  );
 });
 
 test('recordAgentLifecycle is a no-op when terminal_id is missing', async () => {

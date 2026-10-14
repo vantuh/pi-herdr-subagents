@@ -386,10 +386,10 @@ sessions with different sockets therefore delete each other's live records,
 which makes those agents invisible to the poller (no detached delivery, no
 close) and to label lookup (re-wait reports no running agent).
 
-- Record the owning Herdr server (e.g. `HERDR_SOCKET_PATH`) on each agent record.
-- Prune only records that belong to the server whose snapshot is being used;
-  records without the field keep today's behavior.
-- Test: two simulated servers sharing one state file keep each other's records.
+- [x] Record `serverSocketPath` from `HERDR_SOCKET_PATH` on new lifecycle records; parse it on reload. Socket path identifies a server endpoint, not a server process generation, so handoff at the same socket retains scope.
+- [x] Prune only stamped records belonging to the inspected socket. Legacy records without a stamp retain snapshot-based pruning until restamped; no historical production repair or state-version bump. When socket identity is unavailable, stamped records are preserved. Ownership checks reject foreign stamped records as well.
+- [x] Regression: two simulated server snapshots sharing one state file preserve each other's records, then independently prune their own missing children. The test failed before the fix (server A deleted child B). Additional checks cover legacy pruning and foreign ownership.
+- Validation: `npm run typecheck` passed; `npm test` passed 300/300 tests across 16 files. Bundle and diff checks recorded below before commit.
 
 ## Follow-up: issues found during the restructure
 
