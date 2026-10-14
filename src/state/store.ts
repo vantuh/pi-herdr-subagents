@@ -4,11 +4,13 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-import type { HerdrAgentLayout, PaneInfo } from '../types.ts';
+import type { HerdrAgentLayout, HerdrNamedAgent, PaneInfo } from '../types.ts';
 
 export interface HerdrAgentStateRecord {
   lifecycle: 'oneshot' | 'persistent';
   serverSocketPath?: string;
+  paneId?: string;
+  ownerPaneId?: string;
   tabLabel?: string;
   agent?: string;
   automationName?: string;
@@ -21,6 +23,8 @@ export interface HerdrAgentStateRecord {
    * rather than memory so a pending delivery survives `/reload`.
    */
   detached?: boolean;
+  /** A committed outcome claim; a new task's lifecycle record clears it. */
+  collected?: boolean;
   /**
    * Orchestrator pane `terminal_id` that spawned this agent. Widget, reuse,
    * and detached delivery all key off this so two Orchestrators in one
@@ -283,9 +287,8 @@ function isLayout(value: unknown): value is HerdrAgentLayout {
   return value === 'pane' || value === 'tab' || value === 'workspace';
 }
 
-// terminal_id is used as the durable state key (rather than pane_id/tab_id)
-// because Herdr can recreate panes/tabs with new ids while keeping the same
-// underlying terminal, and we want lifecycle state to survive that.
+// Terminal identity survives pane moves; live handoff rekeys it from verified
+// automation names and the recorded child/owner panes before pruning.
 export function paneStateKey(
   pane: Pick<PaneInfo, 'terminal_id'>,
 ): string | undefined {
@@ -371,6 +374,10 @@ function copyAgentRecords(state: HerdrAgentsState, agents: unknown): void {
       ...(typeof record.serverSocketPath === 'string'
         ? { serverSocketPath: record.serverSocketPath }
         : {}),
+      ...(typeof record.paneId === 'string' ? { paneId: record.paneId } : {}),
+      ...(typeof record.ownerPaneId === 'string'
+        ? { ownerPaneId: record.ownerPaneId }
+        : {}),
       ...(typeof record.tabLabel === 'string'
         ? { tabLabel: record.tabLabel }
         : {}),
@@ -390,6 +397,7 @@ function copyAgentRecords(state: HerdrAgentsState, agents: unknown): void {
           }
         : {}),
       ...(record.detached === true ? { detached: true } : {}),
+      ...(record.collected === true ? { collected: true } : {}),
       ...(typeof record.ownerTerminalId === 'string'
         ? { ownerTerminalId: record.ownerTerminalId }
         : {}),
@@ -460,6 +468,7 @@ export function pruneHerdrAgentsState(
   state: HerdrAgentsState,
   panes: PaneInfo[],
   serverSocketPath = process.env.HERDR_SOCKET_PATH,
+  agents: readonly HerdrNamedAgent[] = [],
 ): boolean {
   const liveKeys = new Set(
     panes
@@ -473,6 +482,42 @@ export function pruneHerdrAgentsState(
     if (record.serverSocketPath && record.serverSocketPath !== serverSocketPath)
       continue;
     if (liveKeys.has(key)) continue;
+    const named = record.automationName
+      ? agents.find(
+          (agent) =>
+            agent.name === record.automationName && agent.agent === 'pi',
+        )
+      : undefined;
+    if (
+      named &&
+      record.lifecycle === 'oneshot' &&
+      record.serverSocketPath &&
+      record.serverSocketPath === serverSocketPath
+    ) {
+      const owner = panes.find((pane) => pane.pane_id === record.ownerPaneId);
+      const child = panes.find(
+        (pane) =>
+          pane.pane_id === named.pane_id &&
+          pane.terminal_id === named.terminal_id,
+      );
+      const nextKey = child ? paneStateKey(child) : undefined;
+      if (
+        record.paneId === named.pane_id &&
+        record.ownerSessionId &&
+        owner?.terminal_id &&
+        nextKey &&
+        !state.agents[nextKey]
+      ) {
+        state.agents[nextKey] = {
+          ...record,
+          ownerTerminalId: owner.terminal_id,
+        };
+        delete state.agents[key];
+        changed = true;
+      }
+      // A known live name with incomplete identity is not evidence of disappearance.
+      continue;
+    }
     delete state.agents[key];
     changed = true;
   }
@@ -482,19 +527,20 @@ export function pruneHerdrAgentsState(
   return changed;
 }
 
-/** Drop live records whose terminals are gone, then persist staged→resumable. */
+/** Reconcile handoff identities before pruning and finalizing staged history. */
 export async function persistPrunedAgentsState(
   panes: PaneInfo[],
   filePath = getHerdrAgentsStatePath(),
   serverSocketPath = process.env.HERDR_SOCKET_PATH,
   signal?: AbortSignal,
+  agents: readonly HerdrNamedAgent[] = [],
 ): Promise<HerdrAgentsState> {
   return withStateFileLock(
     filePath,
     async () => {
       const state = await loadHerdrAgentsState(filePath);
       signal?.throwIfAborted();
-      if (pruneHerdrAgentsState(state, panes, serverSocketPath)) {
+      if (pruneHerdrAgentsState(state, panes, serverSocketPath, agents)) {
         await saveHerdrAgentsState(state, filePath);
       }
       return state;
@@ -533,6 +579,7 @@ export async function recordAgentLifecycle(
   pane: PaneInfo,
   metadata: {
     serverSocketPath?: string;
+    ownerPaneId?: string;
     tabLabel?: string;
     agent?: string;
     automationName?: string;
@@ -562,7 +609,11 @@ export async function recordAgentLifecycle(
       existing?.serverSocketPath;
     state.agents[key] = {
       lifecycle: 'oneshot',
+      paneId: pane.pane_id,
       ...metadata,
+      ...(!metadata.ownerPaneId && existing?.ownerPaneId
+        ? { ownerPaneId: existing.ownerPaneId }
+        : {}),
       ...(serverSocketPath ? { serverSocketPath } : {}),
       ...(!metadata.ownerTerminalId && existing?.ownerTerminalId
         ? { ownerTerminalId: existing.ownerTerminalId }
@@ -647,8 +698,25 @@ export async function deleteAgentLifecycle(
  * rather than risking a duplicate — the result artifact still exists and stays
  * reachable by an explicit re-wait.
  */
-export async function claimDetachedAgent(
+export function claimDetachedAgent(
   pane: Pick<PaneInfo, 'terminal_id'>,
+  filePath = getHerdrAgentsStatePath(),
+  signal?: AbortSignal,
+): Promise<boolean> {
+  return claimCollection(pane, true, filePath, signal);
+}
+
+export function claimAgentCollection(
+  pane: Pick<PaneInfo, 'terminal_id'>,
+  filePath = getHerdrAgentsStatePath(),
+  signal?: AbortSignal,
+): Promise<boolean> {
+  return claimCollection(pane, false, filePath, signal);
+}
+
+async function claimCollection(
+  pane: Pick<PaneInfo, 'terminal_id'>,
+  detachedOnly: boolean,
   filePath = getHerdrAgentsStatePath(),
   signal?: AbortSignal,
 ): Promise<boolean> {
@@ -662,8 +730,19 @@ export async function claimDetachedAgent(
       const state = await loadHerdrAgentsState(filePath);
       signal?.throwIfAborted();
       const record = state.agents[key];
-      if (record?.lifecycle !== 'oneshot' || !record.detached) return false;
+      if (
+        record?.lifecycle !== 'oneshot' ||
+        record.collected ||
+        (detachedOnly && !record.detached)
+      )
+        return false;
+      if (
+        record.serverSocketPath &&
+        record.serverSocketPath !== process.env.HERDR_SOCKET_PATH
+      )
+        return false;
       delete record.detached;
+      record.collected = true;
       await saveHerdrAgentsState(state, filePath);
       return true;
     },

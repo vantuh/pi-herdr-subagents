@@ -3,12 +3,14 @@ import type {
   ExtensionAPI,
 } from '@earendil-works/pi-coding-agent';
 
+import { readAgentQuestion } from '../artifacts.ts';
 import {
   getHerdrAgentsWorkspaceLabel,
   loadHerdrAgentsConfig,
 } from '../config.ts';
 import { waitForAgent } from '../herdr/agent.ts';
 import {
+  findUnresolvedOwnedAgent,
   findReusableAgentPane,
   findReusableAgentTab,
 } from '../herdr/placement.ts';
@@ -19,7 +21,7 @@ import {
 } from '../herdr/snapshot.ts';
 import { formatAgentQuestion } from '../prompts.ts';
 import {
-  claimDetachedAgent,
+  claimAgentCollection,
   emptyHerdrAgentsState,
   paneStateKey,
   persistPrunedAgentsState,
@@ -39,6 +41,7 @@ import {
   dropCollectedSpawnWarnings,
   formatCollectedOutput,
   readSettledAgentOutput,
+  refreshAgentLifecyclePane,
   spawnWarningDetails,
 } from './one-shot.ts';
 
@@ -81,6 +84,7 @@ export async function executeRewait(
     layout: HerdrAgentLayout;
     wait: boolean;
     timeoutMs: number;
+    ownerSessionId?: string;
     signal?: AbortSignal;
     onUpdate?: AgentToolUpdateCallback<Record<string, unknown>>;
   },
@@ -101,7 +105,13 @@ export async function executeRewait(
 
   const current = await getCurrentContext(signal);
   const state = await bestEffort(emptyHerdrAgentsState(), () =>
-    persistPrunedAgentsState(current.panes),
+    persistPrunedAgentsState(
+      current.panes,
+      undefined,
+      undefined,
+      undefined,
+      current.agents,
+    ),
   );
   // Tab and workspace layouts reuse by tab label; workspace tabs live in the
   // dedicated Agents workspace, so they are listed from there. Re-wait is a
@@ -133,15 +143,42 @@ export async function executeRewait(
   const label = record?.tabLabel ?? baseLabel;
   const target = record?.automationName ?? pane?.pane_id;
   if (!pane || !tabId || !target) {
+    const unresolved = findUnresolvedOwnedAgent(
+      current,
+      state,
+      baseLabel,
+      args.ownerSessionId,
+    );
     return {
       content: [
         {
           type: 'text' as const,
-          text: `No running Herdr agent named "${baseLabel}" found to re-wait on.`,
+          text: unresolved
+            ? `Owned Herdr target ${unresolved.automationName} is still live, but its legacy owner/pane identity cannot be reconciled safely. Inspect that target; do not resend the task or spawn a replacement.`
+            : `No running Herdr agent named "${baseLabel}" found to re-wait on.`,
         },
       ],
       details: {},
       isError: true,
+    };
+  }
+
+  if (record?.collected) {
+    const question = await readAgentQuestion(record.resultFile);
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `Herdr agent ${label} was already collected. If parked, answer with tabLabel "${label}" and a new task; do not resend the previous task.`,
+        },
+      ],
+      details: {
+        tabId,
+        paneId: pane.pane_id,
+        tabLabel: label,
+        waited: false,
+        ...(question ? { status: 'question', closed: false } : {}),
+      },
     };
   }
 
@@ -183,14 +220,33 @@ export async function executeRewait(
   beginAwaitingAgent(label);
   try {
     await waitForAgent(target, timeoutMs, signal);
+    const lifecyclePane = await bestEffort(pane, () =>
+      refreshAgentLifecyclePane(pane, signal),
+    );
     const settled = await readSettledAgentOutput(
       record?.resultFile,
       target,
       signal,
     );
+    if (!(await claimAgentCollection(lifecyclePane, undefined, signal))) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Another collector already claimed Herdr agent ${label}. Do not resend the task.`,
+          },
+        ],
+        details: {
+          tabId,
+          paneId: lifecyclePane.pane_id,
+          tabLabel: label,
+          waited: false,
+        },
+      };
+    }
     if ('question' in settled) {
       const spawnWarnings = record?.spawnWarnings ?? [];
-      await dropCollectedSpawnWarnings(pane);
+      await dropCollectedSpawnWarnings(lifecyclePane);
       return {
         content: [
           {
@@ -217,8 +273,7 @@ export async function executeRewait(
         },
       };
     }
-    // An explicit re-wait collects the result, so release the poller's claim.
-    await bestEffort(false, () => claimDetachedAgent(pane));
+    // The detached claim above excludes the poller and concurrent re-waits.
     let closed = false;
     let closeError: string | undefined;
     if (record?.lifecycle === 'oneshot') {
@@ -227,7 +282,7 @@ export async function executeRewait(
         tabId,
         paneId: pane.pane_id,
         resultFile: record.resultFile,
-        lifecyclePane: pane,
+        lifecyclePane,
         signal,
       });
       closed = closeError === undefined;
@@ -239,7 +294,7 @@ export async function executeRewait(
       closeError,
       spawnWarnings,
     );
-    await dropCollectedSpawnWarnings(pane);
+    await dropCollectedSpawnWarnings(lifecyclePane);
     return {
       content: [{ type: 'text' as const, text }],
       details: {

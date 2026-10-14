@@ -4,6 +4,7 @@ import * as path from 'node:path';
 
 import { test } from 'vitest';
 
+import { waitForAgent } from '../src/herdr/agent.ts';
 import {
   setFailNextStateMutation,
   clearStateSaveFailures,
@@ -630,6 +631,285 @@ test('delivers a detached result through the widget poller and closes the one-sh
       [harness.fake.orchestratorPane.pane_id],
     );
     assert.deepEqual((await harness.readState()).agents, {});
+  });
+});
+
+test('recovers an EmptyResponse wait without collecting an intermediate artifact or repeating the task', async () => {
+  await withHarness({ mode: 'rpc', hasUI: false }, async (harness) => {
+    harness.fake.setBehavior(async (turn) => {
+      await fs.writeFile(turn.resultFile!, 'INTERMEDIATE');
+      return { result: 'TRANSPORT_FINAL', delayMs: 600 };
+    });
+    harness.fake.failCommand('agent wait', 'client_disconnected', {
+      times: 1,
+      stderr: 'Error: Custom { kind: Other, error: EmptyResponse }',
+    });
+    const result = await harness.call({
+      agent: 'scout',
+      task: 'Only once',
+      tabLabel: 'Reconnect',
+    });
+    assert.match(result.content[0].text, /TRANSPORT_FINAL/);
+    assert.doesNotMatch(result.content[0].text, /INTERMEDIATE/);
+    assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
+    assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
+    assert.equal(harness.fake.callsMatching('pane', 'close').length, 1);
+    assert.equal(harness.messages.length, 0);
+  });
+});
+
+test('taskless re-wait recovers EmptyResponse and returns a question before the intermediate result', async () => {
+  await withHarness({}, async (harness) => {
+    harness.fake.setBehavior(async (turn) => {
+      await fs.writeFile(turn.resultFile!, 'INTERMEDIATE');
+      return { question: 'Reconnect question?', delayMs: 600 };
+    });
+    await harness.call({
+      agent: 'scout',
+      task: 'Only once',
+      tabLabel: 'Reconnect Question',
+      wait: false,
+    });
+    harness.fake.failCommand('agent wait', 'client_disconnected', {
+      times: 1,
+      stderr: 'Error: Custom { kind: Other, error: EmptyResponse }',
+    });
+    const result = await harness.call({
+      agent: 'scout',
+      tabLabel: 'Reconnect Question',
+    });
+    assert.equal(result.details.status, 'question');
+    assert.match(result.content[0].text, /Reconnect question\?/);
+    assert.doesNotMatch(result.content[0].text, /INTERMEDIATE/);
+    assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
+    assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
+    assert.equal(harness.fake.callsMatching('pane', 'close').length, 0);
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    assert.equal(harness.messages.length, 0);
+    harness.fake.setBehavior(() => ({ result: 'ANSWER_FINAL' }));
+    const answered = await harness.call({
+      agent: 'scout',
+      tabLabel: 'Reconnect Question',
+      task: 'Answer',
+    });
+    assert.match(answered.content[0].text, /ANSWER_FINAL/);
+    assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
+  });
+});
+
+test('repeated wait transport failures return actionable recovery and retain the child in RPC mode', async () => {
+  await withHarness({ mode: 'rpc', hasUI: false }, async (harness) => {
+    harness.fake.setBehavior(() => ({ neverSettle: true }));
+    harness.fake.failCommand('agent wait', 'client_disconnected', {
+      stderr: 'Error: Custom { kind: Other, error: EmptyResponse }',
+    });
+    const result = await harness.call({
+      agent: 'scout',
+      task: 'Only once',
+      tabLabel: 'Reconnect Exhausted',
+    });
+    assert.equal(result.details.interruptReason, 'connection');
+    assert.match(result.content[0].text, /omit task to re-wait/);
+    assert.equal(harness.fake.callsMatching('agent', 'wait').length, 4);
+    assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
+    assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
+    assert.equal(harness.fake.callsMatching('pane', 'close').length, 0);
+    assert.equal(Object.keys((await harness.readState()).agents).length, 1);
+  });
+});
+
+test('concurrent explicit re-waits collect a detached outcome only once', async () => {
+  await withHarness({}, async (harness) => {
+    harness.fake.holdChildren();
+    harness.fake.setBehavior(() => ({
+      result: 'ONLY_COLLECT_ONCE',
+      delayMs: 0,
+    }));
+    await harness.call({
+      agent: 'scout',
+      task: 'One task',
+      tabLabel: 'Claim Race',
+      wait: false,
+    });
+    const one = harness.call({ agent: 'scout', tabLabel: 'Claim Race' });
+    const two = harness.call({ agent: 'scout', tabLabel: 'Claim Race' });
+    await harness.waitFor(
+      () => harness.fake.callsMatching('agent', 'wait').length >= 2,
+      'both collectors waiting',
+    );
+    await harness.fake.releaseChildren();
+    const results = await Promise.all([one, two]);
+    assert.equal(
+      results.filter((result) =>
+        result.content[0].text.includes('ONLY_COLLECT_ONCE'),
+      ).length,
+      1,
+    );
+    assert.equal(harness.fake.callsMatching('pane', 'close').length, 1);
+    assert.equal(harness.messages.length, 0);
+  });
+});
+
+test('abort during wait reconnect preserves the child without another wait or prompt', async () => {
+  await withHarness({ mode: 'rpc', hasUI: false }, async (harness) => {
+    harness.fake.setBehavior(() => ({ neverSettle: true }));
+    harness.fake.failCommand('agent wait', 'client_disconnected', {
+      stderr: 'Error: Custom { kind: Other, error: EmptyResponse }',
+    });
+    const controller = new AbortController();
+    const pending = harness.call(
+      { agent: 'scout', task: 'Only once' },
+      { signal: controller.signal },
+    );
+    await harness.waitFor(
+      () => harness.fake.callsMatching('agent', 'wait').length === 1,
+      'first transport failure',
+    );
+    controller.abort();
+    const result = await pending;
+    assert.equal(result.details.interruptReason, 'aborted');
+    assert.equal(harness.fake.callsMatching('agent', 'wait').length, 1);
+    assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
+    assert.equal(harness.fake.callsMatching('pane', 'close').length, 0);
+  });
+});
+
+test('wait reconnect keeps the original timeout budget instead of resetting it per retry', async () => {
+  await withHarness({}, async (harness) => {
+    harness.fake.setBehavior(() => ({ neverSettle: true }));
+    await harness.call({ agent: 'scout', task: 'Only once', wait: false });
+    const target = Object.values((await harness.readState()).agents)[0]
+      ?.automationName;
+    assert.ok(target);
+    harness.fake.failCommand('agent wait', 'client_disconnected', {
+      stderr: 'Error: Custom { kind: Other, error: EmptyResponse }',
+    });
+    const start = Date.now();
+    await assert.rejects(waitForAgent(target, 180), { code: 'timeout' });
+    assert.ok(Date.now() - start < 2000);
+    const waits = harness.fake.callsMatching('agent', 'wait');
+    assert.ok(waits.length >= 1 && waits.length < 4);
+    for (const args of waits)
+      assert.ok(Number(args[args.indexOf('--timeout') + 1]) <= 180);
+    assert.equal(harness.fake.callsMatching('pane', 'close').length, 0);
+  });
+});
+
+test('re-wait keeps ownership and question handling after simulated handoff changes both terminals', async () => {
+  await withHarness({}, async (harness) => {
+    harness.fake.holdChildren();
+    harness.fake.setBehavior(() => ({
+      question: 'Handoff question?',
+      delayMs: 0,
+    }));
+    await harness.call({
+      agent: 'scout',
+      task: 'One task',
+      tabLabel: 'Handoff Question',
+      wait: false,
+    });
+    const before = Object.values((await harness.readState()).agents)[0];
+    harness.fake.simulateLiveHandoff();
+    const pending = harness.call({
+      agent: 'scout',
+      tabLabel: 'Handoff Question',
+    });
+    await harness.waitFor(
+      () => harness.fake.callsMatching('agent', 'wait').length > 0,
+      'handoff re-wait',
+    );
+    await harness.fake.releaseChildren();
+    const result = await pending;
+    assert.equal(result.details.status, 'question');
+    assert.match(result.content[0].text, /Handoff question/);
+    const after = Object.values((await harness.readState()).agents)[0];
+    assert.notEqual(after?.ownerTerminalId, before?.ownerTerminalId);
+    assert.equal(after?.ownerSessionId, before?.ownerSessionId);
+    assert.equal(after?.automationName, before?.automationName);
+    assert.equal(harness.fake.callsMatching('pane', 'close').length, 0);
+    harness.fake.setBehavior(() => ({ result: 'HANDOFF_ANSWER' }));
+    const answered = await harness.call({
+      agent: 'scout',
+      tabLabel: 'Handoff Question',
+      task: 'Answer',
+    });
+    assert.match(answered.content[0].text, /HANDOFF_ANSWER/);
+    assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
+  });
+});
+
+test('unreconcilable legacy handoff records are retained without adopting or replacing the child', async () => {
+  await withHarness({ mode: 'rpc', hasUI: false }, async (harness) => {
+    harness.fake.setBehavior(() => ({ neverSettle: true }));
+    const controller = new AbortController();
+    const pending = harness.call(
+      { agent: 'scout', task: 'One task', tabLabel: 'Legacy Handoff' },
+      { signal: controller.signal },
+    );
+    await harness.waitFor(
+      () => harness.fake.callsMatching('agent', 'wait').length > 0,
+      'initial wait',
+    );
+    controller.abort();
+    await pending;
+    const state = await harness.readState();
+    for (const record of Object.values(state.agents)) delete record.ownerPaneId;
+    await fs.writeFile(harness.statePath, JSON.stringify(state));
+    harness.fake.simulateLiveHandoff();
+    const rewait = await harness.call({
+      agent: 'scout',
+      tabLabel: 'Legacy Handoff',
+    });
+    assert.equal(rewait.isError, true);
+    assert.match(
+      rewait.content[0].text,
+      /still live.*cannot be reconciled safely/,
+    );
+    const duplicate = await harness.call({
+      agent: 'scout',
+      tabLabel: 'Legacy Handoff',
+      task: 'Do not duplicate',
+    });
+    assert.equal(duplicate.isError, true);
+    assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
+    assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
+    assert.equal(Object.keys((await harness.readState()).agents).length, 1);
+  });
+});
+
+test('concurrent RPC re-waits collect an attached interrupted turn only once', async () => {
+  await withHarness({ mode: 'rpc', hasUI: false }, async (harness) => {
+    harness.fake.setBehavior(() => ({ neverSettle: true, delayMs: 0 }));
+    const controller = new AbortController();
+    const started = harness.call(
+      { agent: 'scout', task: 'One task', tabLabel: 'Attached Race' },
+      { signal: controller.signal },
+    );
+    await harness.waitFor(
+      () => harness.fake.callsMatching('agent', 'wait').length === 1,
+      'initial attached wait',
+    );
+    controller.abort();
+    await started;
+    const one = harness.call({ agent: 'scout', tabLabel: 'Attached Race' });
+    const two = harness.call({ agent: 'scout', tabLabel: 'Attached Race' });
+    await harness.waitFor(
+      () => harness.fake.callsMatching('agent', 'wait').length >= 3,
+      'both attached collectors',
+    );
+    const target = Object.values((await harness.readState()).agents)[0]
+      ?.automationName;
+    assert.ok(target);
+    await harness.fake.completeAgent(target, 'ATTACHED_COLLECT_ONCE');
+    const results = await Promise.all([one, two]);
+    assert.equal(
+      results.filter((result) =>
+        result.content[0].text.includes('ATTACHED_COLLECT_ONCE'),
+      ).length,
+      1,
+    );
+    assert.equal(harness.fake.callsMatching('pane', 'close').length, 1);
+    assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
   });
 });
 

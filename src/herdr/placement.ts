@@ -2,6 +2,7 @@ import {
   isAgentOwnedBy,
   paneStateKey,
   type HerdrAgentsState,
+  type HerdrAgentStateRecord,
 } from '../state/store.ts';
 import type {
   HerdrAgentInfo,
@@ -11,6 +12,26 @@ import type {
   TabInfo,
 } from '../types.ts';
 import { execHerdrApi } from './cli.ts';
+
+export function findUnresolvedOwnedAgent(
+  context: HerdrContext,
+  state: HerdrAgentsState,
+  label: string,
+  ownerSessionId: string | undefined,
+): HerdrAgentStateRecord | undefined {
+  if (!ownerSessionId) return undefined;
+  return Object.entries(state.agents).find(
+    ([key, record]) =>
+      record.lifecycle === 'oneshot' &&
+      record.serverSocketPath === process.env.HERDR_SOCKET_PATH &&
+      record.ownerSessionId === ownerSessionId &&
+      record.tabLabel === label &&
+      !context.panes.some((pane) => paneStateKey(pane) === key) &&
+      context.agents?.some(
+        (agent) => agent.name === record.automationName && agent.agent === 'pi',
+      ),
+  )?.[1];
+}
 
 export function uniqueLabel(baseLabel: string, tabs: TabInfo[]): string {
   const labels = new Set(tabs.map((tab) => tab.label));

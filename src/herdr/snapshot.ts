@@ -17,7 +17,8 @@ export async function getSessionSnapshot(
   if (
     !snapshot ||
     !Array.isArray(snapshot.panes) ||
-    !Array.isArray(snapshot.tabs)
+    !Array.isArray(snapshot.tabs) ||
+    (snapshot.agents !== undefined && !Array.isArray(snapshot.agents))
   ) {
     throw new Error('Malformed Herdr api snapshot response.');
   }
@@ -45,6 +46,7 @@ export async function getCurrentContext(
   if (!currentPane) throw new Error('Could not find current Herdr pane.');
   return {
     panes,
+    agents: snapshot.agents,
     currentPane,
     workspaceId: currentPane.workspace_id,
     currentTab: currentPane.tab_id,

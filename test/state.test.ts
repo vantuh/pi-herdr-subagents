@@ -121,6 +121,7 @@ test('records and loads agent lifecycle state', async () => {
   const state = await loadHerdrAgentsState(filePath);
   assert.deepEqual(state.agents['terminal:term-1'], {
     lifecycle: 'oneshot',
+    paneId: 'pane-1',
     serverSocketPath: '/isolated/lifecycle.sock',
     tabLabel: 'Researcher',
     agent: 'researcher',
@@ -317,6 +318,48 @@ test('legacy records retain pruning behavior while foreign stamped records stay 
     ),
     false,
   );
+});
+
+test('handoff reconciles only the recorded automation target and owner pane on the same server', async () => {
+  const filePath = await tempStatePath();
+  const socket = '/isolated/handoff.sock';
+  await recordAgentLifecycle(
+    pane(),
+    {
+      serverSocketPath: socket,
+      automationName: 'owned_1234',
+      tabLabel: 'Same label',
+      ownerPaneId: 'owner',
+      ownerTerminalId: 'old-owner',
+      ownerSessionId: 'session-owner',
+    },
+    filePath,
+  );
+  const child = pane({ terminal_id: 'new-child', agent: 'pi' });
+  const owner = pane({ pane_id: 'owner', terminal_id: 'new-owner' });
+  const foreign = pane({
+    pane_id: 'foreign',
+    terminal_id: 'foreign-child',
+    agent: 'pi',
+    label: 'Same label',
+  });
+  const names = [
+    { ...child, name: 'owned_1234' },
+    { ...foreign, name: 'foreign_1234' },
+  ];
+  const state = await persistPrunedAgentsState(
+    [child, owner, foreign],
+    filePath,
+    socket,
+    undefined,
+    names,
+  );
+  assert.equal(state.agents['terminal:term-1'], undefined);
+  assert.equal(
+    state.agents['terminal:new-child']?.ownerTerminalId,
+    'new-owner',
+  );
+  assert.equal(state.agents['terminal:foreign-child'], undefined);
 });
 
 test('recordAgentLifecycle is a no-op when terminal_id is missing', async () => {

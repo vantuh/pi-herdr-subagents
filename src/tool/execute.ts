@@ -28,6 +28,7 @@ import { promptAgent, startAgent } from '../herdr/agent.ts';
 import { execHerdr } from '../herdr/cli.ts';
 import {
   chooseAgentColumnSplitTarget,
+  findUnresolvedOwnedAgent,
   findReusableAgentPane,
   findReusableAgentTab,
   listManagedWorkspaceAgents,
@@ -47,7 +48,7 @@ import {
   releaseClosedHistory,
 } from '../state/closed-history.ts';
 import {
-  claimDetachedAgent,
+  claimAgentCollection,
   emptyHerdrAgentsState,
   paneStateKey,
   persistPrunedAgentsState,
@@ -88,6 +89,7 @@ import {
   formatCollectedOutput,
   independentCleanupSignal,
   readSettledAgentOutput,
+  refreshAgentLifecyclePane,
   rebalanceCurrentPaneAgents,
   spawnWarningDetails,
 } from './one-shot.ts';
@@ -130,6 +132,7 @@ interface SpawnState {
   tabId?: string;
   paneId?: string;
   agentPane?: PaneInfo;
+  lifecycleRecorded?: boolean;
   automationName?: string;
   resultFile?: string;
   sessionMetaFile?: string;
@@ -245,6 +248,7 @@ export async function executeHerdrAgent(
       layout,
       wait,
       timeoutMs,
+      ownerSessionId: owner.sessionId,
       signal,
       onUpdate,
     });
@@ -469,7 +473,13 @@ async function resolveAgentPlacement(
     ? await listTabs(agentsWorkspaceId ?? current.workspaceId, signal)
     : [];
   const state = await bestEffort(emptyHerdrAgentsState(), () =>
-    persistPrunedAgentsState(current.panes),
+    persistPrunedAgentsState(
+      current.panes,
+      undefined,
+      undefined,
+      undefined,
+      current.agents,
+    ),
   );
 
   return {
@@ -494,6 +504,24 @@ async function reuseParkedAgent(
   const { params } = invocation;
   const { current, state, tabs, usesTabs } = placement;
   const { baseLabel, resumeClosed } = settings;
+  const unresolved = findUnresolvedOwnedAgent(
+    current,
+    state,
+    baseLabel,
+    settings.owner.sessionId,
+  );
+  if (unresolved) {
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Owned Herdr target ${unresolved.automationName} is still live, but its legacy owner/pane identity cannot be reconciled safely. Inspect that target; do not resend the task or spawn a replacement.`,
+        },
+      ],
+      details: { tabLabel: baseLabel, waited: false },
+      isError: true,
+    };
+  }
 
   const candidateTab = usesTabs
     ? findReusableAgentTab(current, tabs, baseLabel, state)
@@ -597,7 +625,13 @@ async function claimClosedHistoryForResume(
     };
   }
   const historyState = await bestEffort(emptyHerdrAgentsState(), () =>
-    persistPrunedAgentsState(placement.current.panes),
+    persistPrunedAgentsState(
+      placement.current.panes,
+      undefined,
+      undefined,
+      undefined,
+      placement.current.agents,
+    ),
   );
   const existing = findOwnedClosedHistory(
     historyState,
@@ -882,6 +916,7 @@ async function startAndRecordAgent(
           ? { spawnWarnings: spawn.spawnWarnings }
           : {}),
         detached: !wait,
+        ownerPaneId: placement.current.currentPane.pane_id,
         ...(placement.current.currentPane.terminal_id
           ? { ownerTerminalId: placement.current.currentPane.terminal_id }
           : {}),
@@ -897,6 +932,8 @@ async function startAndRecordAgent(
               closedHistoryGeneration: spawn.resumeClaim.claimGeneration,
             }
           : {}),
+      }).then(() => {
+        spawn.lifecycleRecorded = !!pane.terminal_id;
       });
     if (spawn.resumeClaim) {
       await writeLifecycle();
@@ -1046,11 +1083,32 @@ async function collectSettledTurn(
   const { tabId, paneId } = target;
   const tabLabel = spawn.tabLabel;
 
+  if (spawn.agentPane) {
+    const pane = spawn.agentPane;
+    spawn.agentPane = await bestEffort(pane, () =>
+      refreshAgentLifecyclePane(pane, signal),
+    );
+  }
   const settled = await readSettledAgentOutput(
     spawn.resultFile,
     spawn.automationName ?? paneId,
     signal,
   );
+  if (
+    spawn.lifecycleRecorded &&
+    spawn.agentPane &&
+    !(await claimAgentCollection(spawn.agentPane, undefined, signal))
+  ) {
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Another collector already claimed Herdr agent ${tabLabel}. Do not resend the task.`,
+        },
+      ],
+      details: { tabId, paneId, tabLabel, waited: false },
+    };
+  }
   if ('question' in settled) {
     await dropCollectedSpawnWarnings(spawn.agentPane);
     return {
@@ -1077,13 +1135,6 @@ async function collectSettledTurn(
         ...spawnWarningDetails(spawn.spawnWarnings),
       },
     };
-  }
-
-  // Whoever collects first owns the result. Releasing the claim here stops
-  // the poller from delivering the same result a second time.
-  if (spawn.agentPane) {
-    const pane = spawn.agentPane;
-    await bestEffort(false, () => claimDetachedAgent(pane));
   }
 
   // Every spawned agent is a one-shot now, including reused parked ones;

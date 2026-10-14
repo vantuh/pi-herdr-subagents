@@ -13,7 +13,7 @@ import {
   listManagedWorkspaceAgents,
   setLayoutSplitRatio,
 } from '../herdr/placement.ts';
-import { getCurrentContext, listPanes } from '../herdr/snapshot.ts';
+import { getCurrentContext, getSessionSnapshot } from '../herdr/snapshot.ts';
 import {
   finalizeStagedClosedOneShot,
   stageClosedOneShot,
@@ -59,7 +59,13 @@ export async function rebalanceCurrentPaneAgents(
 ): Promise<void> {
   const current = await getCurrentContext(signal);
   const state = await bestEffort(emptyHerdrAgentsState(), () =>
-    persistPrunedAgentsState(current.panes, undefined, undefined, signal),
+    persistPrunedAgentsState(
+      current.panes,
+      undefined,
+      undefined,
+      signal,
+      current.agents,
+    ),
   );
   const agents = listManagedWorkspaceAgents(current, state).filter(
     (agent) => agent.layout === 'pane' && agent.tabId === current.currentTab,
@@ -144,12 +150,13 @@ export async function closeOneShot(target: {
   if (finalizeError) {
     await bestEffort(false, async () => {
       const cleanupSignal = target.signal ?? independentCleanupSignal();
-      const panes = await listPanes(cleanupSignal);
+      const snapshot = await getSessionSnapshot(cleanupSignal);
       const state = await persistPrunedAgentsState(
-        panes,
+        snapshot.panes,
         undefined,
         undefined,
         cleanupSignal,
+        snapshot.agents,
       );
       if (!stagedId) return true;
       const record = state.closedHistory.find((item) => item.id === stagedId);
@@ -239,6 +246,21 @@ export function formatCollectedOutput(
     formatAgentOutput(output, tabLabel, closeError),
     warnings,
   );
+}
+
+export async function refreshAgentLifecyclePane(
+  pane: PaneInfo,
+  signal?: AbortSignal,
+): Promise<PaneInfo> {
+  const current = await getCurrentContext(signal);
+  await persistPrunedAgentsState(
+    current.panes,
+    undefined,
+    undefined,
+    signal,
+    current.agents,
+  );
+  return current.panes.find((item) => item.pane_id === pane.pane_id) ?? pane;
 }
 
 export async function readSettledAgentOutput(

@@ -74,8 +74,13 @@ export interface ReusableAgentTab {
   pane: PaneInfo;
 }
 
+export interface HerdrNamedAgent extends PaneInfo {
+  name?: string;
+}
+
 export interface HerdrSessionSnapshot {
   panes: PaneInfo[];
+  agents?: HerdrNamedAgent[];
   tabs: TabInfo[];
   focused_pane_id?: string;
   focused_tab_id?: string;
@@ -86,6 +91,7 @@ export interface HerdrSessionSnapshot {
 
 export interface HerdrContext {
   panes: PaneInfo[];
+  agents?: HerdrNamedAgent[];
   currentPane: PaneInfo;
   workspaceId: string;
   currentTab: string;

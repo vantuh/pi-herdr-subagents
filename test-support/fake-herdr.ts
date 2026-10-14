@@ -198,7 +198,7 @@ export class FakeHerdr {
   private readonly heldTurns: Array<() => Promise<void>> = [];
   private readonly commandFailures = new Map<
     string,
-    { code: string; times: number }
+    { code: string; times: number; stderr?: string }
   >();
   private readonly commandMalformed = new Map<string, string>();
   /** `herdr <group> <command>` keys whose calls block until released. */
@@ -272,6 +272,14 @@ export class FakeHerdr {
    * Block `herdr <group> <command>` calls until `releaseCommands()`, so a test
    * can hold a widget tick inside a Herdr call and assert on it.
    */
+  simulateLiveHandoff(): void {
+    for (const pane of this.panes) pane.terminal_id = this.makeTerminalId();
+    for (const agent of this.agents.values()) {
+      agent.stateChangeSeq = 0;
+      agent.completionSeq = undefined;
+    }
+  }
+
   holdCommand(prefix: string): void {
     this.heldCommands.add(prefix);
   }
@@ -287,11 +295,12 @@ export class FakeHerdr {
   failCommand(
     prefix: string,
     code: string,
-    options: { times?: number } = {},
+    options: { times?: number; stderr?: string } = {},
   ): void {
     this.commandFailures.set(prefix, {
       code,
       times: options.times ?? Number.POSITIVE_INFINITY,
+      stderr: options.stderr,
     });
   }
 
@@ -498,6 +507,7 @@ export class FakeHerdr {
     if (failure) {
       failure.times -= 1;
       if (failure.times <= 0) this.commandFailures.delete(key);
+      if (failure.stderr) return { stderr: failure.stderr, code: 1 };
       return fail(failure.code, `injected ${failure.code} for ${key}`);
     }
 
@@ -505,6 +515,9 @@ export class FakeHerdr {
       return ok({
         snapshot: {
           panes: this.panes.map(({ env: _env, ...pane }) => pane),
+          agents: [...this.agents.values()].map((agent) =>
+            this.agentJson(agent),
+          ),
           tabs: this.tabs,
           focused_pane_id: this.focusedPaneId,
           focused_tab_id: this.orchestratorPane.tab_id,
@@ -1009,6 +1022,9 @@ export class FakeHerdr {
       completion_seq: agent.completionSeq,
       interactive_ready: agent.interactiveReady,
       pane_id: agent.paneId,
+      terminal_id: this.paneById(agent.paneId)?.terminal_id,
+      tab_id: this.paneById(agent.paneId)?.tab_id,
+      workspace_id: this.paneById(agent.paneId)?.workspace_id,
     };
   }
 

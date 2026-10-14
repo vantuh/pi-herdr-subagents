@@ -103,7 +103,13 @@ function run(
 export async function createE2eHarness(
   options: E2eOptions = {},
 ): Promise<E2eHarness> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'herdr-agents-e2e-'));
+  // Handoff appends a socket suffix; macOS TMPDIR can exceed SUN_LEN with it.
+  const root = await fs.mkdtemp(
+    path.join(
+      process.platform === 'darwin' ? '/tmp' : os.tmpdir(),
+      'herdr-agents-e2e-',
+    ),
+  );
   const home = path.join(root, 'home');
   const tmp = path.join(root, 'tmp');
   const agentDir = path.join(home, '.pi', 'agent');

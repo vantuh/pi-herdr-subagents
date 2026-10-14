@@ -348,32 +348,52 @@ Evidence locations:
 
 ### Regression checks and acceptance
 
-- [ ] Integration: inject the actual `EmptyResponse` wait failure while the child
+- [x] Integration: inject the actual `EmptyResponse` wait failure while the child
   stays live, then recover and collect its eventual final artifact. Assert one
   task prompt and one child start, no premature close, and exactly one result.
-- [ ] Integration: repeat the failure during taskless re-wait; preserve the same
+- [x] Integration: repeat the failure during taskless re-wait; preserve the same
   target and collect without another prompt.
-- [ ] Integration: keep an intermediate artifact while the child is working;
+- [x] Integration: keep an intermediate artifact while the child is working;
   recovery must not deliver it or close the child.
-- [ ] Integration: child asks a question across reconnect; return the question
+- [x] Integration: child asks a question across reconnect; return the question
   once, leave the child open, and finish when answered by the same label.
-- [ ] Regression for the verified state-loss cause: handoff identity change,
+- [x] Regression for the verified state-loss cause: handoff identity change,
   transient snapshot, failed save, or another demonstrated condition. Include
   a foreign same-label agent to prove ownership remains enforced.
-- [ ] Check abort/timeout during reconnect and repeated transport failures:
+- [x] Check abort/timeout during reconnect and repeated transport failures:
   bounded work, child retained, and actionable recovery guidance.
-- [ ] If poller handoff is implemented, test explicit re-wait racing delivery,
-  plus non-TUI behavior with no background collector.
-- [ ] Isolated real-Herdr reproduction: hand off a server while its child is
+- No synchronous-to-poller handoff is needed: the bounded synchronous collector remains responsible. RPC tests have no widget; attached and detached concurrent re-waits share a durable outcome claim with the poller.
+- [x] Isolated real-Herdr reproduction: hand off a server while its child is
   working; verify collection, context preservation, and eventual one-shot close.
   Check handoff capability in the installed CLI before using it. Do not update,
   restart, or hand off the user's live server to run this test.
-- [ ] Run full `npm test`, `npm run test:e2e`, bundle check, and independent
-  review. Record any unavailable handoff test and its residual risk explicitly.
+- [x] Run full `npm test`, `npm run test:e2e`, bundle check, and diff review. Independent delegated review was not run because this follow-up explicitly forbids delegation.
 
 Done when: a live handoff cannot silently strand a running or completed owned
 worker; interrupted waits remain recoverable without duplicate prompts or
 spawns, ownership remains enforced, and results/questions are collected once.
+
+### Follow-up implementation and investigation evidence
+
+Isolated reproduction on installed Herdr 0.9.5, protocol 22, official Pi integration v9:
+
+- Discovered `server.live_handoff` and `ServerLiveHandoffParams` from `herdr api schema --json`. Called this API only on the harness socket with its isolated HOME, Pi directory, state file and artifacts. No update, live-server restart, external configuration edit or production archive repair was performed.
+- The original macOS TMPDIR path caused `path must be shorter than SUN_LEN` before handoff. The e2e harness now uses a short `/tmp` root on macOS, preserving per-test isolation and avoiding Herdr's additional handoff socket suffix exceeding the Unix socket limit.
+- Before handoff: owner `w1:p1`, terminal `term_65dd15aabb27c1`; child `w1:p2`, terminal `term_65dd15aabf7192`, automation name `scout_741fe2b8`, status `working`. The lifecycle record was saved, stamped with the harness socket, and attached (`detached: false`).
+- After handoff: pane/tab IDs, automation name, Pi child session path, and `working` status remained stable. Owner terminal changed to `term_65dd15aea79b51`; child terminal changed to `term_65dd15aea79e52`. `state_change_seq` reset from 2 to 0. The saved state was initially unchanged. Calling the same snapshot-based pruning path then removed the child record. The outstanding wait returned the incident's exact `Error: Custom { kind: Other, error: EmptyResponse }`.
+- This confirms terminal-ID replacement followed by pruning as a reproduced state-loss cause, not an assumption. The historical production incident has no captured state-write history, so its exact deletion cannot be proven retrospectively; cross-server pruning and outliving ticks were independently demonstrated risks already fixed above.
+
+Decisions and behavior:
+
+- New records also stamp child `paneId` and `ownerPaneId`. Before pruning, a same-socket snapshot's exact automation name, Pi kind, recorded child pane, live terminal and recorded owner pane permit rekeying the child and owner terminal identities. The owner session stamp and logical label remain unchanged. No visible title or arbitrary same-label pane is adopted; a foreign same-label target regression remains unclaimed.
+- A stamped record whose exact automation target remains live but lacks identity metadata is retained, not deleted or adopted. Re-wait and task-bearing calls from its stamped owner session return an explicit diagnostic naming the target and forbidding replacement. Unstamped legacy records retain the scope-pruning behavior defined below. Existing archives are unchanged. Fresh spawn or normal parked-question reuse stamps the new identity fields; no manual historical migration is attempted.
+- `waitForAgent` is shared by initial execution and taskless re-wait. Only the reproduced `EmptyResponse` failure retries read/wait: at most three reconnect retries after the initial call, 100ms spacing, one original timeout deadline and the original abort signal. The known named target is read before waiting again. Neither task prompt nor startup is retried by this path; artifacts are read only after Herdr's wait establishes settlement.
+- Exhaustion returns `interruptReason: connection` with child-preserving, same-label taskless re-wait guidance. Abort and timeout remain separate. RPC/non-TUI collection remains synchronous and does not depend on the widget.
+- Collection refreshes the lifecycle pane after waiting so close/archive uses the reconciled terminal. A durable `collected` outcome claim now serializes both attached and detached collection (including concurrent RPC re-waits); a new lifecycle turn clears it. Initial execution retains the existing best-effort lifecycle-save contract when recording itself failed. Parked questions remain open, can be answered by the original label, and an explicit later re-wait reports their parked status without redelivering the already-claimed outcome.
+
+Validation: failing tests first reproduced cross-handoff pruning, raw wait transport escape, and duplicate attached/detached concurrent re-wait output. Focused tests cover final-versus-intermediate artifacts, question-first reconnect, same-child answer, exhaustion, abort, remaining timeout, foreign labels, and incomplete legacy identity. `npm run typecheck` passed. Final full `npm test`: 312/312 across 16 files. Final `npm run test:e2e`: 12/12, including live handoff, unchanged child session metadata, single model task, owned state continuity, collection and real pane close. The unchanged direct-CLI cold-shell test failed twice earlier with `agent_pane_busy` and passed in the latest full runs; no retries/skips were added to that test and no claim is made that its timing variability was fixed. Bundle and `git diff --check` passed before commit.
+
+Residual limits: recovery intentionally does not retry mutations, arbitrary CLI failures, or prompt-acceptance transport errors. Handoff with missing identity metadata or a server snapshot that transiently omits a live named agent is not proven recoverable by the isolated complete-snapshot reproduction. All Orchestrators sharing state should reload the new extension: an older runtime can still strip additive fields or run its old global pruning algorithm.
 
 ## Follow-up: scope state pruning to one Herdr server
 

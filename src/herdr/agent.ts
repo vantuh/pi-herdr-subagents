@@ -287,10 +287,51 @@ export async function waitForAgent(
   timeoutMs: number,
   signal?: AbortSignal,
 ): Promise<void> {
-  await execHerdr(
-    buildAgentWaitArgs(target, timeoutMs, ['idle', 'done']),
-    signal,
-  );
+  const deadline = Date.now() + timeoutMs;
+  const budget = AbortSignal.timeout(timeoutMs);
+  const waitSignal = signal ? AbortSignal.any([signal, budget]) : budget;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      if (attempt > 0) {
+        await delay(
+          Math.min(100, Math.max(0, deadline - Date.now())),
+          waitSignal,
+        );
+        await getAgentSnapshot(target, waitSignal);
+      }
+      // Only read/wait is retried. A result artifact cannot establish completion.
+      await execHerdr(
+        buildAgentWaitArgs(
+          target,
+          attempt === 0 ? timeoutMs : Math.max(1, deadline - Date.now()),
+          ['idle', 'done'],
+        ),
+        waitSignal,
+      );
+      return;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      if (budget.aborted) {
+        throw new HerdrCliError(
+          `Herdr wait for ${target} timed out`,
+          'timeout',
+          ['agent', 'wait', target],
+        );
+      }
+      if (
+        !(error instanceof HerdrCliError) ||
+        !error.message.includes('error: EmptyResponse')
+      )
+        throw error;
+      if (attempt >= 3) {
+        throw new HerdrCliError(
+          `Herdr wait transport failed for ${target}; child retained`,
+          'wait_transport_interrupted',
+          ['agent', 'wait', target],
+        );
+      }
+    }
+  }
 }
 
 export function readAgent(

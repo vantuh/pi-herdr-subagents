@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 
 import { test } from 'vitest';
 
+import { readAgentSessionMeta } from '../src/artifacts.ts';
+import { execHerdrApi } from '../src/herdr/cli.ts';
 import { exportPaneLayout } from '../src/herdr/placement.ts';
+import { loadCurrentAgents } from '../src/ui/poller.ts';
 import {
   createE2eHarness,
   type E2eHarness,
@@ -58,6 +61,79 @@ test('spawns a real Pi child in a real pane, collects its result and closes the 
       [harness.orchestratorPaneId],
     );
     assert.deepEqual((await harness.readState()).agents, {});
+  });
+});
+
+test('collects a working child across an isolated live server handoff without losing managed state', async () => {
+  await withE2e({}, async (harness) => {
+    const replies = Promise.withResolvers<void>();
+    harness.llm.setScript(async () => {
+      await replies.promise;
+      return { text: 'HANDOFF_FINAL', delayMs: 0 };
+    });
+    const outcome = harness
+      .call({ agent: 'scout', task: 'HANDOFF_TASK', tabLabel: 'Handoff Child' })
+      .then(
+        (result) => ({ result }),
+        (error: Error) => ({ error }),
+      );
+    try {
+      await harness.waitFor(
+        () => harness.llm.requests.length === 1,
+        'working handoff child',
+      );
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const before = await harness.snapshot();
+      const stateBefore = await harness.readState();
+      const recordBefore = Object.values(stateBefore.agents)[0];
+      assert.ok(recordBefore);
+      const sessionBefore = await readAgentSessionMeta(recordBefore.resultFile);
+      assert.ok(sessionBefore?.sessionId);
+      assert.deepEqual(
+        await execHerdrApi(
+          'server.live_handoff',
+          {
+            expected_version: before.version,
+          },
+          AbortSignal.timeout(15000),
+        ),
+        { type: 'ok' },
+      );
+      const after = await harness.snapshot();
+      assert.deepEqual(
+        after.panes.map((pane) => pane.pane_id),
+        before.panes.map((pane) => pane.pane_id),
+      );
+      const managed = await loadCurrentAgents();
+      assert.equal(managed.length, 1);
+      assert.equal(managed[0]?.automationName, recordBefore.automationName);
+      assert.equal(
+        managed[0]?.terminalId,
+        after.panes.find((pane) => pane.pane_id === recordBefore.paneId)
+          ?.terminal_id,
+      );
+      const recordAfter = Object.values((await harness.readState()).agents)[0];
+      assert.equal(
+        recordAfter?.ownerTerminalId,
+        after.panes.find((pane) => pane.pane_id === recordBefore.ownerPaneId)
+          ?.terminal_id,
+      );
+      assert.deepEqual(
+        await readAgentSessionMeta(recordBefore.resultFile),
+        sessionBefore,
+      );
+      replies.resolve();
+      const collected = await outcome;
+      if ('error' in collected) throw collected.error;
+      assert.match(collected.result.content[0].text, /HANDOFF_FINAL/);
+      assert.equal(collected.result.details.closed, true);
+      assert.equal(harness.llm.requests.length, 1);
+      assert.equal(harness.messages.length, 0);
+      assert.deepEqual((await harness.readState()).agents, {});
+    } finally {
+      replies.resolve();
+      await outcome;
+    }
   });
 });
 

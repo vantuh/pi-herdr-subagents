@@ -57,7 +57,12 @@ export function formatSpawnWarnings(
 export function isRecoverableWaitInterrupt(error: unknown): boolean {
   if (typeof error === 'object' && error !== null) {
     const code = (error as { code?: unknown }).code;
-    if (code === 'timeout' || code === 'ABORT_ERR') return true;
+    if (
+      code === 'timeout' ||
+      code === 'ABORT_ERR' ||
+      code === 'wait_transport_interrupted'
+    )
+      return true;
     if ((error as { name?: unknown }).name === 'AbortError') return true;
   }
   const message = error instanceof Error ? error.message : String(error);
@@ -72,7 +77,15 @@ export function isRecoverableWaitInterrupt(error: unknown): boolean {
   );
 }
 
-export function waitInterruptReason(error: unknown): 'aborted' | 'timeout' {
+export function waitInterruptReason(
+  error: unknown,
+): 'aborted' | 'timeout' | 'connection' {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === 'wait_transport_interrupted'
+  )
+    return 'connection';
   if (
     typeof error === 'object' &&
     error !== null &&
@@ -90,12 +103,14 @@ export function waitInterruptReason(error: unknown): 'aborted' | 'timeout' {
 
 export function formatWaitInterrupted(
   tabLabel: string,
-  reason: 'aborted' | 'timeout' = 'aborted',
+  reason: 'aborted' | 'timeout' | 'connection' = 'aborted',
 ): string {
   const why =
     reason === 'timeout'
       ? 'Wait timed out'
-      : 'Wait was aborted (outer tool/session timeout)';
+      : reason === 'connection'
+        ? 'Wait lost its Herdr connection after bounded recovery'
+        : 'Wait was aborted (outer tool/session timeout)';
   return [
     `${why} while Herdr agent ${tabLabel} is still running.`,
     'The child was not closed and no new prompt was sent.',

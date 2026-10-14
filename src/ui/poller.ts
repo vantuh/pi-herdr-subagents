@@ -42,7 +42,13 @@ import {
 export async function loadCurrentAgents(): Promise<HerdrAgentInfo[]> {
   const current = await getCurrentContext();
   const state = await bestEffort(emptyHerdrAgentsState(), () =>
-    persistPrunedAgentsState(current.panes),
+    persistPrunedAgentsState(
+      current.panes,
+      undefined,
+      undefined,
+      undefined,
+      current.agents,
+    ),
   );
   return listManagedWorkspaceAgents(current, state);
 }
@@ -55,7 +61,13 @@ async function loadAgentsForWidget(
   const current = await getCurrentContext(signal);
   signal.throwIfAborted();
   const state = await bestEffort(emptyHerdrAgentsState(), () =>
-    persistPrunedAgentsState(current.panes, undefined, undefined, signal),
+    persistPrunedAgentsState(
+      current.panes,
+      undefined,
+      undefined,
+      signal,
+      current.agents,
+    ),
   );
   return listManagedWorkspaceAgents(current, state);
 }
@@ -172,7 +184,12 @@ export async function deliverDetachedOutcomes(
 
   for (const agent of agents) {
     if (signal?.aborted) break;
-    if (!agent.detached || !agent.terminalId) continue;
+    if (
+      !agent.detached ||
+      !agent.terminalId ||
+      awaitedAgentLabels.has(agent.tabLabel)
+    )
+      continue;
     if (!isSettledAgentStatus(agent.status)) continue;
 
     // Checked before the result, exactly as the blocking path does: a child that
