@@ -285,16 +285,16 @@ Prerequisite: `always-detached-agents` is merged. Order: low-risk mechanical
 first, one commit per step, `npm test` green after each. Every step starts by
 re-checking its findings against the current tree.
 
-- [ ] 1. Types and dead code: F3, F4, F6, A5, C5, E5 unexports.
-- [ ] 2. `utils.ts`: G1, G2, G3, G4, move `bestEffort`, fold
+- [x] 1. Types and dead code: F3, F4, F6, A5, C5, E5 unexports.
+- [x] 2. `utils.ts`: G1, G2, G3, G4, move `bestEffort`, fold
       `formatCollectedOutput` (D6), E1, E2.
-- [ ] 3. Artifacts IO: C1–C4.
-- [ ] 4. Store: A1, A3, A4, A7, A8, then A2.
-- [ ] 5. Context loading: A6 + B1.
-- [ ] 6. Tool results: D1, D4, D5, D6 rest, E3, E4.
-- [ ] 7. Leftovers from the blocking path: D3, D2, G1 — delete what lost its
+- [x] 3. Artifacts IO: C1–C4.
+- [x] 4. Store: A1, A3, A4, A7, A8, then A2.
+- [x] 5. Context loading: A6 + B1.
+- [x] 6. Tool results: D1, D4, D5, D6 rest, E3, E4.
+- [x] 7. Leftovers from the blocking path: D3, D2, G1 — delete what lost its
       callers, extract only what still has 2+ copies.
-- [ ] 8. F1 (`HerdrAgentInfo` from the state record).
+- [x] 8. F1 (`HerdrAgentInfo` from the state record).
 
 ## Verification
 
@@ -307,3 +307,31 @@ re-checking its findings against the current tree.
 - Rolldown bundle check from `AGENTS.md`.
 - `npm run test:e2e` once after steps 5 and 7 (they touch spawn/collect flow).
 - Report `wc -l src/**/*.ts` before and after.
+
+## Result
+
+All eight steps landed as one commit each (`c9f5924`…`b8b9ab7`). `src/` went
+from 5,725 to 5,506 lines; `execute.ts` 983 → 879, `store.ts` 902 → 838.
+`npm test` (unit + integration + contract, 289 tests) is green after every
+step; `contract.test.ts` and `schema.test.ts` were not edited. Rolldown bundles.
+
+Already done by `always-detached-agents` before this plan started: F3, F4, F6,
+C5, most of A5/E5, and all of step 7 (D3, D2, G1 had no remaining callers).
+
+Deviations and skipped optional items:
+
+- B1 put `loadContextWithState` in `herdr/snapshot.ts`, not next to
+  `persistPrunedAgentsState`: importing `herdr/cli.ts` into `state/store.ts`
+  broke the Node strip-only lock subprocesses in `state.test.ts` (TS parameter
+  properties are unsupported there).
+- D6 `createSerialQueue` was skipped as optional: the two queues stay local,
+  their abort semantics differ.
+- G5 fixed only the stray block and redundant `continue`; the manager's status
+  colours were left alone (they intentionally differ from the widget's tones).
+- D5 now validates the session file before `claimClosedHistory` reports the
+  no-history/claimed/profile errors. In the pathological case of a claimed
+  record whose session file also went missing, the record is marked invalid
+  instead of answering "already being resumed".
+- `npm run test:e2e`: 12/13. The direct-CLI cold-shell test failed with
+  `agent_pane_busy` again — the documented intermittent external failure in
+  `docs/plans/done/src-restructure.md`, unrelated to this extension.
