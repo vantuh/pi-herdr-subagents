@@ -104,7 +104,7 @@ Done when: `utils.ts` has no file IO; tests green; commit
 Done when: no import cycle (`imports.test.ts` green); commit
 `refactor: split state into store and closed history`.
 
-### [~] Phase 3 — herdr
+### [x] Phase 3 — herdr (`f1eb899`)
 
 - `herdr/cli.ts`: `HerdrCliError`, `delay`, redaction/sanitize, `parseHerdrError`,
   `execHerdr`, `execHerdrApi`.

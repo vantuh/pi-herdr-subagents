@@ -84,10 +84,18 @@ A global `/parallel-review` Pi prompt historically used this extension's
 
 ```bash
 npm ci --ignore-scripts
-npm test                  # unit project: helpers, integration, contract (no real Herdr)
+npm test                  # unit project: helpers, integration, contract (no real Herdr, ~60s)
+npx vitest run --project unit --exclude test/integration.test.ts --exclude test/contract.test.ts  # fast subset (~3s)
+npx vitest run test/herdr.test.ts  # one file
 npm run test:e2e          # e2e project: real Herdr server + real Pi children (~50s)
 npm run test:all          # both projects
 ```
+
+`integration.test.ts` (~57s) and `contract.test.ts` (~19s) take nearly all of
+`npm test`. While iterating, and for import-only moves, run the fast subset plus
+the rolldown bundle check (Validation). Run the full `npm test` once before
+committing any change to behavior, Herdr argv, `details`, or tool flow; run
+`npm run test:e2e` only when the change touches spawning, waiting, or layout.
 
 Run `npm ci --ignore-scripts` once to install local development dependencies
 from `package-lock.json`. Pi supplies the host peers when loading the extension;
