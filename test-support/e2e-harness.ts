@@ -67,6 +67,7 @@ export interface E2eHarness {
     options?: { signal?: AbortSignal },
   ): Promise<any>;
   fire(event: string, payload?: Record<string, unknown>): Promise<unknown>;
+  reload(): Promise<void>;
   /** Live snapshot from the real Herdr server. */
   snapshot(): Promise<HerdrSessionSnapshot>;
   herdr(args: string[]): Promise<string>;
@@ -304,6 +305,11 @@ export async function createE2eHarness(
         host.ctx,
       ),
     fire: host.fire,
+    reload: async () => {
+      await host.fire('session_shutdown');
+      herdrAgentsExtension(host.pi);
+      await host.fire('session_start');
+    },
     snapshot: async () =>
       JSON.parse(await herdr(['api', 'snapshot']))?.result?.snapshot,
     herdr,

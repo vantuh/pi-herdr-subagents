@@ -59,7 +59,7 @@ export async function rebalanceCurrentPaneAgents(
 ): Promise<void> {
   const current = await getCurrentContext(signal);
   const state = await bestEffort(emptyHerdrAgentsState(), () =>
-    persistPrunedAgentsState(current.panes),
+    persistPrunedAgentsState(current.panes, undefined, undefined, signal),
   );
   const agents = listManagedWorkspaceAgents(current, state).filter(
     (agent) => agent.layout === 'pane' && agent.tabId === current.currentTab,
@@ -92,6 +92,7 @@ export async function closeOneShot(target: {
     stagedId = await stageClosedOneShotIfEligible({
       resultFile: target.resultFile,
       lifecyclePane: target.lifecyclePane,
+      signal: target.signal,
     });
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
@@ -112,12 +113,20 @@ export async function closeOneShot(target: {
 
   const finalizeOnce = async () => {
     if (stagedId) {
-      await finalizeStagedClosedOneShot({
-        historyId: stagedId,
-        livePane: target.lifecyclePane,
-      });
+      await finalizeStagedClosedOneShot(
+        {
+          historyId: stagedId,
+          livePane: target.lifecyclePane,
+        },
+        undefined,
+        target.signal,
+      );
     } else if (target.lifecyclePane) {
-      await deleteAgentLifecycle(target.lifecyclePane);
+      await deleteAgentLifecycle(
+        target.lifecyclePane,
+        undefined,
+        target.signal,
+      );
     }
   };
 
@@ -131,16 +140,24 @@ export async function closeOneShot(target: {
       finalizeError = errorMessage(error);
     }
   }
+  if (target.signal?.aborted) return errorMessage(target.signal.reason);
   if (finalizeError) {
     await bestEffort(false, async () => {
-      const panes = await listPanes(independentCleanupSignal());
-      const state = await persistPrunedAgentsState(panes);
+      const cleanupSignal = target.signal ?? independentCleanupSignal();
+      const panes = await listPanes(cleanupSignal);
+      const state = await persistPrunedAgentsState(
+        panes,
+        undefined,
+        undefined,
+        cleanupSignal,
+      );
       if (!stagedId) return true;
       const record = state.closedHistory.find((item) => item.id === stagedId);
       return record?.status === 'resumable';
     });
   }
 
+  if (target.signal?.aborted) return errorMessage(target.signal.reason);
   await bestEffort(undefined, () => removeAgentTempFiles(target.resultFile));
   // Only pane-layout closes change a split column; tab/workspace closes remove
   // whole tabs and must not touch the Orchestrator's pane geometry.
@@ -155,6 +172,7 @@ export async function closeOneShot(target: {
 async function stageClosedOneShotIfEligible(target: {
   resultFile?: string;
   lifecyclePane?: Pick<PaneInfo, 'terminal_id'>;
+  signal?: AbortSignal;
 }): Promise<string | undefined> {
   if (!target.lifecyclePane) return undefined;
   let state;
@@ -189,20 +207,25 @@ async function stageClosedOneShotIfEligible(target: {
     );
   }
 
-  const staged = await stageClosedOneShot({
-    ...(live.closedHistoryId ? { id: live.closedHistoryId } : {}),
-    livePane: target.lifecyclePane,
-    ownerSessionId: live.ownerSessionId,
-    ...(live.ownerSessionFile
-      ? { ownerSessionFile: live.ownerSessionFile }
-      : {}),
-    profileName: live.agent,
-    tabLabel: live.tabLabel,
-    childSessionFile: meta.sessionFile,
-    childSessionId: header.id,
-    cwd: header.cwd,
-    layout: live.layout ?? 'pane',
-  });
+  target.signal?.throwIfAborted();
+  const staged = await stageClosedOneShot(
+    {
+      ...(live.closedHistoryId ? { id: live.closedHistoryId } : {}),
+      livePane: target.lifecyclePane,
+      ownerSessionId: live.ownerSessionId,
+      ...(live.ownerSessionFile
+        ? { ownerSessionFile: live.ownerSessionFile }
+        : {}),
+      profileName: live.agent,
+      tabLabel: live.tabLabel,
+      childSessionFile: meta.sessionFile,
+      childSessionId: header.id,
+      cwd: header.cwd,
+      layout: live.layout ?? 'pane',
+    },
+    undefined,
+    target.signal,
+  );
   return staged.id;
 }
 
@@ -237,9 +260,12 @@ export function spawnWarningDetails(warnings: readonly string[]): {
 
 export async function dropCollectedSpawnWarnings(
   pane: Pick<PaneInfo, 'terminal_id'> | undefined,
+  signal?: AbortSignal,
 ): Promise<void> {
   if (!pane?.terminal_id) return;
-  await bestEffort(undefined, () => clearAgentSpawnWarnings(pane));
+  await bestEffort(undefined, () =>
+    clearAgentSpawnWarnings(pane, undefined, signal),
+  );
 }
 
 let panePlacementQueue: Promise<void> = Promise.resolve();

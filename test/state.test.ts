@@ -33,6 +33,7 @@ import {
   setFailNextStateMutation,
   setFailNextStateSaves,
   withHerdrAgentsStateLock,
+  withStateFileLock,
 } from '../src/state/store.ts';
 import type { PaneInfo } from '../src/types.ts';
 
@@ -61,6 +62,37 @@ afterAll(async () => {
   for (const dir of tempDirs) {
     await fs.rm(dir, { recursive: true, force: true });
   }
+});
+
+test('cancels an in-process state queue wait without running its mutation after release', async () => {
+  const filePath = await tempStatePath();
+  let release!: () => void;
+  let entered!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const held = withStateFileLock(filePath, async () => {
+    entered();
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+  });
+  await ready;
+  const controller = new AbortController();
+  let mutated = false;
+  const cancelled = withStateFileLock(
+    filePath,
+    async () => {
+      mutated = true;
+    },
+    controller.signal,
+  );
+  controller.abort();
+  await assert.rejects(cancelled, /abort/i);
+  release();
+  await held;
+  await withStateFileLock(filePath, async () => {});
+  assert.equal(mutated, false);
 });
 
 test('uses terminal id as the durable pane state key', () => {

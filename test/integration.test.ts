@@ -633,7 +633,7 @@ test('delivers a detached result through the widget poller and closes the one-sh
   });
 });
 
-test('session_shutdown waits for an in-flight widget tick', async () => {
+test('session_shutdown cancels an in-flight widget tick without pruning or restarting', async () => {
   await withHarness({}, async (harness) => {
     // Hold the tick inside its first Herdr call, which is where a real tick sits
     // when a test tears its harness down.
@@ -676,11 +676,37 @@ test('session_shutdown waits for an in-flight widget tick', async () => {
 
     assert.equal(
       settledWhileHeld,
-      false,
-      'shutdown resolved while a tick was running',
+      true,
+      'shutdown did not cancel the held Herdr call',
     );
-    // The held tick pruned the stale record, so shutdown resolved after it.
-    assert.deepEqual((await harness.readState()).agents, {});
+    assert.ok((await harness.readState()).agents['terminal:gone']);
+    const calls = harness.fake.callsMatching('api', 'snapshot').length;
+    await harness.fire('session_start');
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    assert.equal(harness.fake.callsMatching('api', 'snapshot').length, calls);
+    assert.equal(harness.messages.length, 0);
+  });
+});
+
+test('shutdown cancels a widget state-lock wait without leaving a pruning mutation queued', async () => {
+  await withHarness({}, async (harness) => {
+    await fs.mkdir(`${harness.statePath}.lock`);
+    const before = JSON.stringify({
+      version: 2,
+      agents: { 'terminal:gone': { lifecycle: 'oneshot', updatedAt: '' } },
+      closedHistory: [],
+    });
+    await fs.writeFile(harness.statePath, before);
+    await harness.fire('session_start');
+    await harness.waitFor(
+      () => harness.fake.callsMatching('api', 'snapshot').length > 0,
+      'widget snapshot',
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await harness.fire('session_shutdown');
+    await fs.rmdir(`${harness.statePath}.lock`);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(await fs.readFile(harness.statePath, 'utf8'), before);
   });
 });
 

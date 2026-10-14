@@ -361,7 +361,7 @@ test('batches a real detached result and question with one turn trigger', async 
         'both real children to settle',
         60000,
       );
-      await harness.fire('session_start');
+      await harness.reload();
       await harness.waitFor(
         () => harness.messages.length === 2,
         'batched detached delivery',

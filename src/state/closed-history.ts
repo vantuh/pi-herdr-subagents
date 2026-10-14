@@ -83,58 +83,64 @@ export async function stageClosedOneShot(
     livePane: Pick<PaneInfo, 'terminal_id'>;
   },
   filePath = getHerdrAgentsStatePath(),
+  signal?: AbortSignal,
 ): Promise<ClosedAgentHistoryRecord> {
-  return withStateFileLock(filePath, async () => {
-    throwIfInjectedMutation('stage');
-    const state = await loadHerdrAgentsState(filePath);
-    const key = paneStateKey(input.livePane);
-    if (!key || !state.agents[key]) {
-      throw new Error(
-        'Cannot stage a closed one-shot: the live agent record is missing.',
-      );
-    }
-    const now = new Date().toISOString();
-    const existing =
-      (input.id
-        ? state.closedHistory.find((record) => record.id === input.id)
-        : undefined) ??
-      state.closedHistory.find(
-        (record) =>
-          record.ownerSessionId === input.ownerSessionId &&
-          record.tabLabel === input.tabLabel,
-      );
+  return withStateFileLock(
+    filePath,
+    async () => {
+      throwIfInjectedMutation('stage');
+      const state = await loadHerdrAgentsState(filePath);
+      signal?.throwIfAborted();
+      const key = paneStateKey(input.livePane);
+      if (!key || !state.agents[key]) {
+        throw new Error(
+          'Cannot stage a closed one-shot: the live agent record is missing.',
+        );
+      }
+      const now = new Date().toISOString();
+      const existing =
+        (input.id
+          ? state.closedHistory.find((record) => record.id === input.id)
+          : undefined) ??
+        state.closedHistory.find(
+          (record) =>
+            record.ownerSessionId === input.ownerSessionId &&
+            record.tabLabel === input.tabLabel,
+        );
 
-    const record: ClosedAgentHistoryRecord = {
-      id: existing?.id ?? newHistoryId(),
-      ownerSessionId: input.ownerSessionId,
-      ...(input.ownerSessionFile
-        ? { ownerSessionFile: input.ownerSessionFile }
-        : {}),
-      profileName: input.profileName,
-      tabLabel: input.tabLabel,
-      childSessionFile: input.childSessionFile,
-      childSessionId: input.childSessionId,
-      cwd: input.cwd,
-      layout: input.layout,
-      lifecycle: 'oneshot',
-      createdAt: existing?.createdAt ?? now,
-      closedAt: now,
-      status: 'staged',
-      claimGeneration: existing?.claimGeneration ?? 0,
-    };
+      const record: ClosedAgentHistoryRecord = {
+        id: existing?.id ?? newHistoryId(),
+        ownerSessionId: input.ownerSessionId,
+        ...(input.ownerSessionFile
+          ? { ownerSessionFile: input.ownerSessionFile }
+          : {}),
+        profileName: input.profileName,
+        tabLabel: input.tabLabel,
+        childSessionFile: input.childSessionFile,
+        childSessionId: input.childSessionId,
+        cwd: input.cwd,
+        layout: input.layout,
+        lifecycle: 'oneshot',
+        createdAt: existing?.createdAt ?? now,
+        closedAt: now,
+        status: 'staged',
+        claimGeneration: existing?.claimGeneration ?? 0,
+      };
 
-    state.closedHistory = [
-      record,
-      ...state.closedHistory.filter((item) => item.id !== record.id),
-    ];
-    const live = state.agents[key];
-    if (live) {
-      live.closedHistoryId = record.id;
-      live.updatedAt = now;
-    }
-    await saveHerdrAgentsState(state, filePath);
-    return record;
-  });
+      state.closedHistory = [
+        record,
+        ...state.closedHistory.filter((item) => item.id !== record.id),
+      ];
+      const live = state.agents[key];
+      if (live) {
+        live.closedHistoryId = record.id;
+        live.updatedAt = now;
+      }
+      await saveHerdrAgentsState(state, filePath);
+      return record;
+    },
+    signal,
+  );
 }
 
 export async function finalizeStagedClosedOneShot(
@@ -143,25 +149,34 @@ export async function finalizeStagedClosedOneShot(
     livePane?: Pick<PaneInfo, 'terminal_id'>;
   },
   filePath = getHerdrAgentsStatePath(),
+  signal?: AbortSignal,
 ): Promise<void> {
-  await withStateFileLock(filePath, async () => {
-    throwIfInjectedMutation('finalize');
-    const state = await loadHerdrAgentsState(filePath);
-    const record = state.closedHistory.find(
-      (item) => item.id === input.historyId,
-    );
-    if (record && (record.status === 'staged' || record.status === 'claimed')) {
-      record.status = 'resumable';
-      delete record.claimedAt;
-      record.closedAt = new Date().toISOString();
-    }
-    if (input.livePane) {
-      const key = paneStateKey(input.livePane);
-      if (key) delete state.agents[key];
-    }
-    pruneClosedHistory(state);
-    await saveHerdrAgentsState(state, filePath);
-  });
+  await withStateFileLock(
+    filePath,
+    async () => {
+      throwIfInjectedMutation('finalize');
+      const state = await loadHerdrAgentsState(filePath);
+      signal?.throwIfAborted();
+      const record = state.closedHistory.find(
+        (item) => item.id === input.historyId,
+      );
+      if (
+        record &&
+        (record.status === 'staged' || record.status === 'claimed')
+      ) {
+        record.status = 'resumable';
+        delete record.claimedAt;
+        record.closedAt = new Date().toISOString();
+      }
+      if (input.livePane) {
+        const key = paneStateKey(input.livePane);
+        if (key) delete state.agents[key];
+      }
+      pruneClosedHistory(state);
+      await saveHerdrAgentsState(state, filePath);
+    },
+    signal,
+  );
 }
 
 export type ClaimClosedHistoryResult =

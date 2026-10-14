@@ -162,6 +162,10 @@ export function execHerdr(
   signal?: AbortSignal,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
     let onAbort: (() => void) | undefined;
     const cleanup = () => {
       if (onAbort) signal?.removeEventListener('abort', onAbort);

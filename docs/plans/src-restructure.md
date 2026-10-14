@@ -397,7 +397,7 @@ Not part of the restructure; tracked here so they are not lost.
 
 - [x] Tests pruned the live state file through a widget tick that outlived
   `session_shutdown` (`552343d`, bounded wait `e1c4e8e`).
-- [ ] Cancel the widget tick instead of a timed wait. Today
+- [x] Cancel the widget tick instead of a timed wait. Previously
   `settleAgentsWidgetPoller` races the in-flight tick against an arbitrary 3s
   timeout (Pi awaits `session_shutdown` handlers with no timeout of its own);
   if it fires, the tick keeps running after shutdown. Replace with an
@@ -409,6 +409,9 @@ Not part of the restructure; tracked here so they are not lost.
   The same aborted signal covers the poller-restart case: a `herdr_agent` call
   still running at shutdown can call `ensureAgentsWidget` and start a new
   interval after shutdown; `ensureAgentsWidget` refuses once aborted.
+  Implementation: each extension API instance owns a poller/controller/tick; shutdown aborts before awaiting the actual tick, without a timeout race. Herdr reads, notifications, closing, staging/finalization, warning cleanup, pruning, and both state-lock queues accept cancellation. A cancelled queued mutation never runs after its predecessor releases. File writes already started are awaited, not abandoned. A durable detached claim commits delivery: shutdown cancels new claims and closes, but the tick flushes its already-claimed batch before resolving to avoid losing results.
+  Evidence: the held-snapshot regression failed before the fix; after cancellation shutdown finishes while the server response remains held, without pruning, delivery, or restart from a subsequent ensure call. Added exclusive-lock and in-process-queue cancellation regressions. `npm run typecheck` passed; full `npm test` passed 302/302. E2E batching fixture now models a fresh extension reload rather than restarting a shut-down instance.
+  `npm run test:e2e`: 10/11 passed; the unchanged direct-CLI cold-shell scenario fails with `agent_pane_busy` on installed Herdr 0.9.5. It bypasses extension startup recovery entirely. This external-server prerequisite blocks a fully green e2e gate; no skip/retry or test weakening was added. All extension-driven e2e scenarios passed. Bundle/diff checks passed before commit.
 - [x] Restore `agent_pane_busy` recovery removed in `773a80d`. A new pane may
   exist before its shell reaches the prompt. Retry this pre-launch rejection
   every 100ms for up to 5s, retaining the same pane and automation name, honoring

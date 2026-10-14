@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import type { HerdrAgentLayout, PaneInfo } from '../types.ts';
 
@@ -190,10 +191,12 @@ async function tryAcquireExclusiveLock(
 
 async function acquireExclusiveLock(
   lockPath: string,
+  signal?: AbortSignal,
 ): Promise<() => Promise<void>> {
   const token = randomBytes(16).toString('hex');
   const deadline = Date.now() + getStateLockWaitMs();
   while (true) {
+    signal?.throwIfAborted();
     const acquired = await tryAcquireExclusiveLock(lockPath, token);
     if (acquired !== 'locked') return acquired;
 
@@ -204,7 +207,7 @@ async function acquireExclusiveLock(
         `Timed out waiting for ${lockPath}. Another process still holds this exclusive lock directory (or a legacy lock file occupies that path); do not delete it while that process may be alive. If you are sure no Pi/herdr-agents process is running, remove the lock directory (or leftover lock file) manually and retry.`,
       );
     }
-    await new Promise((resolve) => setTimeout(resolve, 15));
+    await sleep(15, undefined, { signal });
   }
 }
 
@@ -215,31 +218,44 @@ export function withHerdrAgentsStateLock<T>(
   return withStateFileLock(filePath, fn);
 }
 
-export function withStateFileLock<T>(
+export async function withStateFileLock<T>(
   filePath: string,
   fn: () => Promise<T>,
+  signal?: AbortSignal,
 ): Promise<T> {
   const previous = stateFileQueues.get(filePath) ?? Promise.resolve();
-  const next = previous.then(
-    () => runWithExclusiveLock(filePath, fn),
-    () => runWithExclusiveLock(filePath, fn),
-  );
+  let releaseQueue!: () => void;
+  const current = new Promise<void>((resolve) => {
+    releaseQueue = resolve;
+  });
   stateFileQueues.set(
     filePath,
-    next.then(
-      () => undefined,
-      () => undefined,
-    ),
+    previous.then(() => current),
   );
-  return next;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const onAbort = () => reject(signal?.reason);
+      signal?.addEventListener('abort', onAbort, { once: true });
+      previous
+        .then(() => resolve(), reject)
+        .finally(() => signal?.removeEventListener('abort', onAbort));
+      if (signal?.aborted) onAbort();
+    });
+    signal?.throwIfAborted();
+    return await runWithExclusiveLock(filePath, fn, signal);
+  } finally {
+    releaseQueue();
+  }
 }
 
 async function runWithExclusiveLock<T>(
   filePath: string,
   fn: () => Promise<T>,
+  signal?: AbortSignal,
 ): Promise<T> {
-  const release = await acquireExclusiveLock(`${filePath}.lock`);
+  const release = await acquireExclusiveLock(`${filePath}.lock`, signal);
   try {
+    signal?.throwIfAborted();
     return await fn();
   } finally {
     await release();
@@ -471,14 +487,20 @@ export async function persistPrunedAgentsState(
   panes: PaneInfo[],
   filePath = getHerdrAgentsStatePath(),
   serverSocketPath = process.env.HERDR_SOCKET_PATH,
+  signal?: AbortSignal,
 ): Promise<HerdrAgentsState> {
-  return withStateFileLock(filePath, async () => {
-    const state = await loadHerdrAgentsState(filePath);
-    if (pruneHerdrAgentsState(state, panes, serverSocketPath)) {
-      await saveHerdrAgentsState(state, filePath);
-    }
-    return state;
-  });
+  return withStateFileLock(
+    filePath,
+    async () => {
+      const state = await loadHerdrAgentsState(filePath);
+      signal?.throwIfAborted();
+      if (pruneHerdrAgentsState(state, panes, serverSocketPath)) {
+        await saveHerdrAgentsState(state, filePath);
+      }
+      return state;
+    },
+    signal,
+  );
 }
 
 /**
@@ -571,33 +593,45 @@ export async function recordAgentLifecycle(
 export async function clearAgentSpawnWarnings(
   pane: Pick<PaneInfo, 'terminal_id'>,
   filePath = getHerdrAgentsStatePath(),
+  signal?: AbortSignal,
 ): Promise<void> {
   const key = paneStateKey(pane);
   if (!key) return;
 
-  await withStateFileLock(filePath, async () => {
-    const state = await loadHerdrAgentsState(filePath);
-    const record = state.agents[key];
-    if (!record?.spawnWarnings?.length) return;
-    const { spawnWarnings: _dropped, ...rest } = record;
-    state.agents[key] = rest;
-    await saveHerdrAgentsState(state, filePath);
-  });
+  await withStateFileLock(
+    filePath,
+    async () => {
+      const state = await loadHerdrAgentsState(filePath);
+      signal?.throwIfAborted();
+      const record = state.agents[key];
+      if (!record?.spawnWarnings?.length) return;
+      const { spawnWarnings: _dropped, ...rest } = record;
+      state.agents[key] = rest;
+      await saveHerdrAgentsState(state, filePath);
+    },
+    signal,
+  );
 }
 
 export async function deleteAgentLifecycle(
   pane: Pick<PaneInfo, 'terminal_id'>,
   filePath = getHerdrAgentsStatePath(),
+  signal?: AbortSignal,
 ): Promise<void> {
   const key = paneStateKey(pane);
   if (!key) return;
 
-  await withStateFileLock(filePath, async () => {
-    const state = await loadHerdrAgentsState(filePath);
-    if (!state.agents[key]) return;
-    delete state.agents[key];
-    await saveHerdrAgentsState(state, filePath);
-  });
+  await withStateFileLock(
+    filePath,
+    async () => {
+      const state = await loadHerdrAgentsState(filePath);
+      signal?.throwIfAborted();
+      if (!state.agents[key]) return;
+      delete state.agents[key];
+      await saveHerdrAgentsState(state, filePath);
+    },
+    signal,
+  );
 }
 
 /**
@@ -616,19 +650,25 @@ export async function deleteAgentLifecycle(
 export async function claimDetachedAgent(
   pane: Pick<PaneInfo, 'terminal_id'>,
   filePath = getHerdrAgentsStatePath(),
+  signal?: AbortSignal,
 ): Promise<boolean> {
   const key = paneStateKey(pane);
   if (!key) return false;
 
-  return withStateFileLock(filePath, async () => {
-    throwIfInjectedMutation('detached');
-    const state = await loadHerdrAgentsState(filePath);
-    const record = state.agents[key];
-    if (record?.lifecycle !== 'oneshot' || !record.detached) return false;
-    delete record.detached;
-    await saveHerdrAgentsState(state, filePath);
-    return true;
-  });
+  return withStateFileLock(
+    filePath,
+    async () => {
+      throwIfInjectedMutation('detached');
+      const state = await loadHerdrAgentsState(filePath);
+      signal?.throwIfAborted();
+      const record = state.agents[key];
+      if (record?.lifecycle !== 'oneshot' || !record.detached) return false;
+      delete record.detached;
+      await saveHerdrAgentsState(state, filePath);
+      return true;
+    },
+    signal,
+  );
 }
 
 function isClosedHistoryStatus(value: unknown): value is ClosedHistoryStatus {

@@ -49,50 +49,54 @@ export async function loadCurrentAgents(): Promise<HerdrAgentInfo[]> {
 
 // Widget ticks prune only when live terminals disappeared so staged
 // history can finalize without a second-long write on every idle tick.
-async function loadAgentsForWidget(): Promise<HerdrAgentInfo[]> {
-  const current = await getCurrentContext();
+async function loadAgentsForWidget(
+  signal: AbortSignal,
+): Promise<HerdrAgentInfo[]> {
+  const current = await getCurrentContext(signal);
+  signal.throwIfAborted();
   const state = await bestEffort(emptyHerdrAgentsState(), () =>
-    persistPrunedAgentsState(current.panes),
+    persistPrunedAgentsState(current.panes, undefined, undefined, signal),
   );
   return listManagedWorkspaceAgents(current, state);
 }
 
 // An extension instance replaced by /reload keeps its interval alive with a
 // stale closure, so the handle lives on globalThis and is cleared on load.
-type WidgetTimerHolder = {
-  __herdrAgentsWidgetTimer?: ReturnType<typeof setInterval> | null;
+type WidgetPoller = {
+  controller: AbortController;
+  timer?: ReturnType<typeof setInterval>;
+  tick?: Promise<void>;
 };
+type WidgetTimerHolder = { __herdrAgentsWidgetPoller?: WidgetPoller };
+const pollers = new WeakMap<ExtensionAPI, WidgetPoller>();
 
-let widgetTicking = false;
-
-// The interval fires on its own schedule, so a tick can still be running when
-// the session shuts down. Shutdown awaits it: a tick that outlives the session
-// keeps pruning the state file and calling Herdr after teardown.
-let widgetTick: Promise<void> | null = null;
-
-/**
- * Resolve once no widget tick is running, or after `timeoutMs` so a wedged
- * Herdr call or state lock cannot hold up quit/reload. Never rejects.
- */
-export async function settleAgentsWidgetPoller(
-  timeoutMs = 3000,
-): Promise<void> {
-  if (!widgetTick) return;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  await Promise.race([
-    widgetTick.catch(() => {}),
-    new Promise<void>((resolve) => {
-      timer = setTimeout(resolve, timeoutMs);
-      timer.unref?.();
-    }),
-  ]);
-  clearTimeout(timer);
+export function initializeAgentsWidgetPoller(pi: ExtensionAPI): void {
+  const holder = globalThis as WidgetTimerHolder;
+  const previous = holder.__herdrAgentsWidgetPoller;
+  if (previous) {
+    previous.controller.abort();
+    clearInterval(previous.timer);
+  }
+  const poller: WidgetPoller = { controller: new AbortController() };
+  pollers.set(pi, poller);
+  holder.__herdrAgentsWidgetPoller = poller;
 }
 
-function startWidgetTick(pi: ExtensionAPI, ctx: ExtensionContext): void {
-  if (widgetTicking) return;
-  widgetTicking = true;
-  widgetTick = updateAgentsWidget(pi, ctx);
+export async function settleAgentsWidgetPoller(
+  pi: ExtensionAPI,
+): Promise<void> {
+  await pollers.get(pi)?.tick;
+}
+
+function startWidgetTick(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  poller: WidgetPoller,
+): void {
+  if (poller.tick || poller.controller.signal.aborted) return;
+  poller.tick = updateAgentsWidget(pi, ctx, poller).finally(() => {
+    poller.tick = undefined;
+  });
 }
 
 // Labels the Orchestrator is currently blocked on inside a `wait: true` call.
@@ -111,11 +115,12 @@ export function endAwaitingAgent(label: string): void {
   awaitedAgentLabels.delete(label);
 }
 
-export function stopAgentsWidgetPoller(): void {
-  const holder = globalThis as WidgetTimerHolder;
-  if (!holder.__herdrAgentsWidgetTimer) return;
-  clearInterval(holder.__herdrAgentsWidgetTimer);
-  holder.__herdrAgentsWidgetTimer = null;
+export function stopAgentsWidgetPoller(pi: ExtensionAPI): void {
+  const poller = pollers.get(pi);
+  if (!poller) return;
+  poller.controller.abort();
+  clearInterval(poller.timer);
+  poller.timer = undefined;
 }
 
 function themeWidgetPaint(ctx: ExtensionContext): WidgetPaint {
@@ -156,6 +161,7 @@ export async function deliverDetachedOutcomes(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   agents: readonly HerdrAgentInfo[],
+  signal?: AbortSignal,
 ): Promise<void> {
   const pending: Array<{
     customType: string;
@@ -165,6 +171,7 @@ export async function deliverDetachedOutcomes(
   }> = [];
 
   for (const agent of agents) {
+    if (signal?.aborted) break;
     if (!agent.detached || !agent.terminalId) continue;
     if (!isSettledAgentStatus(agent.status)) continue;
 
@@ -176,7 +183,11 @@ export async function deliverDetachedOutcomes(
     );
     if (question) {
       const claimedQuestion = await bestEffort(false, () =>
-        claimDetachedAgent({ terminal_id: agent.terminalId }),
+        claimDetachedAgent(
+          { terminal_id: agent.terminalId },
+          undefined,
+          signal,
+        ),
       );
       if (!claimedQuestion) continue;
 
@@ -199,7 +210,10 @@ export async function deliverDetachedOutcomes(
           ...spawnWarningDetails(spawnWarnings),
         },
       });
-      await dropCollectedSpawnWarnings({ terminal_id: agent.terminalId });
+      await dropCollectedSpawnWarnings(
+        { terminal_id: agent.terminalId },
+        signal,
+      );
       continue;
     }
 
@@ -211,7 +225,7 @@ export async function deliverDetachedOutcomes(
     if (!result) continue;
 
     const claimed = await bestEffort(false, () =>
-      claimDetachedAgent({ terminal_id: agent.terminalId }),
+      claimDetachedAgent({ terminal_id: agent.terminalId }, undefined, signal),
     );
     if (!claimed) continue;
 
@@ -227,6 +241,7 @@ export async function deliverDetachedOutcomes(
             agent.agent,
             result,
           ),
+          signal,
         ),
       );
     }
@@ -246,6 +261,7 @@ export async function deliverDetachedOutcomes(
         paneId: agent.paneId,
         resultFile: agent.resultFile,
         lifecyclePane: { terminal_id: agent.terminalId },
+        signal,
       });
     }
 
@@ -272,11 +288,12 @@ export async function deliverDetachedOutcomes(
         result: resultWithWarnings,
       },
     });
-    await dropCollectedSpawnWarnings({ terminal_id: agent.terminalId });
+    await dropCollectedSpawnWarnings({ terminal_id: agent.terminalId }, signal);
   }
 
   if (pending.length === 0) return;
 
+  // A durable claim commits delivery; cancellation stops new claims, not this batch.
   // Only the final message triggers a turn. Triggering on the first would start
   // a turn the rest then have to queue behind as `steer`, which is what pushed a
   // second parallel question a whole turn later.
@@ -293,38 +310,34 @@ export async function deliverDetachedOutcomes(
 async function updateAgentsWidget(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
+  poller: WidgetPoller,
 ): Promise<void> {
+  const signal = poller.controller.signal;
   try {
-    const agents = await bestEffort<HerdrAgentInfo[]>([], loadAgentsForWidget);
-
-    // Runs before the rendering short-circuits below: a detached agent is
-    // hidden from the widget once collected, but its result still has to be
-    // delivered.
-    await bestEffort(undefined, () => deliverDetachedOutcomes(pi, ctx, agents));
-
+    const agents = await loadAgentsForWidget(signal);
+    signal.throwIfAborted();
+    await bestEffort(undefined, () =>
+      deliverDetachedOutcomes(pi, ctx, agents, signal),
+    );
+    signal.throwIfAborted();
     if (agents.length === 0) {
-      stopAgentsWidgetPoller();
+      clearInterval(poller.timer);
+      poller.timer = undefined;
       ctx.ui.setWidget(AGENTS_WIDGET_ID, undefined);
       return;
     }
-
-    // Only an empty *managed* set stops the poller. When agents exist but are
-    // all hidden (the Orchestrator is blocking on them), keep ticking: one of
-    // them can still flip to `blocked`, which is exactly the state the widget
-    // must surface.
     const visible = visibleWidgetAgents(agents, awaitedAgentLabels);
     if (visible.length === 0) {
       ctx.ui.setWidget(AGENTS_WIDGET_ID, undefined);
       return;
     }
-
     ctx.ui.setWidget(
       AGENTS_WIDGET_ID,
       renderAgentWidgetLines(visible, Date.now(), themeWidgetPaint(ctx)),
       { placement: 'aboveEditor' },
     );
-  } finally {
-    widgetTicking = false;
+  } catch {
+    // Failed snapshots and cancellation must not prune or render an empty set.
   }
 }
 
@@ -332,14 +345,13 @@ export function ensureAgentsWidget(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
 ): void {
-  if (ctx.mode !== 'tui') return;
-  startWidgetTick(pi, ctx);
-
-  const holder = globalThis as WidgetTimerHolder;
-  if (holder.__herdrAgentsWidgetTimer) return;
-  const timer = setInterval(() => {
-    startWidgetTick(pi, ctx);
-  }, AGENTS_WIDGET_TICK_MS);
-  timer.unref?.();
-  holder.__herdrAgentsWidgetTimer = timer;
+  const poller = pollers.get(pi);
+  if (ctx.mode !== 'tui' || !poller || poller.controller.signal.aborted) return;
+  startWidgetTick(pi, ctx, poller);
+  if (poller.timer) return;
+  poller.timer = setInterval(
+    () => startWidgetTick(pi, ctx, poller),
+    AGENTS_WIDGET_TICK_MS,
+  );
+  poller.timer.unref?.();
 }
