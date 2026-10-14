@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { test } from 'vitest';
 
 import {
+  setFailNextStateSaves,
   setFailNextStateMutation,
   clearStateSaveFailures,
 } from '../src/state/store.ts';
@@ -47,6 +48,50 @@ function splitDirections(node: LayoutNode | undefined): string[] {
     ...splitDirections(node.first),
     ...splitDirections(node.second),
   ];
+}
+
+/**
+ * Fail one state-file read once the stored content matches, standing in for a
+ * transient EACCES arriving between two locked state mutations.
+ */
+function failStateReadOnce(
+  harness: Harness,
+  whenContent: (raw: string) => boolean,
+): () => void {
+  const realReadFile = fs.readFile.bind(fs);
+  let armed = true;
+  fs.readFile = (async (...args: unknown[]) => {
+    const real = realReadFile as (...inner: unknown[]) => Promise<unknown>;
+    if (args[0] !== harness.statePath || !armed) return real(...args);
+    const raw = String(await real(harness.statePath, 'utf8'));
+    if (!whenContent(raw)) return raw;
+    armed = false;
+    const error = new Error(
+      `EACCES: permission denied, open '${harness.statePath}'`,
+    ) as NodeJS.ErrnoException;
+    error.code = 'EACCES';
+    throw error;
+  }) as typeof fs.readFile;
+  return () => {
+    fs.readFile = realReadFile;
+  };
+}
+
+/** Close a one-shot and delete its child session file so resume validation fails. */
+async function seedClosedOneShotWithMissingSession(
+  harness: Harness,
+): Promise<Awaited<ReturnType<Harness['readState']>>> {
+  await harness.call({
+    agent: 'scout',
+    task: 'first',
+    tabLabel: 'Scout Resume',
+  });
+  await harness.collect('Scout Resume');
+  await harness.fire('session_shutdown');
+  const state = await harness.readState();
+  await fs.rm(state.closedHistory[0]!.childSessionFile);
+  await fs.writeFile(harness.statePath, JSON.stringify(state));
+  return state;
 }
 
 test('spawns a one-shot pane agent, collects the artifact and closes it', async () => {
@@ -1601,6 +1646,153 @@ test('resumeClosed errors when the child JSONL is missing or mismatched', async 
       /missing, corrupt, or does not match/,
     );
     assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
+  });
+});
+
+test('resumeClosed fails closed when placement state pruning fails', async () => {
+  await withHarness({}, async (harness) => {
+    await harness.call({
+      agent: 'scout',
+      task: 'first',
+      tabLabel: 'Scout Resume',
+    });
+    await harness.collect('Scout Resume');
+    await harness.fire('session_shutdown');
+    const state = await harness.readState();
+    const history = state.closedHistory[0]!;
+    await fs.rm(history.childSessionFile);
+    state.agents['terminal:gone'] = {
+      lifecycle: 'oneshot',
+      paneId: 'gone',
+      collected: false,
+      updatedAt: new Date().toISOString(),
+    };
+    await fs.writeFile(harness.statePath, JSON.stringify(state));
+    setFailNextStateSaves(1);
+
+    const result = await harness.call({
+      agent: 'scout',
+      task: 'again',
+      tabLabel: 'Scout Resume',
+      resumeClosed: true,
+    });
+    assert.equal(result.isError, true);
+    assert.equal(
+      result.content[0].text,
+      'No closed one-shot Herdr agent named "Scout Resume" is owned by this Orchestrator session.',
+    );
+    assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
+    assert.equal(harness.fake.callsMatching('pane', 'split').length, 1);
+    assert.deepEqual(
+      (await harness.readState()).closedHistory,
+      state.closedHistory,
+    );
+  });
+});
+
+for (const claimed of [false, true]) {
+  test(`resumeClosed preserves ${claimed ? 'claimed' : 'wrong-profile'} history with a missing session`, async () => {
+    await withHarness(
+      { profiles: [{ name: 'scout' }, { name: 'worker' }] },
+      async (harness) => {
+        await harness.call({
+          agent: 'scout',
+          task: 'first',
+          tabLabel: 'Scout Resume',
+        });
+        await harness.collect('Scout Resume');
+        await harness.fire('session_shutdown');
+        const state = await harness.readState();
+        const history = state.closedHistory[0]!;
+        await fs.rm(history.childSessionFile);
+        if (claimed) {
+          history.status = 'claimed';
+          history.claimGeneration += 1;
+          history.claimedAt = new Date().toISOString();
+        }
+        await fs.writeFile(harness.statePath, JSON.stringify(state));
+
+        const result = await harness.call({
+          agent: 'worker',
+          task: 'again',
+          tabLabel: 'Scout Resume',
+          resumeClosed: true,
+        });
+        assert.equal(result.isError, true);
+        assert.equal(
+          result.content[0].text,
+          claimed
+            ? 'Closed Herdr agent "Scout Resume" is already being resumed.'
+            : 'Closed Herdr agent "Scout Resume" was a scout agent, not worker.',
+        );
+        assert.deepEqual(
+          (await harness.readState()).closedHistory,
+          state.closedHistory,
+        );
+        assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
+      },
+    );
+  });
+}
+
+test('resumeClosed releases no claim when invalidation succeeded', async () => {
+  await withHarness({}, async (harness) => {
+    const state = await seedClosedOneShotWithMissingSession(harness);
+    const restore = failStateReadOnce(harness, (raw) =>
+      raw.includes('"status": "invalid"'),
+    );
+    try {
+      const result = await harness.call({
+        agent: 'scout',
+        task: 'again',
+        tabLabel: 'Scout Resume',
+        resumeClosed: true,
+      });
+      assert.equal(result.isError, true);
+      assert.equal(
+        result.content[0].text,
+        'Cannot resume "Scout Resume": child session file is missing, corrupt, or does not match the stored session id/cwd.',
+      );
+    } finally {
+      restore();
+    }
+
+    const after = await harness.readState();
+    assert.equal(after.closedHistory.length, state.closedHistory.length);
+    assert.equal(after.closedHistory[0]!.status, 'invalid');
+    assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
+  });
+});
+
+test('resumeClosed releases the claim again when invalidation failed', async () => {
+  await withHarness({}, async (harness) => {
+    const state = await seedClosedOneShotWithMissingSession(harness);
+    const restore = failStateReadOnce(harness, (raw) =>
+      raw.includes('"status": "claimed"'),
+    );
+    try {
+      const result = await harness.call({
+        agent: 'scout',
+        task: 'again',
+        tabLabel: 'Scout Resume',
+        resumeClosed: true,
+      });
+      assert.equal(result.isError, true);
+      assert.match(
+        result.content[0].text,
+        /missing, corrupt, or does not match/,
+      );
+    } finally {
+      restore();
+    }
+
+    const after = await harness.readState();
+    assert.equal(after.closedHistory[0]!.status, 'resumable');
+    assert.equal('claimedAt' in after.closedHistory[0]!, false);
+    assert.equal(
+      after.closedHistory[0]!.claimGeneration,
+      state.closedHistory[0]!.claimGeneration + 1,
+    );
   });
 });
 

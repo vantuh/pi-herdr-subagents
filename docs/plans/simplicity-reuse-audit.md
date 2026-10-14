@@ -328,10 +328,29 @@ Deviations and skipped optional items:
   their abort semantics differ.
 - G5 fixed only the stray block and redundant `continue`; the manager's status
   colours were left alone (they intentionally differ from the widget's tones).
-- D5 now validates the session file before `claimClosedHistory` reports the
-  no-history/claimed/profile errors. In the pathological case of a claimed
-  record whose session file also went missing, the record is marked invalid
-  instead of answering "already being resumed".
+- Follow-up review corrected the B1/D5 resume regressions. An empty placement
+  state now fails closed instead of allowing a later claim to bypass validation.
+  `claimClosedHistory` rejects claimed/wrong-profile records before session-file
+  validation. Validation uses the successfully claimed record and invalidation
+  is generation-guarded. Release runs only when that invalidation failed, so a
+  successful invalidation clears the claim with no extra state read that could
+  mask the missing-session error.
+- Follow-up review corrected E1 cancellation compatibility. Both startup retry
+  delays still use `node:timers/promises`, but translate cancellation back to
+  `Error('Aborted')` rather than exposing `AbortError('The operation was aborted')`.
+- Added five integration regressions: placement-state save failure, missing
+  sessions on claimed/wrong-profile history, and both invalidation outcomes
+  (no release after a successful invalidation, release after a failed one),
+  plus two startup delay cancellation tests. Five of them fail against the
+  unfixed code — the no-release one rethrows an injected `EACCES` state read
+  that used to mask the missing-session error; the invalidation-failed one pins
+  the new release branch. Focused resume/startup integration checks passed (30
+  tests) plus the 177-test fast subset and `npm run typecheck`. The contract and
+  schema tests remain unchanged; `oxlint` reports only the ten pre-existing lint
+  errors. Final Orchestrator validation passed: typecheck, all 296 unit/integration/
+  contract tests, all 13 E2E tests on rerun, Rolldown bundle, and `git diff --check`.
+  The first follow-up E2E run passed 12/13, with the same direct-CLI cold-shell
+  `agent_pane_busy` failure; the unchanged full rerun passed 13/13.
 - `npm run test:e2e`: 12/13. The direct-CLI cold-shell test failed with
   `agent_pane_busy` again — the documented intermittent external failure in
   `docs/plans/done/src-restructure.md`, unrelated to this extension.

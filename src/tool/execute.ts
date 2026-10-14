@@ -569,30 +569,16 @@ async function claimClosedHistoryForResume(
     owner.ownerSessionId,
     params.tabLabel!.trim(),
   );
-  if (existing) {
-    const cwdError = await resumableSessionDirError(existing.cwd);
-    const header = cwdError
-      ? undefined
-      : await validateResumableSessionFile(existing.childSessionFile, {
-          sessionId: existing.childSessionId,
-          cwd: existing.cwd,
-        });
-    if (cwdError || !header) {
-      await bestEffort(undefined, () =>
-        markClosedHistoryInvalid(existing.id, existing.claimGeneration),
-      );
-      return textResult(
-        cwdError
-          ? `Cannot resume "${existing.tabLabel}": ${cwdError}`
-          : `Cannot resume "${existing.tabLabel}": child session file is missing, corrupt, or does not match the stored session id/cwd.`,
-        { resumeClosed: true },
-        true,
-      );
-    }
+  if (!existing) {
+    return textResult(
+      `No closed one-shot Herdr agent named "${params.tabLabel!.trim()}" is owned by this Orchestrator session.`,
+      { resumeClosed: true },
+      true,
+    );
   }
   const claimed = await claimClosedHistory({
     ownerSessionId: owner.ownerSessionId,
-    tabLabel: params.tabLabel!.trim(),
+    tabLabel: existing.tabLabel,
     profileName: spawn.agent.name,
   });
   if (!claimed.ok) {
@@ -600,6 +586,34 @@ async function claimClosedHistoryForResume(
   }
 
   spawn.resumeClaim = claimed.record;
+  const record = claimed.record;
+  const cwdError = await resumableSessionDirError(record.cwd);
+  const header = cwdError
+    ? undefined
+    : await validateResumableSessionFile(record.childSessionFile, {
+        sessionId: record.childSessionId,
+        cwd: record.cwd,
+      });
+  if (cwdError || !header) {
+    const invalidated = await bestEffort(false, async () => {
+      await markClosedHistoryInvalid(record.id, record.claimGeneration);
+      return true;
+    });
+    // A successful invalidation already drops the claim; releasing it again
+    // would only add a state read that can fail over the error below.
+    if (!invalidated) {
+      await bestEffort(undefined, () =>
+        releaseClosedHistory(record.id, record.claimGeneration),
+      );
+    }
+    return textResult(
+      cwdError
+        ? `Cannot resume "${record.tabLabel}": ${cwdError}`
+        : `Cannot resume "${record.tabLabel}": child session file is missing, corrupt, or does not match the stored session id/cwd.`,
+      { resumeClosed: true },
+      true,
+    );
+  }
   spawn.resumed = true;
   spawn.tabLabel = claimed.record.tabLabel;
   const resumedAgents = await discoverAgents(claimed.record.cwd);
