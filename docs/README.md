@@ -142,6 +142,8 @@ The extension uses:
 - `model` to select the child model;
 - body as the child system prompt addition.
 
+See [`agent-profiles.md`](./agent-profiles.md) for the full field reference.
+
 ## Runtime files
 
 - `src/index.ts` — registers the Pi extension hook and `herdr_agent` tool.
