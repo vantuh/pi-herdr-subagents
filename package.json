@@ -18,5 +18,9 @@
     "extensions": [
       "./src/index.ts"
     ]
+  },
+  "devDependencies": {
+    "oxfmt": "^0.73.0",
+    "oxlint": "^1.88.0"
   }
 }
