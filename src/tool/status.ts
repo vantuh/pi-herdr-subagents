@@ -19,8 +19,13 @@ import {
   loadContextWithState,
 } from '../herdr/snapshot.ts';
 import { formatAgentQuestion } from '../prompts.ts';
-import { paneStateKey, type HerdrAgentStateRecord } from '../state/store.ts';
-import type { AgentProfile, HerdrAgentLayout, PaneInfo } from '../types.ts';
+import { paneStateKey } from '../state/store.ts';
+import type {
+  AgentProfile,
+  HerdrAgentLayout,
+  HerdrAgentStateRecord,
+  PaneInfo,
+} from '../types.ts';
 import { formatSpawnWarnings } from '../utils.ts';
 import { spawnWarningDetails } from './one-shot.ts';
 import { textResult } from './result.ts';

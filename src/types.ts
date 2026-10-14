@@ -43,29 +43,64 @@ export interface WorkspaceInfo {
   label?: string;
 }
 
-export interface HerdrAgentInfo {
+export interface HerdrAgentStateRecord {
+  lifecycle: 'oneshot' | 'persistent';
+  serverSocketPath?: string;
+  paneId?: string;
+  ownerPaneId?: string;
+  tabLabel?: string;
+  agent?: string;
+  automationName?: string;
+  resultFile?: string;
+  layout?: HerdrAgentLayout;
+  /** Spawn-time profile values Pi ignored; retained until the outcome is delivered. */
+  spawnWarnings?: string[];
+  /**
+   * Pending collection. Lives in the state file rather than memory so a
+   * pending delivery survives `/reload`.
+   */
+  detached?: boolean;
+  /** A committed outcome claim; a new task's lifecycle record clears it. */
+  collected?: boolean;
+  /**
+   * Orchestrator pane `terminal_id` that spawned this agent. Widget, reuse,
+   * and detached delivery all key off this so two Orchestrators in one
+   * workspace do not claim each other's children.
+   */
+  ownerTerminalId?: string;
+  /** Orchestrator Pi session UUID that spawned this agent. */
+  ownerSessionId?: string;
+  ownerSessionFile?: string;
+  /** Closed-history slot this live agent is continuing, if any. */
+  closedHistoryId?: string;
+  closedHistoryGeneration?: number;
+  updatedAt: string;
+}
+
+/** State-record fields a listed managed agent exposes. */
+export type HerdrAgentStateInfoFields = Pick<
+  HerdrAgentStateRecord,
+  | 'automationName'
+  | 'resultFile'
+  | 'spawnWarnings'
+  | 'detached'
+  | 'ownerSessionId'
+  | 'ownerSessionFile'
+  | 'closedHistoryId'
+  | 'closedHistoryGeneration'
+> & { updatedAt?: string };
+
+export interface HerdrAgentInfo extends HerdrAgentStateInfoFields {
   tabId: string;
   tabLabel: string;
   paneId: string;
   agent: string;
-  automationName?: string;
-  resultFile?: string;
   status: string;
   lifecycle?: 'oneshot';
   layout?: HerdrAgentLayout;
   cwd?: string;
-  /** State-record timestamp: when this agent last received a task. */
-  updatedAt?: string;
-  /** Spawn-time profile values Pi ignored; surfaced in every collection path. */
-  spawnWarnings?: string[];
-  /** Not yet collected by the widget poller. */
-  detached?: boolean;
   /** Pane terminal id — the state-record key. */
   terminalId?: string;
-  ownerSessionId?: string;
-  ownerSessionFile?: string;
-  closedHistoryId?: string;
-  closedHistoryGeneration?: number;
 }
 
 export interface ReusableAgentTab {

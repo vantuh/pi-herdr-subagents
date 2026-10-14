@@ -8,43 +8,10 @@ import { readIfExists } from '../artifacts.ts';
 import {
   isHerdrAgentLayout,
   type HerdrAgentLayout,
+  type HerdrAgentStateRecord,
   type HerdrNamedAgent,
   type PaneInfo,
 } from '../types.ts';
-
-export interface HerdrAgentStateRecord {
-  lifecycle: 'oneshot' | 'persistent';
-  serverSocketPath?: string;
-  paneId?: string;
-  ownerPaneId?: string;
-  tabLabel?: string;
-  agent?: string;
-  automationName?: string;
-  resultFile?: string;
-  layout?: HerdrAgentLayout;
-  /** Spawn-time profile values Pi ignored; retained until the outcome is delivered. */
-  spawnWarnings?: string[];
-  /**
-   * Pending collection. Lives in the state file rather than memory so a
-   * pending delivery survives `/reload`.
-   */
-  detached?: boolean;
-  /** A committed outcome claim; a new task's lifecycle record clears it. */
-  collected?: boolean;
-  /**
-   * Orchestrator pane `terminal_id` that spawned this agent. Widget, reuse,
-   * and detached delivery all key off this so two Orchestrators in one
-   * workspace do not claim each other's children.
-   */
-  ownerTerminalId?: string;
-  /** Orchestrator Pi session UUID that spawned this agent. */
-  ownerSessionId?: string;
-  ownerSessionFile?: string;
-  /** Closed-history slot this live agent is continuing, if any. */
-  closedHistoryId?: string;
-  closedHistoryGeneration?: number;
-  updatedAt: string;
-}
 
 type ClosedHistoryStatus = 'resumable' | 'claimed' | 'invalid' | 'staged';
 

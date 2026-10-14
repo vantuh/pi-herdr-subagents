@@ -3,10 +3,11 @@ import {
   liveAgentWithAutomationName,
   paneStateKey,
   type HerdrAgentsState,
-  type HerdrAgentStateRecord,
 } from '../state/store.ts';
 import type {
   HerdrAgentInfo,
+  HerdrAgentStateInfoFields,
+  HerdrAgentStateRecord,
   HerdrContext,
   PaneInfo,
   ReusableAgentTab,
@@ -138,6 +139,31 @@ export function findReusableAgentPane(
   });
 }
 
+/** State fields a listed managed agent exposes; ownership internals stay out. */
+function pickAgentStateFields(
+  record: HerdrAgentStateRecord,
+): HerdrAgentStateInfoFields {
+  return {
+    ...(record.automationName ? { automationName: record.automationName } : {}),
+    ...(record.resultFile ? { resultFile: record.resultFile } : {}),
+    ...(record.spawnWarnings?.length
+      ? { spawnWarnings: record.spawnWarnings }
+      : {}),
+    ...(record.detached ? { detached: true } : {}),
+    ...(record.ownerSessionId ? { ownerSessionId: record.ownerSessionId } : {}),
+    ...(record.ownerSessionFile
+      ? { ownerSessionFile: record.ownerSessionFile }
+      : {}),
+    ...(record.closedHistoryId
+      ? { closedHistoryId: record.closedHistoryId }
+      : {}),
+    ...(record.closedHistoryGeneration
+      ? { closedHistoryGeneration: record.closedHistoryGeneration }
+      : {}),
+    ...(record.updatedAt ? { updatedAt: record.updatedAt } : {}),
+  };
+}
+
 export function listManagedWorkspaceAgents(
   context: HerdrContext,
   state: HerdrAgentsState,
@@ -170,37 +196,17 @@ export function listManagedWorkspaceAgents(
     }
 
     agents.push({
+      ...pickAgentStateFields(record),
       tabId: pane.tab_id,
       tabLabel: record.tabLabel ?? pane.label ?? record.agent ?? 'Agent',
       paneId: pane.pane_id,
       agent: record.agent ?? pane.agent ?? 'pi',
-      ...(record.automationName
-        ? { automationName: record.automationName }
-        : {}),
-      ...(record.resultFile ? { resultFile: record.resultFile } : {}),
       status: pane.agent_status ?? 'unknown',
       lifecycle: record.lifecycle,
       layout:
         record.layout ?? (pane.tab_id === context.currentTab ? 'pane' : 'tab'),
       cwd: pane.foreground_cwd ?? pane.cwd,
-      ...(record.updatedAt ? { updatedAt: record.updatedAt } : {}),
-      ...(record.spawnWarnings?.length
-        ? { spawnWarnings: record.spawnWarnings }
-        : {}),
-      ...(record.detached ? { detached: true } : {}),
       ...(pane.terminal_id ? { terminalId: pane.terminal_id } : {}),
-      ...(record.ownerSessionId
-        ? { ownerSessionId: record.ownerSessionId }
-        : {}),
-      ...(record.ownerSessionFile
-        ? { ownerSessionFile: record.ownerSessionFile }
-        : {}),
-      ...(record.closedHistoryId
-        ? { closedHistoryId: record.closedHistoryId }
-        : {}),
-      ...(record.closedHistoryGeneration
-        ? { closedHistoryGeneration: record.closedHistoryGeneration }
-        : {}),
     });
   }
 
