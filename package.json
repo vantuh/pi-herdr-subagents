@@ -3,11 +3,17 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "lint": "oxlint",
+    "format": "oxfmt",
     "test": "bun run test:unit && bun run test:integration",
     "test:unit": "bun test --timeout 30000 ./test/agents.test.ts ./test/child.test.ts ./test/config.test.ts ./test/constants.test.ts ./test/herdr.test.ts ./test/imports.test.ts ./test/pi-contract.test.ts ./test/pi-events.test.ts ./test/ui-boundary.test.ts ./test/run.test.ts ./test/schema.test.ts ./test/state.test.ts ./test/utils.test.ts ./test/widget.test.ts",
     "test:integration": "bun test --timeout 30000 ./test/integration.test.ts ./test/contract.test.ts",
     "test:e2e": "bun test --timeout 180000 ./e2e/*.test.ts",
     "test:all": "bun run test && bun run test:e2e"
+  },
+  "devDependencies": {
+    "oxfmt": "^0.73.0",
+    "oxlint": "^1.88.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
@@ -18,9 +24,5 @@
     "extensions": [
       "./src/index.ts"
     ]
-  },
-  "devDependencies": {
-    "oxfmt": "^0.73.0",
-    "oxlint": "^1.88.0"
   }
 }

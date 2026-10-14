@@ -1,8 +1,9 @@
-import { randomUUID } from "node:crypto";
-import { promises as fs } from "node:fs";
-import { createServer, type Server, type Socket } from "node:net";
-import * as path from "node:path";
-import { SESSION_META_ENV } from "../src/utils.ts";
+import { randomUUID } from 'node:crypto';
+import { promises as fs } from 'node:fs';
+import { createServer, type Server, type Socket } from 'node:net';
+import * as path from 'node:path';
+
+import { SESSION_META_ENV } from '../src/utils.ts';
 
 /**
  * In-process Herdr simulator for integration tests.
@@ -16,10 +17,10 @@ import { SESSION_META_ENV } from "../src/utils.ts";
  */
 
 export type LayoutNode =
-  | { type: "pane"; pane_id: string }
+  | { type: 'pane'; pane_id: string }
   | {
-      type: "split";
-      direction: "right" | "down";
+      type: 'split';
+      direction: 'right' | 'down';
       ratio: number;
       first: LayoutNode;
       second: LayoutNode;
@@ -87,7 +88,7 @@ export interface ChildOutcome {
   /** Never leaves `working`, so waits time out or get aborted. */
   neverSettle?: boolean;
   /** Settle as `done` rather than `idle`. Both mean "finished" to Herdr. */
-  settleStatus?: "idle" | "done";
+  settleStatus?: 'idle' | 'done';
   /**
    * Keep reporting the *previous* turn's status and `state_change_seq` for this
    * long after the prompt is submitted, before starting the new turn.
@@ -133,7 +134,10 @@ function ok(result: unknown): CliResponse {
 }
 
 function fail(code: string, message: string): CliResponse {
-  return { stderr: `${JSON.stringify({ error: { code, message } })}\n`, code: 1 };
+  return {
+    stderr: `${JSON.stringify({ error: { code, message } })}\n`,
+    code: 1,
+  };
 }
 
 function flag(argv: string[], name: string): string | undefined {
@@ -153,8 +157,8 @@ function flags(argv: string[], name: string): string[] {
 
 function parseEnv(argv: string[]): Record<string, string> {
   const env: Record<string, string> = {};
-  for (const entry of flags(argv, "--env")) {
-    const eq = entry.indexOf("=");
+  for (const entry of flags(argv, '--env')) {
+    const eq = entry.indexOf('=');
     if (eq > 0) env[entry.slice(0, eq)] = entry.slice(eq + 1);
   }
   return env;
@@ -168,9 +172,9 @@ function defaultBehavior(turn: ChildTurn): ChildOutcome {
 }
 
 export class FakeHerdr {
-  readonly workspaceId = "w1";
+  readonly workspaceId = 'w1';
   readonly workspaces: FakeWorkspace[] = [
-    { workspace_id: "w1", label: "main", focused: true },
+    { workspace_id: 'w1', label: 'main', focused: true },
   ];
   readonly panes: FakePane[] = [];
   readonly tabs: FakeTab[] = [];
@@ -189,7 +193,7 @@ export class FakeHerdr {
   /** Fail every `agent start` with this code, ignoring the queue. */
   private alwaysFailStartWith?: string;
   /** Pane Herdr reports as focused; the extension should prefer HERDR_PANE_ID. */
-  focusedPaneId = "";
+  focusedPaneId = '';
   private childrenHeld = false;
   private readonly heldTurns: Array<() => Promise<void>> = [];
   private readonly commandFailures = new Map<
@@ -215,7 +219,11 @@ export class FakeHerdr {
   readonly orchestratorPane: FakePane;
 
   constructor() {
-    const tab: FakeTab = { tab_id: this.makeTabId(), label: "main", focused: true };
+    const tab: FakeTab = {
+      tab_id: this.makeTabId(),
+      label: 'main',
+      focused: true,
+    };
     this.tabs.push(tab);
     this.orchestratorPane = {
       pane_id: this.makePaneId(),
@@ -223,15 +231,15 @@ export class FakeHerdr {
       workspace_id: this.workspaceId,
       terminal_id: this.makeTerminalId(),
       focused: true,
-      agent: "pi",
-      agent_status: "working",
+      agent: 'pi',
+      agent_status: 'working',
       cwd: process.cwd(),
       env: {},
     };
     this.panes.push(this.orchestratorPane);
     this.focusedPaneId = this.orchestratorPane.pane_id;
     this.layouts.set(tab.tab_id, {
-      type: "pane",
+      type: 'pane',
       pane_id: this.orchestratorPane.pane_id,
     });
   }
@@ -269,7 +277,7 @@ export class FakeHerdr {
   }
 
   /** Return unparseable (or wrongly shaped) stdout for a command. */
-  malformCommand(prefix: string, payload = "this is not json"): void {
+  malformCommand(prefix: string, payload = 'this is not json'): void {
     this.commandMalformed.set(prefix, payload);
   }
 
@@ -313,8 +321,8 @@ export class FakeHerdr {
   async completeAgent(target: string, result: string): Promise<void> {
     const agent = this.resolveAgent(target);
     if (!agent) throw new Error(`unknown agent ${target}`);
-    if (agent.resultFile) await fs.writeFile(agent.resultFile, result, "utf8");
-    this.setStatus(agent, "idle");
+    if (agent.resultFile) await fs.writeFile(agent.resultFile, result, 'utf8');
+    this.setStatus(agent, 'idle');
   }
 
   paneById(paneId: string): FakePane | undefined {
@@ -339,8 +347,8 @@ export class FakeHerdr {
   async start(
     dir: string,
   ): Promise<{ cliSocketPath: string; apiSocketPath: string }> {
-    const cliSocketPath = path.join(dir, "cli.sock");
-    const apiSocketPath = path.join(dir, "api.sock");
+    const cliSocketPath = path.join(dir, 'cli.sock');
+    const apiSocketPath = path.join(dir, 'api.sock');
 
     this.cliServer = createServer((socket) =>
       this.handleLineSocket(socket, async (message) => {
@@ -393,16 +401,16 @@ export class FakeHerdr {
     socket: Socket,
     handle: (message: unknown) => Promise<CliResponse | unknown>,
   ): void {
-    let buffer = "";
-    socket.setEncoding("utf8");
-    socket.on("error", () => socket.destroy());
-    socket.on("data", (chunk: string) => {
+    let buffer = '';
+    socket.setEncoding('utf8');
+    socket.on('error', () => socket.destroy());
+    socket.on('data', (chunk: string) => {
       buffer += chunk;
-      let newline = buffer.indexOf("\n");
+      let newline = buffer.indexOf('\n');
       while (newline >= 0) {
         const line = buffer.slice(0, newline);
         buffer = buffer.slice(newline + 1);
-        newline = buffer.indexOf("\n");
+        newline = buffer.indexOf('\n');
         void (async () => {
           const message = JSON.parse(line);
           const response = await handle(message);
@@ -419,7 +427,7 @@ export class FakeHerdr {
       params: Record<string, unknown>;
     };
 
-    if (method === "layout.export") {
+    if (method === 'layout.export') {
       const pane = this.paneById(String(params.pane_id));
       const root = pane ? this.layouts.get(pane.tab_id) : undefined;
       if (!pane || !root) {
@@ -428,7 +436,7 @@ export class FakeHerdr {
       return { id, result: { layout: { tab_id: pane.tab_id, root } } };
     }
 
-    if (method === "layout.set_split_ratio") {
+    if (method === 'layout.set_split_ratio') {
       const tabId = String(params.tab_id);
       const nodePath = (params.path as boolean[]) ?? [];
       const ratio = Number(params.ratio);
@@ -437,14 +445,14 @@ export class FakeHerdr {
 
       let node: LayoutNode | undefined = root;
       for (const goSecond of nodePath) {
-        if (node?.type !== "split") {
+        if (node?.type !== 'split') {
           node = undefined;
           break;
         }
         node = goSecond ? node.second : node.first;
       }
-      if (node?.type !== "split") {
-        return { id, error: { message: "path does not point at a split" } };
+      if (node?.type !== 'split') {
+        return { id, error: { message: 'path does not point at a split' } };
       }
       node.ratio = ratio;
       this.ratioUpdates.push({ tabId, path: nodePath, ratio });
@@ -467,7 +475,7 @@ export class FakeHerdr {
       return fail(failure.code, `injected ${failure.code} for ${key}`);
     }
 
-    if (group === "api" && command === "snapshot") {
+    if (group === 'api' && command === 'snapshot') {
       return ok({
         snapshot: {
           panes: this.panes.map(({ env: _env, ...pane }) => pane),
@@ -479,25 +487,25 @@ export class FakeHerdr {
       });
     }
 
-    if (group === "workspace") return this.handleWorkspace(argv);
-    if (group === "notification") {
+    if (group === 'workspace') return this.handleWorkspace(argv);
+    if (group === 'notification') {
       return ok({ shown: argv.slice(2) });
     }
-    if (group === "tab") return this.handleTab(argv);
-    if (group === "pane") return this.handlePane(argv);
-    if (group === "agent") return await this.handleAgent(argv);
-    return fail("unknown_command", `unknown command: ${argv.join(" ")}`);
+    if (group === 'tab') return this.handleTab(argv);
+    if (group === 'pane') return this.handlePane(argv);
+    if (group === 'agent') return await this.handleAgent(argv);
+    return fail('unknown_command', `unknown command: ${argv.join(' ')}`);
   }
 
   private handleWorkspace(argv: string[]): CliResponse {
     const [, command] = argv;
 
-    if (command === "list") {
+    if (command === 'list') {
       return ok({
         workspaces: this.workspaces.map((workspace) => ({
           ...workspace,
-          active_tab_id: this.tabs.find(
-            (tab) => tab.tab_id.startsWith(`${workspace.workspace_id}:`),
+          active_tab_id: this.tabs.find((tab) =>
+            tab.tab_id.startsWith(`${workspace.workspace_id}:`),
           )?.tab_id,
           tab_count: this.tabs.filter((tab) =>
             tab.tab_id.startsWith(`${workspace.workspace_id}:`),
@@ -506,16 +514,19 @@ export class FakeHerdr {
       });
     }
 
-    if (command === "create") {
+    if (command === 'create') {
       const workspaceId = `w${this.nextWorkspace++}`;
       const workspace: FakeWorkspace = {
         workspace_id: workspaceId,
-        label: flag(argv, "--label"),
+        label: flag(argv, '--label'),
         focused: false,
       };
       this.workspaces.push(workspace);
       // Like the real server: a workspace starts with one root tab + pane.
-      const tab: FakeTab = { tab_id: this.makeTabId(workspaceId), label: "tab" };
+      const tab: FakeTab = {
+        tab_id: this.makeTabId(workspaceId),
+        label: 'tab',
+      };
       this.tabs.push(tab);
       const pane: FakePane = {
         pane_id: this.makePaneId(workspaceId),
@@ -523,11 +534,11 @@ export class FakeHerdr {
         workspace_id: workspaceId,
         terminal_id: this.makeTerminalId(),
         label: tab.label,
-        cwd: flag(argv, "--cwd"),
+        cwd: flag(argv, '--cwd'),
         env: parseEnv(argv),
       };
       this.panes.push(pane);
-      this.layouts.set(tab.tab_id, { type: "pane", pane_id: pane.pane_id });
+      this.layouts.set(tab.tab_id, { type: 'pane', pane_id: pane.pane_id });
       return ok({
         workspace,
         tab,
@@ -535,21 +546,21 @@ export class FakeHerdr {
       });
     }
 
-    if (command === "focus") {
+    if (command === 'focus') {
       for (const workspace of this.workspaces) {
         workspace.focused = workspace.workspace_id === argv[2];
       }
       return ok({ focused: argv[2] });
     }
 
-    if (command === "close") {
+    if (command === 'close') {
       if (!this.closeWorkspaceById(String(argv[2]))) {
-        return fail("workspace_not_found", `unknown workspace ${argv[2]}`);
+        return fail('workspace_not_found', `unknown workspace ${argv[2]}`);
       }
       return ok({ closed: argv[2] });
     }
 
-    return fail("unknown_command", `unknown workspace command: ${command}`);
+    return fail('unknown_command', `unknown workspace command: ${command}`);
   }
 
   /** Close a workspace the way a user's manual close would. */
@@ -587,9 +598,9 @@ export class FakeHerdr {
 
   private handleTab(argv: string[]): CliResponse {
     const [, command, target] = argv;
-    const workspaceId = flag(argv, "--workspace") ?? this.workspaceId;
+    const workspaceId = flag(argv, '--workspace') ?? this.workspaceId;
 
-    if (command === "list") {
+    if (command === 'list') {
       return ok({
         tabs: this.tabs.filter((tab) =>
           tab.tab_id.startsWith(`${workspaceId}:`),
@@ -597,17 +608,17 @@ export class FakeHerdr {
       });
     }
 
-    if (command === "rename") {
+    if (command === 'rename') {
       const tab = this.tabs.find((item) => item.tab_id === target);
-      if (!tab) return fail("tab_not_found", `unknown tab ${target}`);
+      if (!tab) return fail('tab_not_found', `unknown tab ${target}`);
       tab.label = argv[3] ?? tab.label;
       return ok({ tab });
     }
 
-    if (command === "create") {
+    if (command === 'create') {
       const tab: FakeTab = {
         tab_id: this.makeTabId(workspaceId),
-        label: flag(argv, "--label") ?? "tab",
+        label: flag(argv, '--label') ?? 'tab',
       };
       this.tabs.push(tab);
       const pane: FakePane = {
@@ -616,11 +627,11 @@ export class FakeHerdr {
         workspace_id: workspaceId,
         terminal_id: this.makeTerminalId(),
         label: tab.label,
-        cwd: flag(argv, "--cwd"),
+        cwd: flag(argv, '--cwd'),
         env: parseEnv(argv),
       };
       this.panes.push(pane);
-      this.layouts.set(tab.tab_id, { type: "pane", pane_id: pane.pane_id });
+      this.layouts.set(tab.tab_id, { type: 'pane', pane_id: pane.pane_id });
       return ok({
         root_pane: {
           ...pane,
@@ -630,9 +641,9 @@ export class FakeHerdr {
       });
     }
 
-    if (command === "close") {
+    if (command === 'close') {
       const tabIndex = this.tabs.findIndex((item) => item.tab_id === target);
-      if (tabIndex < 0) return fail("tab_not_found", `unknown tab ${target}`);
+      if (tabIndex < 0) return fail('tab_not_found', `unknown tab ${target}`);
       this.tabs.splice(tabIndex, 1);
       for (const pane of this.panes.filter((item) => item.tab_id === target)) {
         this.removePane(pane.pane_id);
@@ -643,62 +654,62 @@ export class FakeHerdr {
       return ok({ closed: target });
     }
 
-    if (command === "focus") {
+    if (command === 'focus') {
       for (const tab of this.tabs) tab.focused = tab.tab_id === target;
       return ok({ focused: target });
     }
 
-    return fail("unknown_command", `unknown tab command: ${command}`);
+    return fail('unknown_command', `unknown tab command: ${command}`);
   }
 
   private handlePane(argv: string[]): CliResponse {
     const [, command, target] = argv;
 
-    if (command === "layout") {
-      const paneId = flag(argv, "--pane") ?? this.orchestratorPane.pane_id;
+    if (command === 'layout') {
+      const paneId = flag(argv, '--pane') ?? this.orchestratorPane.pane_id;
       const pane = this.paneById(paneId);
       const root = pane ? this.layouts.get(pane.tab_id) : undefined;
-      if (!root) return fail("pane_not_found", `unknown pane ${paneId}`);
+      if (!root) return fail('pane_not_found', `unknown pane ${paneId}`);
       return ok({ layout: { panes: this.computeRects(root) } });
     }
 
-    if (command === "split") {
+    if (command === 'split') {
       const parent = this.paneById(String(target));
-      if (!parent) return fail("pane_not_found", `unknown pane ${target}`);
+      if (!parent) return fail('pane_not_found', `unknown pane ${target}`);
       const root = this.layouts.get(parent.tab_id);
-      if (!root) return fail("pane_not_found", `unknown tab for ${target}`);
+      if (!root) return fail('pane_not_found', `unknown tab for ${target}`);
 
       const pane: FakePane = {
         pane_id: this.makePaneId(),
         tab_id: parent.tab_id,
         workspace_id: parent.workspace_id,
         terminal_id: this.makeTerminalId(),
-        cwd: flag(argv, "--cwd"),
+        cwd: flag(argv, '--cwd'),
         env: parseEnv(argv),
       };
       this.panes.push(pane);
       this.layouts.set(
         parent.tab_id,
         this.splitNode(root, parent.pane_id, {
-          direction: (flag(argv, "--direction") as "right" | "down") ?? "right",
-          ratio: Number(flag(argv, "--ratio") ?? 0.5),
+          direction: (flag(argv, '--direction') as 'right' | 'down') ?? 'right',
+          ratio: Number(flag(argv, '--ratio') ?? 0.5),
           newPaneId: pane.pane_id,
         }),
       );
       return ok({ pane: { ...pane, env: undefined } });
     }
 
-    if (command === "rename") {
+    if (command === 'rename') {
       const pane = this.paneById(String(target));
-      if (!pane) return fail("pane_not_found", `unknown pane ${target}`);
+      if (!pane) return fail('pane_not_found', `unknown pane ${target}`);
       pane.label = argv[3];
       return ok({ pane: { ...pane, env: undefined } });
     }
 
-    if (command === "close") {
+    if (command === 'close') {
       const pane = this.paneById(String(target));
       if (!pane) {
-        return fail("pane_not_found", `unknown pane ${target}`);
+        return fail('pane_not_found', `unknown pane ${target}`);
       }
       const tabId = pane.tab_id;
       this.removePane(String(target));
@@ -713,72 +724,72 @@ export class FakeHerdr {
       return ok({ closed: target });
     }
 
-    return fail("unknown_command", `unknown pane command: ${command}`);
+    return fail('unknown_command', `unknown pane command: ${command}`);
   }
 
   private async handleAgent(argv: string[]): Promise<CliResponse> {
     const [, command, target] = argv;
 
-    if (command === "start") {
-      const paneId = flag(argv, "--pane");
+    if (command === 'start') {
+      const paneId = flag(argv, '--pane');
       const pane = paneId ? this.paneById(paneId) : undefined;
-      if (!pane) return fail("pane_not_found", `unknown pane ${paneId}`);
+      if (!pane) return fail('pane_not_found', `unknown pane ${paneId}`);
 
-      const separator = argv.indexOf("--");
+      const separator = argv.indexOf('--');
       const piArgs = separator >= 0 ? argv.slice(separator + 1) : [];
       const failure = this.alwaysFailStartWith ?? this.startFailures.shift();
       if (this.agentStartDelayMs > 0) {
         await this.delay(this.agentStartDelayMs);
       }
 
-      if (failure === "agent_kind_mismatch") {
+      if (failure === 'agent_kind_mismatch') {
         // A provider child can briefly own the pane before Pi claims it. The
         // launch already happened, so the agent exists — under the wrong kind.
         const agent: FakeAgent = {
           name: `provider-${pane.pane_id}`,
           paneId: pane.pane_id,
-          kind: "kiro",
-          status: "working",
+          kind: 'kiro',
+          status: 'working',
           stateChangeSeq: 1,
           interactiveReady: false,
           piArgs,
-          transcript: "",
+          transcript: '',
           turns: 0,
         };
         this.agents.set(agent.name, agent);
-        pane.agent = "kiro";
-        pane.agent_status = "working";
+        pane.agent = 'kiro';
+        pane.agent_status = 'working';
         this.track(
           this.delay(20).then(() => {
-            agent.kind = "pi";
-            agent.status = "idle";
+            agent.kind = 'pi';
+            agent.status = 'idle';
             agent.interactiveReady = true;
             agent.stateChangeSeq += 1;
-            pane.agent = "pi";
-            pane.agent_status = "idle";
+            pane.agent = 'pi';
+            pane.agent_status = 'idle';
           }),
         );
-        return fail("agent_kind_mismatch", "pane is running kiro, not pi");
+        return fail('agent_kind_mismatch', 'pane is running kiro, not pi');
       }
       if (failure) {
         return fail(
           failure,
-          `${failure} for pane ${pane.pane_id}: ${piArgs.join(" ")}`,
+          `${failure} for pane ${pane.pane_id}: ${piArgs.join(' ')}`,
         );
       }
 
       const agent: FakeAgent = {
         name: String(target),
         paneId: pane.pane_id,
-        kind: flag(argv, "--kind") ?? "pi",
-        status: "idle",
+        kind: flag(argv, '--kind') ?? 'pi',
+        status: 'idle',
         stateChangeSeq: 1,
         interactiveReady: true,
         piArgs,
-        transcript: "",
+        transcript: '',
         turns: 0,
-        ...(flag(piArgs, "--session")
-          ? { childSessionFile: flag(piArgs, "--session") }
+        ...(flag(piArgs, '--session')
+          ? { childSessionFile: flag(piArgs, '--session') }
           : {}),
       };
       this.agents.set(agent.name, agent);
@@ -790,45 +801,45 @@ export class FakeHerdr {
 
     const agent = this.resolveAgent(String(target));
 
-    if (command === "rename") {
-      if (!agent) return fail("agent_not_found", `unknown agent ${target}`);
+    if (command === 'rename') {
+      if (!agent) return fail('agent_not_found', `unknown agent ${target}`);
       this.agents.delete(agent.name);
       agent.name = String(argv[3]);
       this.agents.set(agent.name, agent);
       return ok({ agent: this.agentJson(agent) });
     }
 
-    if (command === "get") {
-      if (!agent) return fail("agent_not_found", `unknown agent ${target}`);
+    if (command === 'get') {
+      if (!agent) return fail('agent_not_found', `unknown agent ${target}`);
       return ok({ agent: this.agentJson(agent) });
     }
 
-    if (command === "prompt") {
-      if (!agent) return fail("agent_not_found", `unknown agent ${target}`);
+    if (command === 'prompt') {
+      if (!agent) return fail('agent_not_found', `unknown agent ${target}`);
       this.track(this.runPrompt(agent, String(argv[3])));
       return ok({ submitted: true });
     }
 
-    if (command === "send-keys") {
-      if (!agent) return fail("agent_not_found", `unknown agent ${target}`);
+    if (command === 'send-keys') {
+      if (!agent) return fail('agent_not_found', `unknown agent ${target}`);
       return ok({ sent: argv.slice(3) });
     }
 
-    if (command === "wait") {
-      if (!agent) return fail("agent_not_found", `unknown agent ${target}`);
-      const requested = Number(flag(argv, "--timeout") ?? 30000);
+    if (command === 'wait') {
+      if (!agent) return fail('agent_not_found', `unknown agent ${target}`);
+      const requested = Number(flag(argv, '--timeout') ?? 30000);
       return this.waitForAgent(
         agent,
         Math.min(requested, this.waitTimeoutCapMs),
       );
     }
 
-    if (command === "read") {
-      if (!agent) return fail("agent_not_found", `unknown agent ${target}`);
+    if (command === 'read') {
+      if (!agent) return fail('agent_not_found', `unknown agent ${target}`);
       return { stdout: agent.transcript };
     }
 
-    if (command === "focus") {
+    if (command === 'focus') {
       const pane = this.paneById(String(target));
       for (const item of this.panes) {
         item.focused = item.pane_id === pane?.pane_id;
@@ -836,7 +847,7 @@ export class FakeHerdr {
       return ok({ focused: target });
     }
 
-    return fail("unknown_command", `unknown agent command: ${command}`);
+    return fail('unknown_command', `unknown agent command: ${command}`);
   }
 
   private async runPrompt(agent: FakeAgent, prompt: string): Promise<void> {
@@ -855,25 +866,25 @@ export class FakeHerdr {
       // Hold the previous turn's status and seq so the extension cannot mistake
       // them for acceptance of this prompt.
       if (outcome.staleWindowMs) await this.delay(outcome.staleWindowMs);
-      this.setStatus(agent, "working");
+      this.setStatus(agent, 'working');
       await this.delay(outcome.delayMs ?? DEFAULT_WORKING_MS);
       if (outcome.neverSettle) return;
 
       if (turn.resultFile) {
         if (outcome.question !== undefined) {
           await fs.writeFile(
-            path.join(path.dirname(turn.resultFile), "question.md"),
+            path.join(path.dirname(turn.resultFile), 'question.md'),
             outcome.question,
-            "utf8",
+            'utf8',
           );
         }
         if (outcome.result !== undefined) {
-          await fs.writeFile(turn.resultFile, outcome.result, "utf8");
+          await fs.writeFile(turn.resultFile, outcome.result, 'utf8');
         }
         await this.captureChildSession(agent);
       }
       agent.transcript = outcome.transcript ?? agent.transcript;
-      this.setStatus(agent, outcome.settleStatus ?? "idle");
+      this.setStatus(agent, outcome.settleStatus ?? 'idle');
       agent.completionSeq = agent.stateChangeSeq;
     };
 
@@ -897,9 +908,9 @@ export class FakeHerdr {
     let sessionId = agent.childSessionId;
     if (sessionFile && !sessionId) {
       try {
-        const first = (await fs.readFile(sessionFile, "utf8")).split("\n")[0];
+        const first = (await fs.readFile(sessionFile, 'utf8')).split('\n')[0];
         const parsed = JSON.parse(first) as { id?: unknown };
-        if (typeof parsed.id === "string") sessionId = parsed.id;
+        if (typeof parsed.id === 'string') sessionId = parsed.id;
       } catch {
         // Fall through and create a header below.
       }
@@ -907,7 +918,7 @@ export class FakeHerdr {
     sessionId ??= randomUUID();
     sessionFile ??= path.join(
       path.dirname(path.dirname(metaPath)),
-      "herdr-pi-sessions",
+      'herdr-pi-sessions',
       `${sessionId}.jsonl`,
     );
     agent.childSessionId = sessionId;
@@ -919,13 +930,13 @@ export class FakeHerdr {
       await fs.writeFile(
         sessionFile,
         `${JSON.stringify({
-          type: "session",
+          type: 'session',
           version: 3,
           id: sessionId,
           timestamp: new Date().toISOString(),
           cwd,
         })}\n`,
-        { encoding: "utf8", mode: 0o600 },
+        { encoding: 'utf8', mode: 0o600 },
       );
     }
     await fs.mkdir(path.dirname(metaPath), { recursive: true });
@@ -937,7 +948,7 @@ export class FakeHerdr {
         cwd,
         updatedAt: new Date().toISOString(),
       })}\n`,
-      { encoding: "utf8", mode: 0o600 },
+      { encoding: 'utf8', mode: 0o600 },
     );
   }
 
@@ -946,9 +957,9 @@ export class FakeHerdr {
     timeoutMs: number,
   ): Promise<CliResponse> {
     const deadline = Date.now() + timeoutMs;
-    while (agent.status !== "idle" && agent.status !== "done") {
+    while (agent.status !== 'idle' && agent.status !== 'done') {
       if (Date.now() >= deadline) {
-        return fail("timeout", `agent ${agent.name} did not settle`);
+        return fail('timeout', `agent ${agent.name} did not settle`);
       }
       await this.delay(5);
     }
@@ -999,19 +1010,19 @@ export class FakeHerdr {
     node: LayoutNode,
     targetPaneId: string,
     split: {
-      direction: "right" | "down";
+      direction: 'right' | 'down';
       ratio: number;
       newPaneId: string;
     },
   ): LayoutNode {
-    if (node.type === "pane") {
+    if (node.type === 'pane') {
       if (node.pane_id !== targetPaneId) return node;
       return {
-        type: "split",
+        type: 'split',
         direction: split.direction,
         ratio: split.ratio,
         first: node,
-        second: { type: "pane", pane_id: split.newPaneId },
+        second: { type: 'pane', pane_id: split.newPaneId },
       };
     }
     return {
@@ -1025,7 +1036,7 @@ export class FakeHerdr {
     node: LayoutNode,
     paneId: string,
   ): LayoutNode | undefined {
-    if (node.type === "pane") {
+    if (node.type === 'pane') {
       return node.pane_id === paneId ? undefined : node;
     }
     const first = this.removeFromNode(node.first, paneId);
@@ -1039,9 +1050,9 @@ export class FakeHerdr {
     node: LayoutNode,
     rect = { x: 0, y: 0, ...VIEWPORT },
   ): Array<{ pane_id: string; rect: typeof rect }> {
-    if (node.type === "pane") return [{ pane_id: node.pane_id, rect }];
+    if (node.type === 'pane') return [{ pane_id: node.pane_id, rect }];
 
-    if (node.direction === "right") {
+    if (node.direction === 'right') {
       const width = Math.round(rect.width * node.ratio);
       return [
         ...this.computeRects(node.first, { ...rect, width }),

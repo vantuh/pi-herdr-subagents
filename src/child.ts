@@ -1,9 +1,10 @@
 import type {
   ExtensionAPI,
   ExtensionContext,
-} from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
-import { getCurrentContext } from "./herdr.ts";
+} from '@earendil-works/pi-coding-agent';
+import { Type } from 'typebox';
+
+import { getCurrentContext } from './herdr.ts';
 import {
   ASK_QUESTION_TOOL,
   assistantText,
@@ -12,7 +13,7 @@ import {
   writeAgentQuestion,
   writeAgentResult,
   writeAgentSessionMeta,
-} from "./utils.ts";
+} from './utils.ts';
 
 export async function captureChildSessionMeta(
   ctx: ExtensionContext,
@@ -63,19 +64,19 @@ async function mirrorPaneLabelAsSessionName(pi: ExtensionAPI): Promise<void> {
 export function registerChildMode(pi: ExtensionAPI): void {
   let resultFile: string | undefined;
 
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on('session_start', async (_event, ctx) => {
     await captureChildSessionMeta(ctx);
     await mirrorPaneLabelAsSessionName(pi);
   });
 
-  pi.on("before_agent_start", async (event) => {
-    if (event.messageType === "user") {
+  pi.on('before_agent_start', async (event) => {
+    if (event.messageType === 'user') {
       resultFile = findResultFileMarker(event.prompt);
     }
   });
 
-  pi.on("message_end", async (event, ctx) => {
-    if (!resultFile || event.message.role !== "assistant") return;
+  pi.on('message_end', async (event, ctx) => {
+    if (!resultFile || event.message.role !== 'assistant') return;
     const output = assistantText(event.message);
     if (output.trim()) await writeAgentResult(resultFile, output);
     await captureChildSessionMeta(ctx);
@@ -83,20 +84,20 @@ export function registerChildMode(pi: ExtensionAPI): void {
 
   pi.registerTool({
     name: ASK_QUESTION_TOOL,
-    label: "Ask Orchestrator",
-    exposure: "model-only",
+    label: 'Ask Orchestrator',
+    exposure: 'model-only',
     description:
-      "Ask the Orchestrator one question when requirements are ambiguous or a decision would materially change scope. End your turn immediately after calling this; the answer arrives as your next prompt.",
+      'Ask the Orchestrator one question when requirements are ambiguous or a decision would materially change scope. End your turn immediately after calling this; the answer arrives as your next prompt.',
     promptSnippet:
-      "Ask the Orchestrator a single clarifying question instead of guessing.",
+      'Ask the Orchestrator a single clarifying question instead of guessing.',
     promptGuidelines: [
-      "Call ask_question only for genuine ambiguity or a scope-changing decision, not for details you can settle by reading the repo.",
-      "After ask_question, end the turn immediately: no other tool calls and no HERDR_RESULT.",
+      'Call ask_question only for genuine ambiguity or a scope-changing decision, not for details you can settle by reading the repo.',
+      'After ask_question, end the turn immediately: no other tool calls and no HERDR_RESULT.',
     ],
     parameters: Type.Object({
       question: Type.String({
         description:
-          "One specific question. Include the options you see and what you would pick by default.",
+          'One specific question. Include the options you see and what you would pick by default.',
       }),
     }),
 
@@ -104,7 +105,7 @@ export function registerChildMode(pi: ExtensionAPI): void {
       const question = params.question.trim();
       if (!question) {
         return {
-          content: [{ type: "text", text: "question must not be empty." }],
+          content: [{ type: 'text', text: 'question must not be empty.' }],
           isError: true,
         };
       }
@@ -116,8 +117,8 @@ export function registerChildMode(pi: ExtensionAPI): void {
         return {
           content: [
             {
-              type: "text",
-              text: "No Orchestrator channel is available in this session, so the question cannot be delivered. Decide yourself, state the assumption you made, and continue.",
+              type: 'text',
+              text: 'No Orchestrator channel is available in this session, so the question cannot be delivered. Decide yourself, state the assumption you made, and continue.',
             },
           ],
           isError: true,
@@ -129,8 +130,8 @@ export function registerChildMode(pi: ExtensionAPI): void {
       return {
         content: [
           {
-            type: "text",
-            text: "Question sent to the Orchestrator. The answer will arrive as your next prompt.",
+            type: 'text',
+            text: 'Question sent to the Orchestrator. The answer will arrive as your next prompt.',
           },
         ],
         details: { delivered: true },

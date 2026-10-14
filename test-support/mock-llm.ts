@@ -1,5 +1,5 @@
-import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 
 /**
  * Scripted OpenAI-compatible model server for the e2e harness.
@@ -32,35 +32,35 @@ export interface MockRequestBody {
 }
 
 export const DEFAULT_RESULT_TEXT = [
-  "HERDR_RESULT:",
-  "- status: done",
-  "- summary: MOCK_CHILD_OK",
-  "- evidence: none",
-  "- changes: none",
-  "- next: none",
-].join("\n");
+  'HERDR_RESULT:',
+  '- status: done',
+  '- summary: MOCK_CHILD_OK',
+  '- evidence: none',
+  '- changes: none',
+  '- next: none',
+].join('\n');
 
 /** Text of the last user message, flattened across content parts. */
 export function lastUserText(body: MockRequestBody): string {
   const last = [...(body.messages ?? [])]
     .reverse()
-    .find((message) => message.role === "user");
-  if (typeof last?.content === "string") return last.content;
-  if (!Array.isArray(last?.content)) return "";
+    .find((message) => message.role === 'user');
+  if (typeof last?.content === 'string') return last.content;
+  if (!Array.isArray(last?.content)) return '';
   return last.content
-    .map((part) => (part as { text?: string }).text ?? "")
-    .join("\n");
+    .map((part) => (part as { text?: string }).text ?? '')
+    .join('\n');
 }
 
 /** True when the last message is a tool result, i.e. mid-turn continuation. */
 export function isToolFollowUp(body: MockRequestBody): boolean {
   const messages = body.messages ?? [];
   const last = messages[messages.length - 1];
-  if (last?.role === "tool") return true;
+  if (last?.role === 'tool') return true;
   return (
     Array.isArray(last?.content) &&
     last.content.some(
-      (part) => (part as { type?: string }).type === "toolResult",
+      (part) => (part as { type?: string }).type === 'toolResult',
     )
   );
 }
@@ -72,14 +72,13 @@ export function offeredTools(body: MockRequestBody): string[] {
     .filter((name): name is string => !!name);
 }
 
-const sleep = (ms: number) =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export class MockLlm {
   readonly requests: MockRequestBody[] = [];
   private script: MockLlmScript = () => ({ text: DEFAULT_RESULT_TEXT });
   private server?: Server;
-  private baseUrlValue = "";
+  private baseUrlValue = '';
 
   get baseUrl(): string {
     return this.baseUrlValue;
@@ -96,17 +95,17 @@ export class MockLlm {
 
   async start(): Promise<string> {
     this.server = createServer((req, res) => {
-      let raw = "";
-      req.on("data", (chunk) => {
+      let raw = '';
+      req.on('data', (chunk) => {
         raw += chunk;
       });
-      req.on("end", () => {
+      req.on('end', () => {
         void this.respond(raw, res);
       });
     });
 
     await new Promise<void>((resolve) =>
-      this.server?.listen(0, "127.0.0.1", resolve),
+      this.server?.listen(0, '127.0.0.1', resolve),
     );
     const { port } = this.server?.address() as AddressInfo;
     this.baseUrlValue = `http://127.0.0.1:${port}`;
@@ -122,7 +121,7 @@ export class MockLlm {
 
   private async respond(
     raw: string,
-    res: import("node:http").ServerResponse,
+    res: import('node:http').ServerResponse,
   ): Promise<void> {
     let body: MockRequestBody = {};
     try {
@@ -136,9 +135,9 @@ export class MockLlm {
     const reply = await this.script(body, index);
     const base = {
       id: `chatcmpl-mock-${index}`,
-      object: "chat.completion.chunk",
+      object: 'chat.completion.chunk',
       created: 0,
-      model: body.model ?? "mock-model",
+      model: body.model ?? 'mock-model',
     };
     const usage = {
       prompt_tokens: 1,
@@ -154,7 +153,7 @@ export class MockLlm {
           {
             index: 0,
             id: `call_${index}`,
-            type: "function",
+            type: 'function',
             function: {
               name: reply.toolCall.name,
               arguments: JSON.stringify(reply.toolCall.args),
@@ -163,26 +162,26 @@ export class MockLlm {
         ],
       });
     }
-    const finishReason = reply.toolCall ? "tool_calls" : "stop";
+    const finishReason = reply.toolCall ? 'tool_calls' : 'stop';
 
     if (!body.stream) {
-      res.writeHead(200, { "content-type": "application/json" });
+      res.writeHead(200, { 'content-type': 'application/json' });
       res.end(
         JSON.stringify({
           ...base,
-          object: "chat.completion",
+          object: 'chat.completion',
           choices: [
             {
               index: 0,
               message: {
-                role: "assistant",
-                content: reply.text ?? "",
+                role: 'assistant',
+                content: reply.text ?? '',
                 ...(reply.toolCall
                   ? {
                       tool_calls: [
                         {
                           id: `call_${index}`,
-                          type: "function",
+                          type: 'function',
                           function: {
                             name: reply.toolCall.name,
                             arguments: JSON.stringify(reply.toolCall.args),
@@ -202,9 +201,9 @@ export class MockLlm {
     }
 
     res.writeHead(200, {
-      "content-type": "text/event-stream",
-      "cache-control": "no-cache",
-      connection: "keep-alive",
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-cache',
+      connection: 'keep-alive',
     });
     const send = (chunk: unknown) =>
       res.write(`data: ${JSON.stringify(chunk)}\n\n`);
@@ -212,16 +211,23 @@ export class MockLlm {
     send({
       ...base,
       choices: [
-        { index: 0, delta: { role: "assistant", content: "" }, finish_reason: null },
+        {
+          index: 0,
+          delta: { role: 'assistant', content: '' },
+          finish_reason: null,
+        },
       ],
     });
     await sleep(reply.delayMs ?? 1500);
     for (const delta of deltas) {
       send({ ...base, choices: [{ index: 0, delta, finish_reason: null }] });
     }
-    send({ ...base, choices: [{ index: 0, delta: {}, finish_reason: finishReason }] });
+    send({
+      ...base,
+      choices: [{ index: 0, delta: {}, finish_reason: finishReason }],
+    });
     send({ ...base, choices: [], usage });
-    res.write("data: [DONE]\n\n");
+    res.write('data: [DONE]\n\n');
     res.end();
   }
 }

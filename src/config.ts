@@ -1,12 +1,14 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import type { HerdrAgentLayout } from "./types.ts";
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
-export const DEFAULT_HERDR_AGENTS_LAYOUT: HerdrAgentLayout = "workspace";
-export const DEFAULT_AGENTS_WORKSPACE_LABEL = "subagents";
+import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
-export const HERDR_AGENTS_CONFIG_FILE = "herdr-agents.json";
+import type { HerdrAgentLayout } from './types.ts';
+
+export const DEFAULT_HERDR_AGENTS_LAYOUT: HerdrAgentLayout = 'workspace';
+export const DEFAULT_AGENTS_WORKSPACE_LABEL = 'subagents';
+
+export const HERDR_AGENTS_CONFIG_FILE = 'herdr-agents.json';
 
 /**
  * User configuration, read from `herdr-agents.json` in the Pi agent dir
@@ -27,13 +29,15 @@ export interface HerdrAgentsConfig {
   };
 }
 
-export function herdrAgentsConfigPath(agentDir: string = getAgentDir()): string {
+export function herdrAgentsConfigPath(
+  agentDir: string = getAgentDir(),
+): string {
   return join(agentDir, HERDR_AGENTS_CONFIG_FILE);
 }
 
 function normalizeLayout(value: unknown): HerdrAgentLayout | undefined {
-  const trimmed = typeof value === "string" ? value.trim().toLowerCase() : "";
-  return trimmed === "tab" || trimmed === "pane" || trimmed === "workspace"
+  const trimmed = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return trimmed === 'tab' || trimmed === 'pane' || trimmed === 'workspace'
     ? trimmed
     : undefined;
 }
@@ -44,7 +48,7 @@ export async function loadHerdrAgentsConfig(
 ): Promise<HerdrAgentsConfig> {
   let raw: string;
   try {
-    raw = await readFile(path, "utf8");
+    raw = await readFile(path, 'utf8');
   } catch {
     return {};
   }
@@ -54,7 +58,7 @@ export async function loadHerdrAgentsConfig(
   } catch {
     return {};
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return {};
   }
   const config = parsed as HerdrAgentsConfig;
@@ -62,7 +66,7 @@ export async function loadHerdrAgentsConfig(
   const label = config.workspace?.label;
   return {
     ...(layout ? { layout } : {}),
-    ...(typeof label === "string" ? { workspace: { label } } : {}),
+    ...(typeof label === 'string' ? { workspace: { label } } : {}),
   };
 }
 
@@ -90,19 +94,19 @@ export interface CouncilConfig {
  * /council command can warn instead of injecting a broken spawn contract.
  */
 export async function readCouncilConfig(
-  path: string = join(getAgentDir(), "council.json"),
+  path: string = join(getAgentDir(), 'council.json'),
 ): Promise<CouncilConfig> {
   try {
-    const raw = await readFile(path, "utf8");
+    const raw = await readFile(path, 'utf8');
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw);
     } catch {
-      return { models: [], error: "not valid JSON" };
+      return { models: [], error: 'not valid JSON' };
     }
     if (
       !parsed ||
-      typeof parsed !== "object" ||
+      typeof parsed !== 'object' ||
       !Array.isArray((parsed as { models?: unknown }).models)
     ) {
       return { models: [] };
@@ -112,13 +116,13 @@ export async function readCouncilConfig(
         ((parsed as { models: unknown[] }).models as unknown[])
           .filter(
             (model): model is string =>
-              typeof model === "string" && model.trim().length > 0,
+              typeof model === 'string' && model.trim().length > 0,
           )
           .map((model) => model.trim()),
       ),
     ];
     return { models };
   } catch {
-    return { models: [], error: "unreadable" };
+    return { models: [], error: 'unreadable' };
   }
 }

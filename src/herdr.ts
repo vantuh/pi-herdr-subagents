@@ -1,6 +1,11 @@
-import { execFile } from "node:child_process";
-import { createConnection } from "node:net";
-import { isAgentOwnedBy, paneStateKey, type HerdrAgentsState } from "./state.ts";
+import { execFile } from 'node:child_process';
+import { createConnection } from 'node:net';
+
+import {
+  isAgentOwnedBy,
+  paneStateKey,
+  type HerdrAgentsState,
+} from './state.ts';
 import type {
   HerdrAgentInfo,
   HerdrContext,
@@ -9,8 +14,8 @@ import type {
   ReusableAgentTab,
   TabInfo,
   WorkspaceInfo,
-} from "./types.ts";
-import { isManagedHerdrTempPath, SESSION_META_ENV } from "./utils.ts";
+} from './types.ts';
+import { isManagedHerdrTempPath, SESSION_META_ENV } from './utils.ts';
 
 export class HerdrCliError extends Error {
   constructor(
@@ -19,55 +24,55 @@ export class HerdrCliError extends Error {
     readonly args: readonly string[],
   ) {
     super(message);
-    this.name = "HerdrCliError";
+    this.name = 'HerdrCliError';
   }
 }
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
-      reject(new Error("Aborted"));
+      reject(new Error('Aborted'));
       return;
     }
     const onAbort = () => {
       clearTimeout(timer);
-      reject(new Error("Aborted"));
+      reject(new Error('Aborted'));
     };
     const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
+      signal?.removeEventListener('abort', onAbort);
       resolve();
     }, ms);
-    signal?.addEventListener("abort", onAbort, { once: true });
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 
 const SENSITIVE_AGENT_START_FLAGS = new Set([
-  "--session",
-  "--system-prompt",
-  "--append-system-prompt",
+  '--session',
+  '--system-prompt',
+  '--append-system-prompt',
 ]);
 
 export function redactHerdrArgs(args: readonly string[]): string[] {
   const redacted = [...args];
   if (
-    redacted[0] === "agent" &&
-    redacted[1] === "prompt" &&
+    redacted[0] === 'agent' &&
+    redacted[1] === 'prompt' &&
     redacted.length >= 4
   ) {
-    redacted[3] = "<prompt>";
+    redacted[3] = '<prompt>';
   }
   for (let i = 0; i < redacted.length; i++) {
     const current = redacted[i];
     const next = redacted[i + 1];
     if (SENSITIVE_AGENT_START_FLAGS.has(current) && next !== undefined) {
-      redacted[i + 1] = "<redacted>";
+      redacted[i + 1] = '<redacted>';
       i += 1;
       continue;
     }
-    if (current === "--env" && next !== undefined) {
-      const eq = next.indexOf("=");
+    if (current === '--env' && next !== undefined) {
+      const eq = next.indexOf('=');
       const key = eq >= 0 ? next.slice(0, eq) : next;
-      const value = eq >= 0 ? next.slice(eq + 1) : "";
+      const value = eq >= 0 ? next.slice(eq + 1) : '';
       if (
         key === SESSION_META_ENV ||
         isSensitivePath(value) ||
@@ -79,7 +84,7 @@ export function redactHerdrArgs(args: readonly string[]): string[] {
       continue;
     }
     if (isSensitivePath(current) || isManagedHerdrTempPath(current)) {
-      redacted[i] = "<path>";
+      redacted[i] = '<path>';
     }
   }
   return redacted;
@@ -88,12 +93,12 @@ export function redactHerdrArgs(args: readonly string[]): string[] {
 function isSensitivePath(value: string): boolean {
   if (!value) return false;
   if (
-    value.includes(".jsonl") &&
-    (value.startsWith("/") || value.includes("\\"))
+    value.includes('.jsonl') &&
+    (value.startsWith('/') || value.includes('\\'))
   ) {
     return true;
   }
-  return value.includes("herdr-agent-") || value.includes("herdr-pi-sessions");
+  return value.includes('herdr-agent-') || value.includes('herdr-pi-sessions');
 }
 
 export function sensitiveArgValues(args: readonly string[]): string[] {
@@ -106,8 +111,8 @@ export function sensitiveArgValues(args: readonly string[]): string[] {
       i += 1;
       continue;
     }
-    if (current === "--env" && next !== undefined) {
-      const eq = next.indexOf("=");
+    if (current === '--env' && next !== undefined) {
+      const eq = next.indexOf('=');
       if (eq >= 0) values.push(next.slice(eq + 1));
       i += 1;
       continue;
@@ -122,11 +127,11 @@ export function sensitiveArgValues(args: readonly string[]): string[] {
 }
 
 function replacementForSensitiveValue(value: string): string {
-  if (value.includes("herdr-agent-")) return "<temp>";
-  if (value.includes(".jsonl") || value.includes("herdr-pi-sessions")) {
-    return "<session>";
+  if (value.includes('herdr-agent-')) return '<temp>';
+  if (value.includes('.jsonl') || value.includes('herdr-pi-sessions')) {
+    return '<session>';
   }
-  return "<redacted>";
+  return '<redacted>';
 }
 
 export function sanitizeHerdrOutput(
@@ -173,11 +178,11 @@ export function execHerdr(
   return new Promise((resolve, reject) => {
     let onAbort: (() => void) | undefined;
     const cleanup = () => {
-      if (onAbort) signal?.removeEventListener("abort", onAbort);
+      if (onAbort) signal?.removeEventListener('abort', onAbort);
     };
 
     const proc = execFile(
-      process.env.HERDR_BIN_PATH || "herdr",
+      process.env.HERDR_BIN_PATH || 'herdr',
       args,
       { signal, maxBuffer: 10 * 1024 * 1024 },
       (error, stdout, stderr) => {
@@ -186,12 +191,12 @@ export function execHerdr(
           const parsed = parseHerdrError(stderr?.trim(), error.message);
           const sensitive = sensitiveArgValues(args);
           const safeArgs = redactHerdrArgs(args);
-          const code = parsed.code ? ` [${parsed.code}]` : "";
+          const code = parsed.code ? ` [${parsed.code}]` : '';
           const safeMessage = sanitizeHerdrOutput(parsed.message, sensitive);
           reject(
             new HerdrCliError(
               sanitizeHerdrOutput(
-                `herdr ${safeArgs.join(" ")} failed${code}: ${safeMessage}`,
+                `herdr ${safeArgs.join(' ')} failed${code}: ${safeMessage}`,
                 sensitive,
               ),
               parsed.code,
@@ -206,9 +211,9 @@ export function execHerdr(
 
     if (signal) {
       onAbort = () => {
-        proc.kill("SIGTERM");
+        proc.kill('SIGTERM');
       };
-      signal.addEventListener("abort", onAbort, { once: true });
+      signal.addEventListener('abort', onAbort, { once: true });
     }
   });
 }
@@ -221,32 +226,32 @@ export function execHerdrApi(
   return new Promise((resolve, reject) => {
     const socketPath = process.env.HERDR_SOCKET_PATH;
     if (!socketPath) {
-      reject(new Error("HERDR_SOCKET_PATH is not set."));
+      reject(new Error('HERDR_SOCKET_PATH is not set.'));
       return;
     }
 
     const requestId = `herdr-agents:${process.pid}:${Date.now()}:${Math.random()}`;
     const socket = createConnection(socketPath);
-    let buffer = "";
+    let buffer = '';
     let settled = false;
 
     const finish = (error?: Error, value?: unknown) => {
       if (settled) return;
       settled = true;
-      signal?.removeEventListener("abort", onAbort);
+      signal?.removeEventListener('abort', onAbort);
       socket.destroy();
       if (error) reject(error);
       else resolve(value);
     };
-    const onAbort = () => finish(new Error("Aborted"));
+    const onAbort = () => finish(new Error('Aborted'));
 
-    socket.setEncoding("utf8");
-    socket.on("connect", () => {
+    socket.setEncoding('utf8');
+    socket.on('connect', () => {
       socket.write(`${JSON.stringify({ id: requestId, method, params })}\n`);
     });
-    socket.on("data", (chunk: string) => {
+    socket.on('data', (chunk: string) => {
       buffer += chunk;
-      const newline = buffer.indexOf("\n");
+      const newline = buffer.indexOf('\n');
       if (newline < 0) return;
 
       let response: {
@@ -267,11 +272,11 @@ export function execHerdrApi(
       }
       finish(undefined, response.result);
     });
-    socket.on("error", (error) => finish(error));
-    socket.on("end", () =>
+    socket.on('error', (error) => finish(error));
+    socket.on('end', () =>
       finish(new Error(`Herdr socket closed during ${method}.`)),
     );
-    signal?.addEventListener("abort", onAbort, { once: true });
+    signal?.addEventListener('abort', onAbort, { once: true });
     if (signal?.aborted) onAbort();
   });
 }
@@ -279,15 +284,16 @@ export function execHerdrApi(
 export async function getSessionSnapshot(
   signal?: AbortSignal,
 ): Promise<HerdrSessionSnapshot> {
-  const output = await execHerdr(["api", "snapshot"], signal);
+  const output = await execHerdr(['api', 'snapshot'], signal);
   const snapshot = JSON.parse(output)?.result?.snapshot as
-    HerdrSessionSnapshot | undefined;
+    | HerdrSessionSnapshot
+    | undefined;
   if (
     !snapshot ||
     !Array.isArray(snapshot.panes) ||
     !Array.isArray(snapshot.tabs)
   ) {
-    throw new Error("Malformed Herdr api snapshot response.");
+    throw new Error('Malformed Herdr api snapshot response.');
   }
   return snapshot;
 }
@@ -310,7 +316,7 @@ export async function getCurrentContext(
       ? panes.find((pane) => pane.pane_id === snapshot.focused_pane_id)
       : undefined) ??
     panes.find((pane) => pane.focused);
-  if (!currentPane) throw new Error("Could not find current Herdr pane.");
+  if (!currentPane) throw new Error('Could not find current Herdr pane.');
   return {
     panes,
     currentPane,
@@ -324,7 +330,7 @@ export async function listTabs(
   signal?: AbortSignal,
 ): Promise<TabInfo[]> {
   const output = await execHerdr(
-    ["tab", "list", "--workspace", workspaceId],
+    ['tab', 'list', '--workspace', workspaceId],
     signal,
   );
   return JSON.parse(output).result.tabs as TabInfo[];
@@ -341,19 +347,19 @@ export function parseWorkspaceListOutput(output: string): WorkspaceInfo[] {
   const workspaces = parsed.result?.workspaces;
   if (!Array.isArray(workspaces)) {
     throw new Error(
-      "Malformed Herdr workspace list output: expected result.workspaces.",
+      'Malformed Herdr workspace list output: expected result.workspaces.',
     );
   }
   return workspaces
     .filter(
       (item): item is WorkspaceInfo & { workspace_id: string } =>
         !!item &&
-        typeof item === "object" &&
-        typeof (item as WorkspaceInfo).workspace_id === "string",
+        typeof item === 'object' &&
+        typeof (item as WorkspaceInfo).workspace_id === 'string',
     )
     .map(({ workspace_id, label, focused }) => ({
       workspace_id,
-      ...(typeof label === "string" ? { label } : {}),
+      ...(typeof label === 'string' ? { label } : {}),
       ...(focused === true ? { focused: true } : {}),
     }));
 }
@@ -361,7 +367,9 @@ export function parseWorkspaceListOutput(output: string): WorkspaceInfo[] {
 export async function listWorkspaces(
   signal?: AbortSignal,
 ): Promise<WorkspaceInfo[]> {
-  return parseWorkspaceListOutput(await execHerdr(["workspace", "list"], signal));
+  return parseWorkspaceListOutput(
+    await execHerdr(['workspace', 'list'], signal),
+  );
 }
 
 /**
@@ -392,10 +400,10 @@ export function parseCreatedWorkspace(output: string): {
     const workspaceId = parsed.result?.workspace?.workspace_id;
     const rootTabId = parsed.result?.tab?.tab_id;
     return {
-      ...(typeof workspaceId === "string" && workspaceId.length > 0
+      ...(typeof workspaceId === 'string' && workspaceId.length > 0
         ? { workspaceId }
         : {}),
-      ...(typeof rootTabId === "string" && rootTabId.length > 0
+      ...(typeof rootTabId === 'string' && rootTabId.length > 0
         ? { rootTabId }
         : {}),
     };
@@ -425,12 +433,12 @@ export async function resolveAgentsWorkspace(
 
   const output = await execHerdr(
     [
-      "workspace",
-      "create",
-      "--label",
+      'workspace',
+      'create',
+      '--label',
       label,
-      ...(cwd ? ["--cwd", cwd] : []),
-      "--no-focus",
+      ...(cwd ? ['--cwd', cwd] : []),
+      '--no-focus',
     ],
     signal,
   );
@@ -462,14 +470,13 @@ export function buildAgentFinishedNotificationArgs(
   resultExcerpt: string,
 ): string[] {
   const trimmed = resultExcerpt.trim();
-  const body = trimmed.length > 400
-    ? `${trimmed.slice(0, 400).trimEnd()}…`
-    : trimmed;
+  const body =
+    trimmed.length > 400 ? `${trimmed.slice(0, 400).trimEnd()}…` : trimmed;
   return [
-    "notification",
-    "show",
+    'notification',
+    'show',
     `Pi · ${tabLabel} finished`,
-    "--body",
+    '--body',
     body || `${agent} finished with an empty result.`,
   ];
 }
@@ -489,7 +496,7 @@ export function choosePaneForTab(
   tabId: string,
 ): PaneInfo | undefined {
   const tabPanes = panes.filter((pane) => pane.tab_id === tabId);
-  return tabPanes.find((pane) => pane.agent === "pi") ?? tabPanes[0];
+  return tabPanes.find((pane) => pane.agent === 'pi') ?? tabPanes[0];
 }
 
 export function findReusableAgentTab(
@@ -505,14 +512,14 @@ export function findReusableAgentTab(
     if (record.tabLabel !== baseLabel) continue;
     // Only tab/workspace agents are reusable through this tab-based lookup;
     // pane-layout agents belong to the Orchestrator's own split column.
-    if (record.layout !== "tab" && record.layout !== "workspace") continue;
-    const terminalId = key.startsWith("terminal:")
-      ? key.slice("terminal:".length)
+    if (record.layout !== 'tab' && record.layout !== 'workspace') continue;
+    const terminalId = key.startsWith('terminal:')
+      ? key.slice('terminal:'.length)
       : undefined;
     const pane = terminalId
       ? context.panes.find((item) => item.terminal_id === terminalId)
       : undefined;
-    if (!pane || pane.agent !== "pi") continue;
+    if (!pane || pane.agent !== 'pi') continue;
     if (
       !isAgentOwnedBy(
         record,
@@ -534,7 +541,7 @@ export function findReusableAgentTab(
   for (const tab of tabs) {
     if (tab.label !== baseLabel || tab.tab_id === context.currentTab) continue;
     const pane = choosePaneForTab(context.panes, tab.tab_id);
-    if (!pane || pane.agent !== "pi") continue;
+    if (!pane || pane.agent !== 'pi') continue;
     const key = paneStateKey(pane);
     const record = key ? state.agents[key] : undefined;
     if (
@@ -561,7 +568,7 @@ export function findReusableAgentPane(
   return context.panes.find((pane) => {
     if (pane.workspace_id !== context.workspaceId) return false;
     if (pane.tab_id !== context.currentTab) return false;
-    if (pane.pane_id === context.currentPane.pane_id || pane.agent !== "pi") {
+    if (pane.pane_id === context.currentPane.pane_id || pane.agent !== 'pi') {
       return false;
     }
     const key = paneStateKey(pane);
@@ -578,7 +585,7 @@ export function findReusableAgentPane(
       return false;
     }
     return (
-      (record.layout === "pane" || record.layout === undefined) &&
+      (record.layout === 'pane' || record.layout === undefined) &&
       record.tabLabel === label
     );
   });
@@ -600,7 +607,7 @@ export function listManagedWorkspaceAgents(
     // are matched by record rather than by the current workspace id.
     if (
       pane.workspace_id !== context.workspaceId &&
-      record.layout !== "workspace"
+      record.layout !== 'workspace'
     ) {
       continue;
     }
@@ -617,17 +624,17 @@ export function listManagedWorkspaceAgents(
 
     agents.push({
       tabId: pane.tab_id,
-      tabLabel: record.tabLabel ?? pane.label ?? record.agent ?? "Agent",
+      tabLabel: record.tabLabel ?? pane.label ?? record.agent ?? 'Agent',
       paneId: pane.pane_id,
-      agent: record.agent ?? pane.agent ?? "pi",
+      agent: record.agent ?? pane.agent ?? 'pi',
       ...(record.automationName
         ? { automationName: record.automationName }
         : {}),
       ...(record.resultFile ? { resultFile: record.resultFile } : {}),
-      status: pane.agent_status ?? "unknown",
+      status: pane.agent_status ?? 'unknown',
       lifecycle: record.lifecycle,
       layout:
-        record.layout ?? (pane.tab_id === context.currentTab ? "pane" : "tab"),
+        record.layout ?? (pane.tab_id === context.currentTab ? 'pane' : 'tab'),
       cwd: pane.foreground_cwd ?? pane.cwd,
       ...(record.updatedAt ? { updatedAt: record.updatedAt } : {}),
       ...(record.spawnWarnings?.length
@@ -654,10 +661,10 @@ export function listManagedWorkspaceAgents(
 }
 
 export type PortableLayoutNode =
-  | { type: "pane"; pane_id?: string }
+  | { type: 'pane'; pane_id?: string }
   | {
-      type: "split";
-      direction: "right" | "down";
+      type: 'split';
+      direction: 'right' | 'down';
       ratio: number;
       first: PortableLayoutNode;
       second: PortableLayoutNode;
@@ -672,7 +679,7 @@ function countManagedPanes(
   node: PortableLayoutNode,
   managedPaneIds: ReadonlySet<string>,
 ): number {
-  if (node.type === "pane") {
+  if (node.type === 'pane') {
     return node.pane_id && managedPaneIds.has(node.pane_id) ? 1 : 0;
   }
   return (
@@ -688,13 +695,13 @@ export function buildEqualAgentSplitRatios(
   const updates: SplitRatioUpdate[] = [];
 
   const visit = (node: PortableLayoutNode, path: boolean[]) => {
-    if (node.type === "pane") return;
+    if (node.type === 'pane') return;
 
     const firstCount = countManagedPanes(node.first, managedPaneIds);
     const secondCount = countManagedPanes(node.second, managedPaneIds);
     const total = firstCount + secondCount;
 
-    if (node.direction === "down" && firstCount > 0 && secondCount > 0) {
+    if (node.direction === 'down' && firstCount > 0 && secondCount > 0) {
       updates.push({ path, ratio: firstCount / total });
     }
     if (firstCount > 0) visit(node.first, [...path, false]);
@@ -710,12 +717,12 @@ export async function exportPaneLayout(
   signal?: AbortSignal,
 ): Promise<{ tab_id: string; root: PortableLayoutNode }> {
   const result = (await execHerdrApi(
-    "layout.export",
+    'layout.export',
     { pane_id: paneId },
     signal,
   )) as { layout?: { tab_id?: string; root?: PortableLayoutNode } };
   if (!result.layout?.tab_id || !result.layout.root) {
-    throw new Error("Malformed Herdr layout.export response.");
+    throw new Error('Malformed Herdr layout.export response.');
   }
   return { tab_id: result.layout.tab_id, root: result.layout.root };
 }
@@ -727,7 +734,7 @@ export async function setLayoutSplitRatio(
   signal?: AbortSignal,
 ): Promise<void> {
   await execHerdrApi(
-    "layout.set_split_ratio",
+    'layout.set_split_ratio',
     { tab_id: tabId, path, ratio },
     signal,
   );
@@ -788,10 +795,15 @@ function parseAgentGetOutput(output: string): ParsedAgentGet {
 
   const raw = parsed.result?.agent;
   return {
-    agent: typeof raw?.agent === "string" ? raw.agent : undefined,
-    status: typeof raw?.agent_status === "string" ? raw.agent_status : undefined,
-    stateChangeSeq: typeof raw?.state_change_seq === "number" ? raw.state_change_seq : undefined,
-    completionSeq: typeof raw?.completion_seq === "number" ? raw.completion_seq : undefined,
+    agent: typeof raw?.agent === 'string' ? raw.agent : undefined,
+    status:
+      typeof raw?.agent_status === 'string' ? raw.agent_status : undefined,
+    stateChangeSeq:
+      typeof raw?.state_change_seq === 'number'
+        ? raw.state_change_seq
+        : undefined,
+    completionSeq:
+      typeof raw?.completion_seq === 'number' ? raw.completion_seq : undefined,
   };
 }
 
@@ -799,16 +811,16 @@ export function parseStartedAgentSnapshot(
   output: string,
 ): StartedAgentSnapshot {
   const parsed = parseAgentGetOutput(output);
-  if (typeof parsed.agent !== "string" || typeof parsed.status !== "string") {
+  if (typeof parsed.agent !== 'string' || typeof parsed.status !== 'string') {
     throw new Error(
-      "Malformed herdr agent get output: expected result.agent.agent and agent_status.",
+      'Malformed herdr agent get output: expected result.agent.agent and agent_status.',
     );
   }
   return { agent: parsed.agent, status: parsed.status };
 }
 
 export function buildAgentRenameArgs(target: string, name: string): string[] {
-  return ["agent", "rename", target, name];
+  return ['agent', 'rename', target, name];
 }
 
 export function startedAgentReady(
@@ -817,7 +829,7 @@ export function startedAgentReady(
 ): boolean {
   return (
     snapshot.agent === expectedAgent &&
-    (snapshot.status === "idle" || snapshot.status === "done")
+    (snapshot.status === 'idle' || snapshot.status === 'done')
   );
 }
 
@@ -831,7 +843,7 @@ async function waitForStartedAgent(
   while (true) {
     try {
       const snapshot = parseStartedAgentSnapshot(
-        await execHerdr(["agent", "get", paneId], signal),
+        await execHerdr(['agent', 'get', paneId], signal),
       );
       if (startedAgentReady(snapshot, expectedAgent)) return;
     } catch (error) {
@@ -854,27 +866,30 @@ export async function startAgent(
   signal?: AbortSignal,
 ): Promise<void> {
   const args = [
-    "agent",
-    "start",
+    'agent',
+    'start',
     name,
-    "--kind",
-    "pi",
-    "--pane",
+    '--kind',
+    'pi',
+    '--pane',
     paneId,
-    "--timeout",
-    "30000",
-    "--",
+    '--timeout',
+    '30000',
+    '--',
     ...piArgs,
   ];
   try {
     await execHerdr(args, signal);
   } catch (error) {
-    if (!(error instanceof HerdrCliError) || error.code !== "agent_kind_mismatch") {
+    if (
+      !(error instanceof HerdrCliError) ||
+      error.code !== 'agent_kind_mismatch'
+    ) {
       throw error;
     }
     // A Pi ACP provider can briefly own the foreground; the launch already happened.
     try {
-      await waitForStartedAgent(paneId, "pi", 30_000, signal);
+      await waitForStartedAgent(paneId, 'pi', 30_000, signal);
       await execHerdr(buildAgentRenameArgs(paneId, name), signal);
     } catch (settleError) {
       if (signal?.aborted) throw settleError;
@@ -894,7 +909,7 @@ export type HerdrAgentSnapshot = {
 };
 
 export function buildAgentPromptArgs(target: string, prompt: string): string[] {
-  return ["agent", "prompt", target, prompt];
+  return ['agent', 'prompt', target, prompt];
 }
 
 export function buildAgentWaitArgs(
@@ -902,19 +917,22 @@ export function buildAgentWaitArgs(
   timeoutMs: number,
   until: readonly string[],
 ): string[] {
-  const args = ["agent", "wait", target];
+  const args = ['agent', 'wait', target];
   for (const status of until) {
-    args.push("--until", status);
+    args.push('--until', status);
   }
-  args.push("--timeout", String(timeoutMs));
+  args.push('--timeout', String(timeoutMs));
   return args;
 }
 
 export function parseAgentSnapshot(output: string): HerdrAgentSnapshot {
   const parsed = parseAgentGetOutput(output);
-  if (typeof parsed.status !== "string" || typeof parsed.stateChangeSeq !== "number") {
+  if (
+    typeof parsed.status !== 'string' ||
+    typeof parsed.stateChangeSeq !== 'number'
+  ) {
     throw new Error(
-      "Malformed herdr agent get output: expected result.agent.agent_status and state_change_seq.",
+      'Malformed herdr agent get output: expected result.agent.agent_status and state_change_seq.',
     );
   }
   return {
@@ -928,19 +946,19 @@ export function parseAgentSnapshot(output: string): HerdrAgentSnapshot {
 export function promptAcceptanceObserved(
   before: HerdrAgentSnapshot,
   current: HerdrAgentSnapshot,
-): "working" | "settled" | null {
+): 'working' | 'settled' | null {
   if (
     current.stateChangeSeq > before.stateChangeSeq &&
-    (current.status === "working" || current.status === "blocked")
+    (current.status === 'working' || current.status === 'blocked')
   ) {
-    return "working";
+    return 'working';
   }
   if (
-    (current.status === "idle" || current.status === "done") &&
+    (current.status === 'idle' || current.status === 'done') &&
     current.completionSeq !== undefined &&
     current.completionSeq > (before.completionSeq ?? 0)
   ) {
-    return "settled";
+    return 'settled';
   }
   return null;
 }
@@ -949,14 +967,14 @@ export async function getAgentSnapshot(
   target: string,
   signal?: AbortSignal,
 ): Promise<HerdrAgentSnapshot> {
-  return parseAgentSnapshot(await execHerdr(["agent", "get", target], signal));
+  return parseAgentSnapshot(await execHerdr(['agent', 'get', target], signal));
 }
 
 async function waitForPromptAcceptance(
   target: string,
   before: HerdrAgentSnapshot,
   signal?: AbortSignal,
-): Promise<"working" | "settled"> {
+): Promise<'working' | 'settled'> {
   const deadline = Date.now() + PROMPT_ACCEPT_TIMEOUT_MS;
 
   while (true) {
@@ -967,8 +985,8 @@ async function waitForPromptAcceptance(
     if (Date.now() >= deadline) {
       throw new HerdrCliError(
         `herdr agent prompt ${target} <prompt> failed [agent_prompt_stalled]: no lifecycle change within ${PROMPT_ACCEPT_TIMEOUT_MS}ms after submit`,
-        "agent_prompt_stalled",
-        ["agent", "prompt", target, "<prompt>"],
+        'agent_prompt_stalled',
+        ['agent', 'prompt', target, '<prompt>'],
       );
     }
 
@@ -978,11 +996,11 @@ async function waitForPromptAcceptance(
 
 /** Report blocked dialogs without exposing the submitted prompt. */
 export function mapPromptError(error: unknown, target: string): never {
-  if (error instanceof HerdrCliError && error.code === "agent_blocked") {
+  if (error instanceof HerdrCliError && error.code === 'agent_blocked') {
     throw new HerdrCliError(
       `Herdr agent "${target}" is waiting at an approval/question dialog; attach with \`herdr agent attach ${target}\` and resolve it before re-prompting`,
-      "agent_blocked",
-      ["agent", "prompt", target, "<prompt>"],
+      'agent_blocked',
+      ['agent', 'prompt', target, '<prompt>'],
     );
   }
   throw error;
@@ -1008,7 +1026,7 @@ export async function promptAgent(
   if (!options.wait) return;
 
   const acceptance = await waitForPromptAcceptance(target, before, signal);
-  if (acceptance === "settled") return;
+  if (acceptance === 'settled') return;
 
   await waitForAgent(target, options.timeoutMs, signal);
 }
@@ -1019,7 +1037,7 @@ export async function waitForAgent(
   signal?: AbortSignal,
 ): Promise<void> {
   await execHerdr(
-    buildAgentWaitArgs(target, timeoutMs, ["idle", "done"]),
+    buildAgentWaitArgs(target, timeoutMs, ['idle', 'done']),
     signal,
   );
 }
@@ -1029,7 +1047,7 @@ export function readAgent(
   signal?: AbortSignal,
 ): Promise<string> {
   return execHerdr(
-    ["agent", "read", target, "--source", "recent-unwrapped", "--lines", "180"],
+    ['agent', 'read', target, '--source', 'recent-unwrapped', '--lines', '180'],
     signal,
   );
 }

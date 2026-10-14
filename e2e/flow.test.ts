@@ -1,13 +1,17 @@
-import assert from "node:assert/strict";
-import test from "node:test";
-import { exportPaneLayout } from "../src/herdr.ts";
-import { createE2eHarness, type E2eHarness } from "../test-support/e2e-harness.ts";
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import { exportPaneLayout } from '../src/herdr.ts';
+import {
+  createE2eHarness,
+  type E2eHarness,
+} from '../test-support/e2e-harness.ts';
 import {
   DEFAULT_RESULT_TEXT,
   isToolFollowUp,
   lastUserText,
   offeredTools,
-} from "../test-support/mock-llm.ts";
+} from '../test-support/mock-llm.ts';
 
 /**
  * End-to-end flows against a real Herdr server with real Pi children.
@@ -27,14 +31,14 @@ async function withE2e(
   }
 }
 
-test("spawns a real Pi child in a real pane, collects its result and closes the pane", async () => {
+test('spawns a real Pi child in a real pane, collects its result and closes the pane', async () => {
   await withE2e({}, async (harness) => {
     const before = await harness.snapshot();
     assert.equal(before.panes.length, 1);
 
     const result = await harness.call({
-      agent: "scout",
-      task: "Report the magic word.",
+      agent: 'scout',
+      task: 'Report the magic word.',
     });
 
     assert.equal(result.isError, undefined);
@@ -43,7 +47,7 @@ test("spawns a real Pi child in a real pane, collects its result and closes the 
 
     // The child really was a Pi process talking to the model.
     assert.ok(harness.llm.requests.length >= 1);
-    const prompt = harness.llm.requestsMentioning("Report the magic word.");
+    const prompt = harness.llm.requestsMentioning('Report the magic word.');
     assert.equal(prompt.length, 1);
 
     // The pane is gone again.
@@ -56,33 +60,54 @@ test("spawns a real Pi child in a real pane, collects its result and closes the 
   });
 });
 
-test("current Herdr starts Pi with one CLI call during cold-shell initialization", async () => {
+test('current Herdr starts Pi with one CLI call during cold-shell initialization', async () => {
   await withE2e({ coldShell: true }, async (harness) => {
     for (let index = 0; index < 3; index++) {
-      const created = JSON.parse(await harness.herdr([
-        "pane", "split", harness.orchestratorPaneId,
-        "--direction", "right", "--cwd", harness.cwd,
-        "--env", "HERDR_AGENT_CHILD=1",
-        "--env", "PROCESS_LAUNCHED_BY_Q=1",
-        "--no-focus",
-      ])).result.pane.pane_id;
+      const created = JSON.parse(
+        await harness.herdr([
+          'pane',
+          'split',
+          harness.orchestratorPaneId,
+          '--direction',
+          'right',
+          '--cwd',
+          harness.cwd,
+          '--env',
+          'HERDR_AGENT_CHILD=1',
+          '--env',
+          'PROCESS_LAUNCHED_BY_Q=1',
+          '--no-focus',
+        ]),
+      ).result.pane.pane_id;
       await harness.herdr([
-        "agent", "start", `cold_${index}`, "--kind", "pi",
-        "--pane", created, "--timeout", "30000", "--",
-        "--model", "mock/mock-model", "--thinking", "off",
+        'agent',
+        'start',
+        `cold_${index}`,
+        '--kind',
+        'pi',
+        '--pane',
+        created,
+        '--timeout',
+        '30000',
+        '--',
+        '--model',
+        'mock/mock-model',
+        '--thinking',
+        'off',
       ]);
-      const agent = JSON.parse(await harness.herdr(["agent", "get", created])).result.agent;
-      assert.equal(agent.agent, "pi");
-      assert.ok(["idle", "done"].includes(agent.agent_status));
-      await harness.herdr(["pane", "close", created]);
+      const agent = JSON.parse(await harness.herdr(['agent', 'get', created]))
+        .result.agent;
+      assert.equal(agent.agent, 'pi');
+      assert.ok(['idle', 'done'].includes(agent.agent_status));
+      await harness.herdr(['pane', 'close', created]);
     }
   });
 });
 
-test("collects a real fast completion without a duplicate Enter", async () => {
+test('collects a real fast completion without a duplicate Enter', async () => {
   await withE2e({}, async (harness) => {
     harness.llm.setScript(() => ({ text: DEFAULT_RESULT_TEXT, delayMs: 0 }));
-    const result = await harness.call({ agent: "scout", task: "Fast result." });
+    const result = await harness.call({ agent: 'scout', task: 'Fast result.' });
     assert.equal(result.isError, undefined);
     assert.equal(result.details.closed, true);
     assert.match(result.content[0].text, /MOCK_CHILD_OK/);
@@ -90,20 +115,20 @@ test("collects a real fast completion without a duplicate Enter", async () => {
   });
 });
 
-test("continues a closed one-shot via resumeClosed and keeps its context", async () => {
+test('continues a closed one-shot via resumeClosed and keeps its context', async () => {
   await withE2e({}, async (harness) => {
     const first = await harness.call({
-      agent: "scout",
-      task: "First slice: count the routers.",
-      tabLabel: "Scout E2E",
+      agent: 'scout',
+      task: 'First slice: count the routers.',
+      tabLabel: 'Scout E2E',
     });
     assert.match(first.content[0].text, /MOCK_CHILD_OK/);
     assert.equal(first.details.closed, true);
 
     const second = await harness.call({
-      agent: "scout",
-      task: "Second slice: now count the handlers.",
-      tabLabel: "Scout E2E",
+      agent: 'scout',
+      task: 'Second slice: now count the handlers.',
+      tabLabel: 'Scout E2E',
       resumeClosed: true,
     });
     assert.equal(second.details.resumed, true);
@@ -111,9 +136,9 @@ test("continues a closed one-shot via resumeClosed and keeps its context", async
     // The resumed child runs with the archived session, so the second
     // request carries the first turn's history.
     const secondRequest = harness.llm.requestsMentioning(
-      "Second slice: now count the handlers.",
+      'Second slice: now count the handlers.',
     )[0];
-    assert.ok(secondRequest, "expected the second task to reach the model");
+    assert.ok(secondRequest, 'expected the second task to reach the model');
     const history = JSON.stringify(secondRequest.messages);
     assert.match(history, /First slice: count the routers\./);
 
@@ -127,37 +152,37 @@ test("continues a closed one-shot via resumeClosed and keeps its context", async
   });
 });
 
-test("carries a real ask_question tool call from the child back to the Orchestrator", async () => {
+test('carries a real ask_question tool call from the child back to the Orchestrator', async () => {
   await withE2e(
-    { profiles: [{ name: "scout", tools: ["read"] }] },
+    { profiles: [{ name: 'scout', tools: ['read'] }] },
     async (harness) => {
       harness.llm.setScript((body) => {
         if (isToolFollowUp(body)) {
           return { text: "Waiting for the Orchestrator's answer." };
         }
-        if (lastUserText(body).includes("ANSWER:")) {
+        if (lastUserText(body).includes('ANSWER:')) {
           return { text: DEFAULT_RESULT_TEXT };
         }
         return {
           toolCall: {
-            name: "ask_question",
-            args: { question: "Cookie session or JWT?" },
+            name: 'ask_question',
+            args: { question: 'Cookie session or JWT?' },
           },
         };
       });
 
       const asked = await harness.call({
-        agent: "scout",
-        task: "Find the auth flow.",
+        agent: 'scout',
+        task: 'Find the auth flow.',
       });
 
-      assert.equal(asked.details.status, "question");
+      assert.equal(asked.details.status, 'question');
       assert.equal(asked.details.closed, false);
       assert.match(asked.content[0].text, /Cookie session or JWT\?/);
 
       // The restricted profile still got the question channel.
       assert.ok(
-        offeredTools(harness.llm.requests[0] ?? {}).includes("ask_question"),
+        offeredTools(harness.llm.requests[0] ?? {}).includes('ask_question'),
         `expected ask_question in ${JSON.stringify(offeredTools(harness.llm.requests[0] ?? {}))}`,
       );
 
@@ -166,9 +191,9 @@ test("carries a real ask_question tool call from the child back to the Orchestra
       assert.equal((await harness.snapshot()).panes.length, 2);
 
       const answered = await harness.call({
-        agent: "scout",
-        task: "ANSWER: cookie session.",
-        tabLabel: "Scout",
+        agent: 'scout',
+        task: 'ANSWER: cookie session.',
+        tabLabel: 'Scout',
       });
 
       assert.equal(harness.llm.requests.length, 2);
@@ -183,24 +208,24 @@ test("carries a real ask_question tool call from the child back to the Orchestra
   );
 });
 
-test("stacks two real agent panes into a single right column", async () => {
+test('stacks two real agent panes into a single right column', async () => {
   await withE2e({}, async (harness) => {
     // Children stall long enough to stay live while the layout is checked.
     harness.llm.setScript(() => ({
       delayMs: 30000,
-      text: "Still working.",
+      text: 'Still working.',
     }));
     // Detached spawns keep both children live while the layout is checked.
     await Promise.all([
       harness.callRaw({
-        agent: "scout",
-        task: "one",
-        tabLabel: "Scout One",
+        agent: 'scout',
+        task: 'one',
+        tabLabel: 'Scout One',
       }),
       harness.callRaw({
-        agent: "scout",
-        task: "two",
-        tabLabel: "Scout Two",
+        agent: 'scout',
+        task: 'two',
+        tabLabel: 'Scout Two',
       }),
     ]);
 
@@ -210,16 +235,16 @@ test("stacks two real agent panes into a single right column", async () => {
     assert.equal(new Set(snapshot.panes.map((pane) => pane.tab_id)).size, 1);
 
     const layout = await exportPaneLayout(harness.orchestratorPaneId);
-    assert.equal(layout.root.type, "split");
-    if (layout.root.type !== "split") return;
-    assert.equal(layout.root.direction, "right");
+    assert.equal(layout.root.type, 'split');
+    if (layout.root.type !== 'split') return;
+    assert.equal(layout.root.direction, 'right');
     assert.ok(
       Math.abs(layout.root.ratio - 0.6) < 0.02,
       `Orchestrator column should stay at 60%, got ${layout.root.ratio}`,
     );
-    assert.equal(layout.root.second.type, "split");
-    if (layout.root.second.type !== "split") return;
-    assert.equal(layout.root.second.direction, "down");
+    assert.equal(layout.root.second.type, 'split');
+    if (layout.root.second.type !== 'split') return;
+    assert.equal(layout.root.second.direction, 'down');
     // Rebalanced to equal halves.
     assert.ok(
       Math.abs(layout.root.second.ratio - 0.5) < 0.02,
@@ -234,8 +259,8 @@ test("delivers a detached real child's result and closes its pane on its own", a
   // artifact, push it into the session and close the real pane.
   await withE2e({}, async (harness) => {
     const started = await harness.call({
-      agent: "scout",
-      task: "Report the magic word.",
+      agent: 'scout',
+      task: 'Report the magic word.',
       wait: false,
     });
     assert.equal(started.details.waited, false);
@@ -243,57 +268,90 @@ test("delivers a detached real child's result and closes its pane on its own", a
 
     await harness.waitFor(
       () => harness.messages.length > 0,
-      "detached delivery from a real child",
+      'detached delivery from a real child',
       60000,
     );
 
     const [message] = harness.messages;
-    assert.equal(message?.customType, "herdr_agent_result");
-    assert.match(message?.content ?? "", /MOCK_CHILD_OK/);
+    assert.equal(message?.customType, 'herdr_agent_result');
+    assert.match(message?.content ?? '', /MOCK_CHILD_OK/);
     assert.equal(message?.triggerTurn, true);
 
     await harness.waitFor(
       async () => (await harness.snapshot()).panes.length === 1,
-      "the one-shot pane to be closed by the poller",
+      'the one-shot pane to be closed by the poller',
       15000,
     );
     assert.deepEqual((await harness.readState()).agents, {});
   });
 });
 
-test("batches a real detached result and question with one turn trigger", async () => {
+test('batches a real detached result and question with one turn trigger', async () => {
   await withE2e({}, async (harness) => {
     const replies = Promise.withResolvers<void>();
     harness.llm.setScript(async (body) => {
       await replies.promise;
-      return lastUserText(body).includes("QUESTION_BATCH")
-        ? { toolCall: { name: "ask_question", args: { question: "Batch decision?" } }, delayMs: 0 }
+      return lastUserText(body).includes('QUESTION_BATCH')
+        ? {
+            toolCall: {
+              name: 'ask_question',
+              args: { question: 'Batch decision?' },
+            },
+            delayMs: 0,
+          }
         : { text: DEFAULT_RESULT_TEXT, delayMs: 0 };
     });
     try {
       await Promise.all([
-        harness.callRaw({ agent: "scout", task: "RESULT_BATCH", tabLabel: "Batch Result" }),
-        harness.callRaw({ agent: "scout", task: "QUESTION_BATCH", tabLabel: "Batch Question" }),
+        harness.callRaw({
+          agent: 'scout',
+          task: 'RESULT_BATCH',
+          tabLabel: 'Batch Result',
+        }),
+        harness.callRaw({
+          agent: 'scout',
+          task: 'QUESTION_BATCH',
+          tabLabel: 'Batch Question',
+        }),
       ]);
-      await harness.waitFor(() => harness.llm.requests.length === 2, "both real children to start");
-      await harness.fire("session_shutdown");
+      await harness.waitFor(
+        () => harness.llm.requests.length === 2,
+        'both real children to start',
+      );
+      await harness.fire('session_shutdown');
       replies.resolve();
-      await harness.waitFor(async () => {
-        const children = (await harness.snapshot()).panes.filter(
-          (pane) => pane.pane_id !== harness.orchestratorPaneId,
-        );
-        return children.length === 2 &&
-          children.every((pane) => ["idle", "done"].includes(pane.agent_status ?? ""));
-      }, "both real children to settle", 60000);
-      await harness.fire("session_start");
-      await harness.waitFor(() => harness.messages.length === 2, "batched detached delivery");
-      assert.deepEqual(harness.messages.map((message) => message.triggerTurn), [undefined, true]);
-      assert.deepEqual(harness.messages.map((message) => message.customType).sort(),
-        ["herdr_agent_question", "herdr_agent_result"]);
+      await harness.waitFor(
+        async () => {
+          const children = (await harness.snapshot()).panes.filter(
+            (pane) => pane.pane_id !== harness.orchestratorPaneId,
+          );
+          return (
+            children.length === 2 &&
+            children.every((pane) =>
+              ['idle', 'done'].includes(pane.agent_status ?? ''),
+            )
+          );
+        },
+        'both real children to settle',
+        60000,
+      );
+      await harness.fire('session_start');
+      await harness.waitFor(
+        () => harness.messages.length === 2,
+        'batched detached delivery',
+      );
+      assert.deepEqual(
+        harness.messages.map((message) => message.triggerTurn),
+        [undefined, true],
+      );
+      assert.deepEqual(
+        harness.messages.map((message) => message.customType).sort(),
+        ['herdr_agent_question', 'herdr_agent_result'],
+      );
       assert.equal(harness.llm.requests.length, 2);
       const records = Object.values((await harness.readState()).agents);
       assert.equal(records.length, 1);
-      assert.equal(records[0]?.tabLabel, "Batch Question");
+      assert.equal(records[0]?.tabLabel, 'Batch Question');
       assert.equal(records[0]?.detached, undefined);
       assert.equal((await harness.snapshot()).panes.length, 2);
     } finally {
@@ -302,12 +360,12 @@ test("batches a real detached result and question with one turn trigger", async 
   });
 });
 
-test("resumes a closed real one-shot with prior conversation context", async () => {
+test('resumes a closed real one-shot with prior conversation context', async () => {
   await withE2e({}, async (harness) => {
     const first = await harness.call({
-      agent: "scout",
-      task: "Remember the token ALPHA-42.",
-      tabLabel: "Scout Resume E2E",
+      agent: 'scout',
+      task: 'Remember the token ALPHA-42.',
+      tabLabel: 'Scout Resume E2E',
     });
     assert.equal(first.isError, undefined);
     assert.equal(first.details.closed, true);
@@ -316,9 +374,9 @@ test("resumes a closed real one-shot with prior conversation context", async () 
     assert.ok(history[0]?.childSessionFile);
 
     const resumed = await harness.call({
-      agent: "scout",
-      task: "What token did I ask you to remember?",
-      tabLabel: "Scout Resume E2E",
+      agent: 'scout',
+      task: 'What token did I ask you to remember?',
+      tabLabel: 'Scout Resume E2E',
       resumeClosed: true,
     });
     assert.equal(resumed.isError, undefined);
@@ -326,22 +384,22 @@ test("resumes a closed real one-shot with prior conversation context", async () 
     assert.equal(resumed.details.closed, true);
 
     const secondRequest = harness.llm.requestsMentioning(
-      "What token did I ask you to remember?",
+      'What token did I ask you to remember?',
     )[0];
-    assert.ok(secondRequest, "expected the resumed task to reach the model");
+    assert.ok(secondRequest, 'expected the resumed task to reach the model');
     const historyText = JSON.stringify(secondRequest.messages);
     assert.match(historyText, /Remember the token ALPHA-42/);
   });
 });
 
 test("spawns a real child into the Agents workspace and never touches the Orchestrator's tab", async () => {
-  await withE2e({ layout: "workspace" }, async (harness) => {
+  await withE2e({ layout: 'workspace' }, async (harness) => {
     const before = await harness.snapshot();
     assert.equal(before.panes.length, 1);
 
     const result = await harness.call({
-      agent: "scout",
-      task: "Report the magic word.",
+      agent: 'scout',
+      task: 'Report the magic word.',
     });
 
     assert.equal(result.isError, undefined);
@@ -351,9 +409,9 @@ test("spawns a real child into the Agents workspace and never touches the Orches
     // The child ran in the dedicated Agents workspace, not beside the
     // Orchestrator. The spawn drops the empty root tab, and collection closes
     // the agent tab — real Herdr then removes the emptied workspace itself.
-    const workspaces = JSON.parse(await harness.herdr(["workspace", "list"]));
+    const workspaces = JSON.parse(await harness.herdr(['workspace', 'list']));
     const agentsWorkspace = (workspaces?.result?.workspaces ?? []).find(
-      (workspace: { label?: string }) => workspace.label === "subagents",
+      (workspace: { label?: string }) => workspace.label === 'subagents',
     );
     assert.equal(
       agentsWorkspace,
@@ -362,7 +420,7 @@ test("spawns a real child into the Agents workspace and never touches the Orches
     );
 
     const after = await harness.snapshot();
-    const orchestratorWsId = harness.orchestratorPaneId.split(":")[0];
+    const orchestratorWsId = harness.orchestratorPaneId.split(':')[0];
     assert.deepEqual(
       after.panes
         .filter((pane) => pane.workspace_id === orchestratorWsId)
@@ -373,7 +431,7 @@ test("spawns a real child into the Agents workspace and never touches the Orches
   });
 });
 
-test("delivers an unseen real child that finishes in the background", async () => {
+test('delivers an unseen real child that finishes in the background', async () => {
   // Real-Herdr coverage for background completion: nobody waits and the
   // child's tab is never focused by any UI. The poller has to notice the
   // settled child, read its artifact, push the result into the session and
@@ -381,10 +439,10 @@ test("delivers an unseen real child that finishes in the background", async () =
   // harness its seen/unseen heuristic is not deterministic run-to-run, so the
   // strict `done` semantics are pinned by the FakeHerdr integration test and
   // cross-checked here with a server-side wait witness.
-  await withE2e({ layout: "workspace" }, async (harness) => {
+  await withE2e({ layout: 'workspace' }, async (harness) => {
     const started = await harness.call({
-      agent: "scout",
-      task: "Report the magic word.",
+      agent: 'scout',
+      task: 'Report the magic word.',
       wait: false,
     });
     assert.equal(started.details.waited, false);
@@ -397,13 +455,13 @@ test("delivers an unseen real child that finishes in the background", async () =
     assert.ok(record?.automationName);
     const doneWitness = harness
       .herdr([
-        "agent",
-        "wait",
+        'agent',
+        'wait',
         record.automationName!,
-        "--until",
-        "done",
-        "--timeout",
-        "30000",
+        '--until',
+        'done',
+        '--timeout',
+        '30000',
       ])
       .then(() => true)
       .catch(() => false);
@@ -413,34 +471,37 @@ test("delivers an unseen real child that finishes in the background", async () =
       async () => {
         const snapshot = await harness.snapshot();
         for (const pane of snapshot.panes) {
-          if (pane.agent === "pi" && pane.pane_id !== harness.orchestratorPaneId) {
-            seenStatuses.add(pane.agent_status ?? "");
+          if (
+            pane.agent === 'pi' &&
+            pane.pane_id !== harness.orchestratorPaneId
+          ) {
+            seenStatuses.add(pane.agent_status ?? '');
           }
         }
         return harness.messages.length > 0;
       },
-      "detached delivery from an unseen real child",
+      'detached delivery from an unseen real child',
       60000,
     );
 
     // Whatever Herdr called the settled state, it was a finished one, and the
     // child really reached `done` server-side in the witnessed runs.
     assert.ok(
-      seenStatuses.has("done") ||
-        seenStatuses.has("idle") ||
+      seenStatuses.has('done') ||
+        seenStatuses.has('idle') ||
         (await doneWitness),
-      `expected a settled unseen child, saw: ${[...seenStatuses].join(", ") || "nothing"}`,
+      `expected a settled unseen child, saw: ${[...seenStatuses].join(', ') || 'nothing'}`,
     );
 
     const [message] = harness.messages;
-    assert.equal(message?.customType, "herdr_agent_result");
-    assert.match(message?.content ?? "", /MOCK_CHILD_OK/);
+    assert.equal(message?.customType, 'herdr_agent_result');
+    assert.match(message?.content ?? '', /MOCK_CHILD_OK/);
     assert.equal(message?.triggerTurn, true);
 
     await harness.waitFor(
       async () => {
         const snapshot = await harness.snapshot();
-        const orchestratorWsId = harness.orchestratorPaneId.split(":")[0];
+        const orchestratorWsId = harness.orchestratorPaneId.split(':')[0];
         const remaining = snapshot.panes.filter(
           (pane) =>
             pane.workspace_id === orchestratorWsId &&
@@ -448,7 +509,7 @@ test("delivers an unseen real child that finishes in the background", async () =
         );
         return remaining.length === 0;
       },
-      "the unseen one-shot tab to be closed by the poller",
+      'the unseen one-shot tab to be closed by the poller',
       15000,
     );
     assert.deepEqual((await harness.readState()).agents, {});

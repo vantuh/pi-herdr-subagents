@@ -1,6 +1,7 @@
-import assert from "node:assert/strict";
-import test from "node:test";
-import type { HerdrAgentInfo } from "../src/types.ts";
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import type { HerdrAgentInfo } from '../src/types.ts';
 import {
   agentStatusView,
   formatElapsed,
@@ -9,76 +10,76 @@ import {
   truncateLabel,
   visibleWidgetAgents,
   type WidgetPaint,
-} from "../src/widget.ts";
+} from '../src/widget.ts';
 
-const NOW = Date.parse("2026-08-27T12:00:00.000Z");
+const NOW = Date.parse('2026-08-27T12:00:00.000Z');
 
 function agent(overrides: Partial<HerdrAgentInfo> = {}): HerdrAgentInfo {
   return {
-    tabId: "w1:tA",
-    tabLabel: "Scout",
-    paneId: "w1:p1",
-    agent: "scout",
-    status: "working",
+    tabId: 'w1:tA',
+    tabLabel: 'Scout',
+    paneId: 'w1:p1',
+    agent: 'scout',
+    status: 'working',
     updatedAt: new Date(NOW - 83_000).toISOString(),
     ...overrides,
   };
 }
 
-test("formats elapsed time as mm:ss below an hour", () => {
-  assert.equal(formatElapsed(0), "00:00");
-  assert.equal(formatElapsed(9_000), "00:09");
-  assert.equal(formatElapsed(83_000), "01:23");
-  assert.equal(formatElapsed(3_599_000), "59:59");
+test('formats elapsed time as mm:ss below an hour', () => {
+  assert.equal(formatElapsed(0), '00:00');
+  assert.equal(formatElapsed(9_000), '00:09');
+  assert.equal(formatElapsed(83_000), '01:23');
+  assert.equal(formatElapsed(3_599_000), '59:59');
 });
 
-test("formats elapsed time as h:mm:ss from an hour up", () => {
-  assert.equal(formatElapsed(3_600_000), "1:00:00");
-  assert.equal(formatElapsed(3_723_000), "1:02:03");
+test('formats elapsed time as h:mm:ss from an hour up', () => {
+  assert.equal(formatElapsed(3_600_000), '1:00:00');
+  assert.equal(formatElapsed(3_723_000), '1:02:03');
 });
 
-test("clamps negative elapsed time to zero", () => {
-  assert.equal(formatElapsed(-5_000), "00:00");
+test('clamps negative elapsed time to zero', () => {
+  assert.equal(formatElapsed(-5_000), '00:00');
 });
 
-test("maps herdr agent statuses to tones", () => {
-  assert.deepEqual(agentStatusView("working"), {
-    text: "working",
-    tone: "active",
+test('maps herdr agent statuses to tones', () => {
+  assert.deepEqual(agentStatusView('working'), {
+    text: 'working',
+    tone: 'active',
   });
-  assert.deepEqual(agentStatusView("blocked"), {
-    text: "blocked · attach to unblock",
-    tone: "attention",
+  assert.deepEqual(agentStatusView('blocked'), {
+    text: 'blocked · attach to unblock',
+    tone: 'attention',
   });
-  assert.deepEqual(agentStatusView("idle"), { text: "idle", tone: "quiet" });
-  assert.deepEqual(agentStatusView("done"), { text: "done", tone: "quiet" });
+  assert.deepEqual(agentStatusView('idle'), { text: 'idle', tone: 'quiet' });
+  assert.deepEqual(agentStatusView('done'), { text: 'done', tone: 'quiet' });
 });
 
-test("treats unknown statuses as starting", () => {
-  assert.deepEqual(agentStatusView("unknown"), {
-    text: "starting",
-    tone: "quiet",
+test('treats unknown statuses as starting', () => {
+  assert.deepEqual(agentStatusView('unknown'), {
+    text: 'starting',
+    tone: 'quiet',
   });
-  assert.deepEqual(agentStatusView(""), { text: "starting", tone: "quiet" });
+  assert.deepEqual(agentStatusView(''), { text: 'starting', tone: 'quiet' });
 });
 
-test("truncates labels longer than the column width", () => {
-  assert.equal(truncateLabel("Scout", 10), "Scout");
-  assert.equal(truncateLabel("0123456789", 10), "0123456789");
-  assert.equal(truncateLabel("Scout — message-bus", 10), "Scout — m…");
+test('truncates labels longer than the column width', () => {
+  assert.equal(truncateLabel('Scout', 10), 'Scout');
+  assert.equal(truncateLabel('0123456789', 10), '0123456789');
+  assert.equal(truncateLabel('Scout — message-bus', 10), 'Scout — m…');
 });
 
-test("renders nothing when there are no agents", () => {
+test('renders nothing when there are no agents', () => {
   assert.deepEqual(renderAgentWidgetLines([], NOW), []);
 });
 
-test("renders a header and one row per agent", () => {
+test('renders a header and one row per agent', () => {
   const lines = renderAgentWidgetLines(
     [
-      agent({ tabLabel: "Scout — message-bus" }),
+      agent({ tabLabel: 'Scout — message-bus' }),
       agent({
-        tabLabel: "Reviewer",
-        status: "blocked",
+        tabLabel: 'Reviewer',
+        status: 'blocked',
         updatedAt: new Date(NOW - 3_723_000).toISOString(),
       }),
     ],
@@ -86,18 +87,18 @@ test("renders a header and one row per agent", () => {
   );
 
   assert.deepEqual(lines, [
-    "Herdr agents · 2 · 1 working",
-    "   01:23 Scout — message-bus  working",
-    " 1:02:03 Reviewer             blocked · attach to unblock",
+    'Herdr agents · 2 · 1 working',
+    '   01:23 Scout — message-bus  working',
+    ' 1:02:03 Reviewer             blocked · attach to unblock',
   ]);
 });
 
-test("aligns the label column when elapsed widths differ", () => {
+test('aligns the label column when elapsed widths differ', () => {
   const lines = renderAgentWidgetLines(
     [
-      agent({ tabLabel: "Scout" }),
+      agent({ tabLabel: 'Scout' }),
       agent({
-        tabLabel: "Reviewer",
+        tabLabel: 'Reviewer',
         updatedAt: new Date(NOW - 3_723_000).toISOString(),
       }),
     ],
@@ -108,33 +109,33 @@ test("aligns the label column when elapsed widths differ", () => {
   assert.equal(starts[0], starts[1]);
 });
 
-test("omits the working suffix when nothing is working", () => {
-  const lines = renderAgentWidgetLines([agent({ status: "idle" })], NOW);
-  assert.equal(lines[0], "Herdr agents · 1");
+test('omits the working suffix when nothing is working', () => {
+  const lines = renderAgentWidgetLines([agent({ status: 'idle' })], NOW);
+  assert.equal(lines[0], 'Herdr agents · 1');
 });
 
-test("pads labels to a common width across rows", () => {
+test('pads labels to a common width across rows', () => {
   const lines = renderAgentWidgetLines(
-    [agent({ tabLabel: "A" }), agent({ tabLabel: "Reviewer" })],
+    [agent({ tabLabel: 'A' }), agent({ tabLabel: 'Reviewer' })],
     NOW,
   );
 
-  const columns = lines.slice(1).map((line) => line.indexOf("working"));
+  const columns = lines.slice(1).map((line) => line.indexOf('working'));
   assert.equal(columns[0], columns[1]);
 });
 
-test("shows a placeholder when the task start time is missing or invalid", () => {
+test('shows a placeholder when the task start time is missing or invalid', () => {
   const missing = renderAgentWidgetLines(
     [agent({ updatedAt: undefined })],
     NOW,
   );
   assert.match(missing[1], /^ --:-- /);
 
-  const invalid = renderAgentWidgetLines([agent({ updatedAt: "nope" })], NOW);
+  const invalid = renderAgentWidgetLines([agent({ updatedAt: 'nope' })], NOW);
   assert.match(invalid[1], /^ --:-- /);
 });
 
-test("applies paint per column and tone", () => {
+test('applies paint per column and tone', () => {
   const paint: WidgetPaint = {
     header: (text) => `H(${text})`,
     elapsed: (text) => `E(${text})`,
@@ -142,71 +143,71 @@ test("applies paint per column and tone", () => {
   };
 
   const lines = renderAgentWidgetLines(
-    [agent({ tabLabel: "Scout", status: "blocked" })],
+    [agent({ tabLabel: 'Scout', status: 'blocked' })],
     NOW,
     paint,
   );
 
-  assert.equal(lines[0], "H(Herdr agents · 1)");
+  assert.equal(lines[0], 'H(Herdr agents · 1)');
   assert.equal(
     lines[1],
-    " E(01:23) Scout  S:attention(blocked · attach to unblock)",
+    ' E(01:23) Scout  S:attention(blocked · attach to unblock)',
   );
 });
 
-test("keeps agents nobody is awaiting", () => {
-  const agents = [agent({ tabLabel: "Scout" }), agent({ tabLabel: "Worker" })];
+test('keeps agents nobody is awaiting', () => {
+  const agents = [agent({ tabLabel: 'Scout' }), agent({ tabLabel: 'Worker' })];
   const visible = visibleWidgetAgents(agents, new Set());
   assert.deepEqual(
     visible.map((item) => item.tabLabel),
-    ["Scout", "Worker"],
+    ['Scout', 'Worker'],
   );
 });
 
-test("hides agents the orchestrator is blocking on", () => {
-  const agents = [agent({ tabLabel: "Scout" }), agent({ tabLabel: "Worker" })];
-  const visible = visibleWidgetAgents(agents, new Set(["Scout"]));
+test('hides agents the orchestrator is blocking on', () => {
+  const agents = [agent({ tabLabel: 'Scout' }), agent({ tabLabel: 'Worker' })];
+  const visible = visibleWidgetAgents(agents, new Set(['Scout']));
   assert.deepEqual(
     visible.map((item) => item.tabLabel),
-    ["Worker"],
+    ['Worker'],
   );
 });
 
-test("keeps an awaited agent once it reports blocked", () => {
-  const agents = [agent({ tabLabel: "Scout", status: "blocked" })];
-  const visible = visibleWidgetAgents(agents, new Set(["Scout"]));
+test('keeps an awaited agent once it reports blocked', () => {
+  const agents = [agent({ tabLabel: 'Scout', status: 'blocked' })];
+  const visible = visibleWidgetAgents(agents, new Set(['Scout']));
   assert.deepEqual(
     visible.map((item) => item.tabLabel),
-    ["Scout"],
+    ['Scout'],
   );
 });
 
-test("hides every agent when all of them are awaited", () => {
-  const agents = [agent({ tabLabel: "Scout" }), agent({ tabLabel: "Worker" })];
-  const visible = visibleWidgetAgents(agents, new Set(["Scout", "Worker"]));
+test('hides every agent when all of them are awaited', () => {
+  const agents = [agent({ tabLabel: 'Scout' }), agent({ tabLabel: 'Worker' })];
+  const visible = visibleWidgetAgents(agents, new Set(['Scout', 'Worker']));
   assert.deepEqual(visible, []);
 });
 
-test("matches awaited labels exactly, not by prefix", () => {
-  const agents = [agent({ tabLabel: "Scout — auth" })];
-  const visible = visibleWidgetAgents(agents, new Set(["Scout"]));
+test('matches awaited labels exactly, not by prefix', () => {
+  const agents = [agent({ tabLabel: 'Scout — auth' })];
+  const visible = visibleWidgetAgents(agents, new Set(['Scout']));
   assert.deepEqual(
     visible.map((item) => item.tabLabel),
-    ["Scout — auth"],
+    ['Scout — auth'],
   );
 });
 
-test("treats only idle and done as settled", () => {
-  assert.equal(isSettledAgentStatus("idle"), true);
-  assert.equal(isSettledAgentStatus("done"), true);
+test('treats only idle and done as settled', () => {
+  assert.equal(isSettledAgentStatus('idle'), true);
+  assert.equal(isSettledAgentStatus('done'), true);
 });
 
-test("does not treat a running or blocked agent as settled", () => {
-  assert.equal(isSettledAgentStatus("working"), false);
-  assert.equal(isSettledAgentStatus("blocked"), false);
+test('does not treat a running or blocked agent as settled', () => {
+  assert.equal(isSettledAgentStatus('working'), false);
+  assert.equal(isSettledAgentStatus('blocked'), false);
 });
 
-test("does not treat an undetected agent as settled", () => {
-  assert.equal(isSettledAgentStatus("unknown"), false);
-  assert.equal(isSettledAgentStatus(""), false);
+test('does not treat an undetected agent as settled', () => {
+  assert.equal(isSettledAgentStatus('unknown'), false);
+  assert.equal(isSettledAgentStatus(''), false);
 });

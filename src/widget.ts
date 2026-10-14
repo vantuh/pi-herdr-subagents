@@ -1,11 +1,11 @@
-import type { HerdrAgentInfo } from "./types.ts";
+import type { HerdrAgentInfo } from './types.ts';
 
-export const AGENTS_WIDGET_ID = "herdr-agents";
+export const AGENTS_WIDGET_ID = 'herdr-agents';
 export const AGENTS_WIDGET_TICK_MS = 1000;
 
 const MAX_LABEL_WIDTH = 28;
 
-export type StatusTone = "active" | "attention" | "quiet";
+export type StatusTone = 'active' | 'attention' | 'quiet';
 
 export interface WidgetPaint {
   header(text: string): string;
@@ -25,8 +25,8 @@ export function formatElapsed(ms: number): string {
   const hours = Math.floor(total / 3600);
   const minutes = Math.floor((total % 3600) / 60);
   const seconds = total % 60;
-  const mm = String(minutes).padStart(2, "0");
-  const ss = String(seconds).padStart(2, "0");
+  const mm = String(minutes).padStart(2, '0');
+  const ss = String(seconds).padStart(2, '0');
   return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
@@ -42,16 +42,16 @@ export interface StatusView {
  */
 export function agentStatusView(status: string): StatusView {
   switch (status) {
-    case "working":
-      return { text: "working", tone: "active" };
-    case "blocked":
-      return { text: "blocked · attach to unblock", tone: "attention" };
-    case "idle":
-      return { text: "idle", tone: "quiet" };
-    case "done":
-      return { text: "done", tone: "quiet" };
+    case 'working':
+      return { text: 'working', tone: 'active' };
+    case 'blocked':
+      return { text: 'blocked · attach to unblock', tone: 'attention' };
+    case 'idle':
+      return { text: 'idle', tone: 'quiet' };
+    case 'done':
+      return { text: 'done', tone: 'quiet' };
     default:
-      return { text: "starting", tone: "quiet" };
+      return { text: 'starting', tone: 'quiet' };
   }
 }
 
@@ -67,9 +67,9 @@ export function truncateLabel(label: string, max = MAX_LABEL_WIDTH): string {
  * waiting.
  */
 function elapsedLabel(agent: HerdrAgentInfo, now: number): string {
-  if (!agent.updatedAt) return "--:--";
+  if (!agent.updatedAt) return '--:--';
   const started = Date.parse(agent.updatedAt);
-  if (Number.isNaN(started)) return "--:--";
+  if (Number.isNaN(started)) return '--:--';
   return formatElapsed(now - started);
 }
 
@@ -91,7 +91,7 @@ function elapsedLabel(agent: HerdrAgentInfo, now: number): string {
  * done.
  */
 export function isSettledAgentStatus(status: string): boolean {
-  return status === "idle" || status === "done";
+  return status === 'idle' || status === 'done';
 }
 
 export function visibleWidgetAgents(
@@ -99,7 +99,7 @@ export function visibleWidgetAgents(
   awaitedLabels: ReadonlySet<string>,
 ): HerdrAgentInfo[] {
   return agents.filter(
-    (agent) => !awaitedLabels.has(agent.tabLabel) || agent.status === "blocked",
+    (agent) => !awaitedLabels.has(agent.tabLabel) || agent.status === 'blocked',
   );
 }
 
@@ -118,19 +118,19 @@ export function renderAgentWidgetLines(
 
   const labelWidth = Math.max(...rows.map((row) => row.label.length));
   const elapsedWidth = Math.max(...rows.map((row) => row.elapsed.length));
-  const working = rows.filter((row) => row.status.tone === "active").length;
-  const suffix = working > 0 ? ` · ${working} working` : "";
+  const working = rows.filter((row) => row.status.tone === 'active').length;
+  const suffix = working > 0 ? ` · ${working} working` : '';
   const lines = [
     paint.header(`Herdr agents · ${agents.length}${suffix}`),
     ...rows.map((row) =>
       [
-        " ",
+        ' ',
         paint.elapsed(row.elapsed.padStart(elapsedWidth)),
-        " ",
+        ' ',
         row.label.padEnd(labelWidth),
-        "  ",
+        '  ',
         paint.status(row.status.text, row.status.tone),
-      ].join(""),
+      ].join(''),
     ),
   ];
 

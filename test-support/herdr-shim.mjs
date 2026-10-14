@@ -6,24 +6,24 @@
 // it forwards argv to the FakeHerdr server running inside the test process
 // (see fake-herdr.ts) and replays the response, so all simulated Herdr state
 // stays inspectable from the test.
-import { createConnection } from "node:net";
+import { createConnection } from 'node:net';
 
 const socketPath = process.env.HERDR_FAKE_CLI_SOCKET;
 if (!socketPath) {
-  process.stderr.write("HERDR_FAKE_CLI_SOCKET is not set\n");
+  process.stderr.write('HERDR_FAKE_CLI_SOCKET is not set\n');
   process.exit(2);
 }
 
 const socket = createConnection(socketPath);
-let buffer = "";
+let buffer = '';
 
-socket.setEncoding("utf8");
-socket.on("connect", () => {
+socket.setEncoding('utf8');
+socket.on('connect', () => {
   socket.write(`${JSON.stringify({ argv: process.argv.slice(2) })}\n`);
 });
-socket.on("data", (chunk) => {
+socket.on('data', (chunk) => {
   buffer += chunk;
-  const newline = buffer.indexOf("\n");
+  const newline = buffer.indexOf('\n');
   if (newline < 0) return;
   const response = JSON.parse(buffer.slice(0, newline));
   socket.end();
@@ -31,7 +31,7 @@ socket.on("data", (chunk) => {
   if (response.stderr) process.stderr.write(response.stderr);
   process.exit(response.code ?? 0);
 });
-socket.on("error", (error) => {
+socket.on('error', (error) => {
   process.stderr.write(`fake herdr shim: ${error.message}\n`);
   process.exit(2);
 });

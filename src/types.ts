@@ -1,4 +1,4 @@
-export type SystemPromptMode = "append" | "replace";
+export type SystemPromptMode = 'append' | 'replace';
 
 export interface AgentProfile {
   name: string;
@@ -11,7 +11,7 @@ export interface AgentProfile {
   systemPromptMode?: SystemPromptMode;
   disableModelInvocation?: boolean;
   systemPrompt: string;
-  source: "user" | "project";
+  source: 'user' | 'project';
   filePath: string;
 }
 
@@ -36,7 +36,7 @@ export interface TabInfo {
 }
 
 /** "workspace" keeps every agent tab in a dedicated Agents workspace. */
-export type HerdrAgentLayout = "pane" | "tab" | "workspace";
+export type HerdrAgentLayout = 'pane' | 'tab' | 'workspace';
 
 export interface WorkspaceInfo {
   workspace_id: string;
@@ -52,7 +52,7 @@ export interface HerdrAgentInfo {
   automationName?: string;
   resultFile?: string;
   status: string;
-  lifecycle?: "oneshot";
+  lifecycle?: 'oneshot';
   layout?: HerdrAgentLayout;
   cwd?: string;
   /** State-record timestamp: when this agent last received a task. */

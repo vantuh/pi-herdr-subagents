@@ -1,14 +1,12 @@
-import { randomBytes } from "node:crypto";
-import { promises as fs } from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
-import type {
-  HerdrAgentLayout,
-  PaneInfo,
-} from "./types.ts";
+import { randomBytes } from 'node:crypto';
+import { promises as fs } from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+import type { HerdrAgentLayout, PaneInfo } from './types.ts';
 
 export interface HerdrAgentStateRecord {
-  lifecycle: "oneshot" | "persistent";
+  lifecycle: 'oneshot' | 'persistent';
   tabLabel?: string;
   agent?: string;
   automationName?: string;
@@ -37,7 +35,10 @@ export interface HerdrAgentStateRecord {
 }
 
 export type ClosedHistoryStatus =
-  "resumable" | "claimed" | "invalid" | "staged";
+  | 'resumable'
+  | 'claimed'
+  | 'invalid'
+  | 'staged';
 
 export interface ClosedAgentHistoryRecord {
   id: string;
@@ -49,7 +50,7 @@ export interface ClosedAgentHistoryRecord {
   childSessionId: string;
   cwd: string;
   layout: HerdrAgentLayout;
-  lifecycle: "oneshot";
+  lifecycle: 'oneshot';
   createdAt: string;
   closedAt: string;
   status: ClosedHistoryStatus;
@@ -69,11 +70,11 @@ export const CLOSED_HISTORY_MAX_GLOBAL = 256;
 export const DEFAULT_STATE_LOCK_WAIT_MS = 60_000;
 export const DEFAULT_CLOSED_CLAIM_LEASE_MS = 60_000;
 
-const STATE_PATH_ENV = "HERDR_AGENTS_STATE_PATH";
-const STATE_LOCK_WAIT_MS_ENV = "HERDR_AGENTS_LOCK_WAIT_MS";
-const CLAIM_LEASE_MS_ENV = "HERDR_AGENTS_CLAIM_LEASE_MS";
+const STATE_PATH_ENV = 'HERDR_AGENTS_STATE_PATH';
+const STATE_LOCK_WAIT_MS_ENV = 'HERDR_AGENTS_LOCK_WAIT_MS';
+const CLAIM_LEASE_MS_ENV = 'HERDR_AGENTS_CLAIM_LEASE_MS';
 
-export type StateMutationKind = "lifecycle" | "stage" | "finalize" | "detached";
+export type StateMutationKind = 'lifecycle' | 'stage' | 'finalize' | 'detached';
 
 let failNextStateSaves = 0;
 const failNextMutations: Record<StateMutationKind, number> = {
@@ -156,12 +157,12 @@ async function abandonPartialLock(
 async function tryAcquireExclusiveLock(
   lockPath: string,
   token: string,
-): Promise<(() => Promise<void>) | "locked"> {
+): Promise<(() => Promise<void>) | 'locked'> {
   try {
     await fs.mkdir(lockPath);
   } catch (error) {
     const code = (error as { code?: string }).code;
-    if (code === "EEXIST" || code === "ENOTDIR") return "locked";
+    if (code === 'EEXIST' || code === 'ENOTDIR') return 'locked';
     throw error;
   }
 
@@ -174,7 +175,7 @@ async function tryAcquireExclusiveLock(
         token,
         createdAt: Date.now(),
       })}\n`,
-      { flag: "wx", encoding: "utf8" },
+      { flag: 'wx', encoding: 'utf8' },
     );
   } catch (error) {
     await abandonPartialLock(lockPath, sentinelPath);
@@ -189,15 +190,15 @@ async function tryAcquireExclusiveLock(
 async function acquireExclusiveLock(
   lockPath: string,
 ): Promise<() => Promise<void>> {
-  const token = randomBytes(16).toString("hex");
+  const token = randomBytes(16).toString('hex');
   const deadline = Date.now() + getStateLockWaitMs();
   while (true) {
     const acquired = await tryAcquireExclusiveLock(lockPath, token);
-    if (acquired !== "locked") return acquired;
+    if (acquired !== 'locked') return acquired;
 
     if (Date.now() >= deadline) {
       const retried = await tryAcquireExclusiveLock(lockPath, token);
-      if (retried !== "locked") return retried;
+      if (retried !== 'locked') return retried;
       throw new Error(
         `Timed out waiting for ${lockPath}. Another process still holds this exclusive lock directory (or a legacy lock file occupies that path); do not delete it while that process may be alive. If you are sure no Pi/herdr-agents process is running, remove the lock directory (or leftover lock file) manually and retry.`,
       );
@@ -247,7 +248,7 @@ async function runWithExclusiveLock<T>(
 export function getHerdrAgentsStatePath(): string {
   return (
     process.env[STATE_PATH_ENV] ??
-    path.join(os.homedir(), ".pi", "agent", "herdr-agents-state.json")
+    path.join(os.homedir(), '.pi', 'agent', 'herdr-agents-state.json')
   );
 }
 
@@ -255,19 +256,21 @@ export function emptyHerdrAgentsState(): HerdrAgentsState {
   return { version: 2, agents: {}, closedHistory: [] };
 }
 
-function isLifecycle(value: unknown): value is HerdrAgentStateRecord["lifecycle"] {
-  return value === "oneshot" || value === "persistent";
+function isLifecycle(
+  value: unknown,
+): value is HerdrAgentStateRecord['lifecycle'] {
+  return value === 'oneshot' || value === 'persistent';
 }
 
 function isLayout(value: unknown): value is HerdrAgentLayout {
-  return value === "pane" || value === "tab" || value === "workspace";
+  return value === 'pane' || value === 'tab' || value === 'workspace';
 }
 
 // terminal_id is used as the durable state key (rather than pane_id/tab_id)
 // because Herdr can recreate panes/tabs with new ids while keeping the same
 // underlying terminal, and we want lifecycle state to survive that.
 export function paneStateKey(
-  pane: Pick<PaneInfo, "terminal_id">,
+  pane: Pick<PaneInfo, 'terminal_id'>,
 ): string | undefined {
   return pane.terminal_id ? `terminal:${pane.terminal_id}` : undefined;
 }
@@ -277,9 +280,9 @@ export async function loadHerdrAgentsState(
 ): Promise<HerdrAgentsState> {
   let raw: string;
   try {
-    raw = await fs.readFile(filePath, "utf8");
+    raw = await fs.readFile(filePath, 'utf8');
   } catch (error) {
-    if ((error as { code?: string }).code === "ENOENT") {
+    if ((error as { code?: string }).code === 'ENOENT') {
       return emptyHerdrAgentsState();
     }
     throw error;
@@ -297,7 +300,7 @@ export async function loadHerdrAgentsState(
       closedHistory?: unknown;
     };
   } catch {
-    await quarantineStateFile(filePath, "json");
+    await quarantineStateFile(filePath, 'json');
     return emptyHerdrAgentsState();
   }
 
@@ -311,7 +314,7 @@ export async function loadHerdrAgentsState(
   }
 
   const state = emptyHerdrAgentsState();
-  if (!parsed.agents || typeof parsed.agents !== "object") {
+  if (!parsed.agents || typeof parsed.agents !== 'object') {
     state.closedHistory = parseClosedHistory(parsed.closedHistory);
     reconcileHerdrAgentsState(state);
     pruneClosedHistory(state);
@@ -331,7 +334,7 @@ function isExactStateVersion(version: unknown): version is 1 | 2 {
 
 function migrateV1ToV2(agents: unknown): HerdrAgentsState {
   const state = emptyHerdrAgentsState();
-  if (agents && typeof agents === "object") {
+  if (agents && typeof agents === 'object') {
     copyAgentRecords(state, agents);
   }
   reconcileHerdrAgentsState(state);
@@ -343,48 +346,48 @@ function copyAgentRecords(state: HerdrAgentsState, agents: unknown): void {
   for (const [key, record] of Object.entries(
     agents as Record<string, Partial<HerdrAgentStateRecord>>,
   )) {
-    if (!record || typeof record !== "object") continue;
+    if (!record || typeof record !== 'object') continue;
     if (!isLifecycle(record.lifecycle)) continue;
 
     state.agents[key] = {
       lifecycle: record.lifecycle,
-      ...(typeof record.tabLabel === "string"
+      ...(typeof record.tabLabel === 'string'
         ? { tabLabel: record.tabLabel }
         : {}),
-      ...(typeof record.agent === "string" ? { agent: record.agent } : {}),
-      ...(typeof record.automationName === "string"
+      ...(typeof record.agent === 'string' ? { agent: record.agent } : {}),
+      ...(typeof record.automationName === 'string'
         ? { automationName: record.automationName }
         : {}),
-      ...(typeof record.resultFile === "string"
+      ...(typeof record.resultFile === 'string'
         ? { resultFile: record.resultFile }
         : {}),
       ...(isLayout(record.layout) ? { layout: record.layout } : {}),
       ...(Array.isArray(record.spawnWarnings)
         ? {
             spawnWarnings: record.spawnWarnings.filter(
-              (warning): warning is string => typeof warning === "string",
+              (warning): warning is string => typeof warning === 'string',
             ),
           }
         : {}),
       ...(record.detached === true ? { detached: true } : {}),
-      ...(typeof record.ownerTerminalId === "string"
+      ...(typeof record.ownerTerminalId === 'string'
         ? { ownerTerminalId: record.ownerTerminalId }
         : {}),
-      ...(typeof record.ownerSessionId === "string"
+      ...(typeof record.ownerSessionId === 'string'
         ? { ownerSessionId: record.ownerSessionId }
         : {}),
-      ...(typeof record.ownerSessionFile === "string"
+      ...(typeof record.ownerSessionFile === 'string'
         ? { ownerSessionFile: record.ownerSessionFile }
         : {}),
-      ...(typeof record.closedHistoryId === "string"
+      ...(typeof record.closedHistoryId === 'string'
         ? { closedHistoryId: record.closedHistoryId }
         : {}),
-      ...(typeof record.closedHistoryGeneration === "number" &&
+      ...(typeof record.closedHistoryGeneration === 'number' &&
       Number.isFinite(record.closedHistoryGeneration)
         ? { closedHistoryGeneration: record.closedHistoryGeneration }
         : {}),
       updatedAt:
-        typeof record.updatedAt === "string"
+        typeof record.updatedAt === 'string'
           ? record.updatedAt
           : new Date(0).toISOString(),
     };
@@ -397,17 +400,17 @@ async function quarantineStateFile(
 ): Promise<void> {
   const suffix =
     version === undefined
-      ? "missing"
-      : typeof version === "number" || typeof version === "string"
+      ? 'missing'
+      : typeof version === 'number' || typeof version === 'string'
         ? String(version)
-        : "malformed";
+        : 'malformed';
   let dest = `${filePath}.quarantine.v${suffix}`;
   try {
     await fs.rename(filePath, dest);
   } catch (error) {
     const code = (error as { code?: string }).code;
-    if (code === "ENOENT") return;
-    if (code === "EEXIST") {
+    if (code === 'ENOENT') return;
+    if (code === 'EEXIST') {
       dest = `${filePath}.quarantine.v${suffix}.${Date.now()}`;
       await fs.rename(filePath, dest);
       return;
@@ -422,12 +425,12 @@ export async function saveHerdrAgentsState(
 ): Promise<void> {
   if (failNextStateSaves > 0) {
     failNextStateSaves -= 1;
-    throw new Error("injected state save failure");
+    throw new Error('injected state save failure');
   }
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   const tempPath = `${filePath}.${process.pid}.tmp`;
   await fs.writeFile(tempPath, `${JSON.stringify(state, null, 2)}\n`, {
-    encoding: "utf8",
+    encoding: 'utf8',
     mode: 0o600,
   });
   await fs.rename(tempPath, filePath);
@@ -481,12 +484,12 @@ export function isAgentOwnedBy(
   ownerTerminalId: string | undefined,
   paneTabId: string,
   currentTab: string,
-): record is HerdrAgentStateRecord & { lifecycle: "oneshot" } {
-  if (record.lifecycle !== "oneshot") return false;
+): record is HerdrAgentStateRecord & { lifecycle: 'oneshot' } {
+  if (record.lifecycle !== 'oneshot') return false;
   if (record.ownerTerminalId) {
     return !!ownerTerminalId && record.ownerTerminalId === ownerTerminalId;
   }
-  if (record.layout === "tab") return true;
+  if (record.layout === 'tab') return true;
   return paneTabId === currentTab;
 }
 
@@ -512,12 +515,12 @@ export async function recordAgentLifecycle(
   if (!key) return;
 
   await withStateFileLock(filePath, async () => {
-    throwIfInjectedMutation("lifecycle");
+    throwIfInjectedMutation('lifecycle');
     const state = await loadHerdrAgentsState(filePath);
     const existing = state.agents[key];
-    if (existing && existing.lifecycle !== "oneshot") return;
+    if (existing && existing.lifecycle !== 'oneshot') return;
     state.agents[key] = {
-      lifecycle: "oneshot",
+      lifecycle: 'oneshot',
       ...metadata,
       ...(!metadata.ownerTerminalId && existing?.ownerTerminalId
         ? { ownerTerminalId: existing.ownerTerminalId }
@@ -546,7 +549,7 @@ export async function recordAgentLifecycle(
  * successful collect so they are not reprinted.
  */
 export async function clearAgentSpawnWarnings(
-  pane: Pick<PaneInfo, "terminal_id">,
+  pane: Pick<PaneInfo, 'terminal_id'>,
   filePath = getHerdrAgentsStatePath(),
 ): Promise<void> {
   const key = paneStateKey(pane);
@@ -563,7 +566,7 @@ export async function clearAgentSpawnWarnings(
 }
 
 export async function deleteAgentLifecycle(
-  pane: Pick<PaneInfo, "terminal_id">,
+  pane: Pick<PaneInfo, 'terminal_id'>,
   filePath = getHerdrAgentsStatePath(),
 ): Promise<void> {
   const key = paneStateKey(pane);
@@ -591,17 +594,17 @@ export async function deleteAgentLifecycle(
  * reachable by an explicit re-wait.
  */
 export async function claimDetachedAgent(
-  pane: Pick<PaneInfo, "terminal_id">,
+  pane: Pick<PaneInfo, 'terminal_id'>,
   filePath = getHerdrAgentsStatePath(),
 ): Promise<boolean> {
   const key = paneStateKey(pane);
   if (!key) return false;
 
   return withStateFileLock(filePath, async () => {
-    throwIfInjectedMutation("detached");
+    throwIfInjectedMutation('detached');
     const state = await loadHerdrAgentsState(filePath);
     const record = state.agents[key];
-    if (record?.lifecycle !== "oneshot" || !record.detached) return false;
+    if (record?.lifecycle !== 'oneshot' || !record.detached) return false;
     delete record.detached;
     await saveHerdrAgentsState(state, filePath);
     return true;
@@ -610,10 +613,10 @@ export async function claimDetachedAgent(
 
 function isClosedHistoryStatus(value: unknown): value is ClosedHistoryStatus {
   return (
-    value === "resumable" ||
-    value === "claimed" ||
-    value === "invalid" ||
-    value === "staged"
+    value === 'resumable' ||
+    value === 'claimed' ||
+    value === 'invalid' ||
+    value === 'staged'
   );
 }
 
@@ -621,32 +624,32 @@ function parseClosedHistory(raw: unknown): ClosedAgentHistoryRecord[] {
   if (!Array.isArray(raw)) return [];
   const records: ClosedAgentHistoryRecord[] = [];
   for (const item of raw) {
-    if (!item || typeof item !== "object") continue;
+    if (!item || typeof item !== 'object') continue;
     const record = item as Partial<ClosedAgentHistoryRecord>;
-    if (typeof record.id !== "string" || !record.id) continue;
-    if (typeof record.ownerSessionId !== "string" || !record.ownerSessionId) {
+    if (typeof record.id !== 'string' || !record.id) continue;
+    if (typeof record.ownerSessionId !== 'string' || !record.ownerSessionId) {
       continue;
     }
-    if (typeof record.profileName !== "string" || !record.profileName) continue;
-    if (typeof record.tabLabel !== "string" || !record.tabLabel) continue;
-    if (typeof record.childSessionFile !== "string") continue;
+    if (typeof record.profileName !== 'string' || !record.profileName) continue;
+    if (typeof record.tabLabel !== 'string' || !record.tabLabel) continue;
+    if (typeof record.childSessionFile !== 'string') continue;
     if (!path.isAbsolute(record.childSessionFile)) continue;
-    if (typeof record.childSessionId !== "string" || !record.childSessionId) {
+    if (typeof record.childSessionId !== 'string' || !record.childSessionId) {
       continue;
     }
-    if (typeof record.cwd !== "string" || !record.cwd) continue;
+    if (typeof record.cwd !== 'string' || !record.cwd) continue;
     if (!isLayout(record.layout)) continue;
-    if (record.lifecycle !== "oneshot") continue;
+    if (record.lifecycle !== 'oneshot') continue;
     if (!isClosedHistoryStatus(record.status)) continue;
     const claimGeneration =
-      typeof record.claimGeneration === "number" &&
+      typeof record.claimGeneration === 'number' &&
       Number.isFinite(record.claimGeneration)
         ? record.claimGeneration
         : 0;
     records.push({
       id: record.id,
       ownerSessionId: record.ownerSessionId,
-      ...(typeof record.ownerSessionFile === "string"
+      ...(typeof record.ownerSessionFile === 'string'
         ? { ownerSessionFile: record.ownerSessionFile }
         : {}),
       profileName: record.profileName,
@@ -655,18 +658,18 @@ function parseClosedHistory(raw: unknown): ClosedAgentHistoryRecord[] {
       childSessionId: record.childSessionId,
       cwd: record.cwd,
       layout: record.layout,
-      lifecycle: "oneshot",
+      lifecycle: 'oneshot',
       createdAt:
-        typeof record.createdAt === "string"
+        typeof record.createdAt === 'string'
           ? record.createdAt
           : new Date(0).toISOString(),
       closedAt:
-        typeof record.closedAt === "string"
+        typeof record.closedAt === 'string'
           ? record.closedAt
           : new Date(0).toISOString(),
       status: record.status,
       claimGeneration,
-      ...(typeof record.claimedAt === "string"
+      ...(typeof record.claimedAt === 'string'
         ? { claimedAt: record.claimedAt }
         : {}),
     });
@@ -696,15 +699,15 @@ export function reconcileHerdrAgentsState(
   const leaseMs = getClosedClaimLeaseMs();
   for (const record of state.closedHistory) {
     const live = liveAgentForHistory(state, record.id);
-    if (record.status === "staged") {
+    if (record.status === 'staged') {
       if (!live) {
-        record.status = "resumable";
+        record.status = 'resumable';
         delete record.claimedAt;
         changed = true;
       }
       continue;
     }
-    if (record.status !== "claimed") continue;
+    if (record.status !== 'claimed') continue;
     if (live) {
       if (
         live.closedHistoryGeneration === undefined ||
@@ -716,7 +719,7 @@ export function reconcileHerdrAgentsState(
     const claimedAt = record.claimedAt ? Date.parse(record.claimedAt) : NaN;
     const age = Number.isFinite(claimedAt) ? now - claimedAt : leaseMs + 1;
     if (age >= leaseMs) {
-      record.status = "resumable";
+      record.status = 'resumable';
       delete record.claimedAt;
       changed = true;
     }
@@ -731,7 +734,7 @@ export function pruneClosedHistory(
   const before = state.closedHistory;
   const cutoff = now - CLOSED_HISTORY_TTL_MS;
   let next = before.filter((record) => {
-    if (record.status === "claimed" || record.status === "staged") return true;
+    if (record.status === 'claimed' || record.status === 'staged') return true;
     return historyRecency(record) >= cutoff;
   });
 
@@ -747,10 +750,10 @@ export function pruneClosedHistory(
       (a, b) => historyRecency(b) - historyRecency(a),
     );
     const pinned = sorted.filter(
-      (record) => record.status === "claimed" || record.status === "staged",
+      (record) => record.status === 'claimed' || record.status === 'staged',
     );
     const rest = sorted.filter(
-      (record) => record.status !== "claimed" && record.status !== "staged",
+      (record) => record.status !== 'claimed' && record.status !== 'staged',
     );
     kept.push(
       ...pinned,
@@ -763,10 +766,10 @@ export function pruneClosedHistory(
 
   next = kept.toSorted((a, b) => historyRecency(b) - historyRecency(a));
   const pinned = next.filter(
-    (record) => record.status === "claimed" || record.status === "staged",
+    (record) => record.status === 'claimed' || record.status === 'staged',
   );
   const rest = next.filter(
-    (record) => record.status !== "claimed" && record.status !== "staged",
+    (record) => record.status !== 'claimed' && record.status !== 'staged',
   );
   next = [
     ...pinned,
@@ -784,7 +787,7 @@ export function pruneClosedHistory(
 }
 
 function newHistoryId(): string {
-  return `ch_${randomBytes(8).toString("hex")}`;
+  return `ch_${randomBytes(8).toString('hex')}`;
 }
 
 export interface ArchiveClosedOneShotInput {
@@ -828,10 +831,10 @@ export async function archiveClosedOneShot(
       childSessionId: input.childSessionId,
       cwd: input.cwd,
       layout: input.layout,
-      lifecycle: "oneshot",
+      lifecycle: 'oneshot',
       createdAt: existing?.createdAt ?? now,
       closedAt: now,
-      status: "resumable",
+      status: 'resumable',
       claimGeneration: existing?.claimGeneration ?? 0,
     };
 
@@ -847,17 +850,17 @@ export async function archiveClosedOneShot(
 
 export async function stageClosedOneShot(
   input: ArchiveClosedOneShotInput & {
-    livePane: Pick<PaneInfo, "terminal_id">;
+    livePane: Pick<PaneInfo, 'terminal_id'>;
   },
   filePath = getHerdrAgentsStatePath(),
 ): Promise<ClosedAgentHistoryRecord> {
   return withStateFileLock(filePath, async () => {
-    throwIfInjectedMutation("stage");
+    throwIfInjectedMutation('stage');
     const state = await loadHerdrAgentsState(filePath);
     const key = paneStateKey(input.livePane);
     if (!key || !state.agents[key]) {
       throw new Error(
-        "Cannot stage a closed one-shot: the live agent record is missing.",
+        'Cannot stage a closed one-shot: the live agent record is missing.',
       );
     }
     const now = new Date().toISOString();
@@ -883,10 +886,10 @@ export async function stageClosedOneShot(
       childSessionId: input.childSessionId,
       cwd: input.cwd,
       layout: input.layout,
-      lifecycle: "oneshot",
+      lifecycle: 'oneshot',
       createdAt: existing?.createdAt ?? now,
       closedAt: now,
-      status: "staged",
+      status: 'staged',
       claimGeneration: existing?.claimGeneration ?? 0,
     };
 
@@ -907,18 +910,18 @@ export async function stageClosedOneShot(
 export async function finalizeStagedClosedOneShot(
   input: {
     historyId: string;
-    livePane?: Pick<PaneInfo, "terminal_id">;
+    livePane?: Pick<PaneInfo, 'terminal_id'>;
   },
   filePath = getHerdrAgentsStatePath(),
 ): Promise<void> {
   await withStateFileLock(filePath, async () => {
-    throwIfInjectedMutation("finalize");
+    throwIfInjectedMutation('finalize');
     const state = await loadHerdrAgentsState(filePath);
     const record = state.closedHistory.find(
       (item) => item.id === input.historyId,
     );
-    if (record && (record.status === "staged" || record.status === "claimed")) {
-      record.status = "resumable";
+    if (record && (record.status === 'staged' || record.status === 'claimed')) {
+      record.status = 'resumable';
       delete record.claimedAt;
       record.closedAt = new Date().toISOString();
     }
@@ -932,7 +935,8 @@ export async function finalizeStagedClosedOneShot(
 }
 
 export type ClaimClosedHistoryResult =
-  { ok: true; record: ClosedAgentHistoryRecord } | { ok: false; error: string };
+  | { ok: true; record: ClosedAgentHistoryRecord }
+  | { ok: false; error: string };
 
 export async function claimClosedHistory(
   input: {
@@ -957,7 +961,7 @@ export async function claimClosedHistory(
       };
     }
 
-    const claimed = matches.find((record) => record.status === "claimed");
+    const claimed = matches.find((record) => record.status === 'claimed');
     if (claimed) {
       return {
         ok: false as const,
@@ -966,7 +970,7 @@ export async function claimClosedHistory(
     }
 
     const newest = matches
-      .filter((record) => record.status === "resumable")
+      .filter((record) => record.status === 'resumable')
       .toSorted((a, b) => historyRecency(b) - historyRecency(a))[0];
     if (!newest) {
       return {
@@ -980,7 +984,7 @@ export async function claimClosedHistory(
         error: `Closed Herdr agent "${input.tabLabel}" was a ${newest.profileName} agent, not ${input.profileName}.`,
       };
     }
-    if (newest.lifecycle !== "oneshot") {
+    if (newest.lifecycle !== 'oneshot') {
       return {
         ok: false as const,
         error: `Closed Herdr agent "${input.tabLabel}" is not a resumable one-shot.`,
@@ -994,7 +998,7 @@ export async function claimClosedHistory(
       };
     }
 
-    newest.status = "claimed";
+    newest.status = 'claimed';
     newest.claimGeneration += 1;
     newest.claimedAt = new Date().toISOString();
     await saveHerdrAgentsState(state, filePath);
@@ -1011,9 +1015,9 @@ export async function releaseClosedHistory(
     const state = await loadHerdrAgentsState(filePath);
     const record = state.closedHistory.find((item) => item.id === id);
     if (!record) return;
-    if (record.status !== "claimed") return;
+    if (record.status !== 'claimed') return;
     if (record.claimGeneration !== generation) return;
-    record.status = "resumable";
+    record.status = 'resumable';
     delete record.claimedAt;
     await saveHerdrAgentsState(state, filePath);
   });
@@ -1029,7 +1033,7 @@ export async function markClosedHistoryInvalid(
     const record = state.closedHistory.find((item) => item.id === id);
     if (!record) return;
     if (record.claimGeneration !== generation) return;
-    record.status = "invalid";
+    record.status = 'invalid';
     delete record.claimedAt;
     await saveHerdrAgentsState(state, filePath);
   });
@@ -1045,8 +1049,8 @@ export function findOwnedClosedHistory(
       (record) =>
         record.ownerSessionId === ownerSessionId &&
         record.tabLabel === tabLabel &&
-        record.status !== "invalid" &&
-        record.status !== "staged",
+        record.status !== 'invalid' &&
+        record.status !== 'staged',
     )
     .toSorted((a, b) => historyRecency(b) - historyRecency(a))[0];
 }

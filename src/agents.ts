@@ -1,5 +1,6 @@
-import { promises as fs, statSync } from "node:fs";
-import * as path from "node:path";
+import { promises as fs, statSync } from 'node:fs';
+import * as path from 'node:path';
+
 import {
   CONFIG_DIR_NAME,
   DefaultPackageManager,
@@ -7,9 +8,10 @@ import {
   loadSkills,
   parseFrontmatter,
   SettingsManager,
-} from "@earendil-works/pi-coding-agent";
-import type { AgentProfile } from "./types.ts";
-import { normalizeTools } from "./utils.ts";
+} from '@earendil-works/pi-coding-agent';
+
+import type { AgentProfile } from './types.ts';
+import { normalizeTools } from './utils.ts';
 
 function isDirectory(filePath: string): boolean {
   try {
@@ -21,20 +23,20 @@ function isDirectory(filePath: string): boolean {
 
 /** Levels accepted by pi's `--thinking` flag. */
 export const VALID_THINKING_LEVELS = [
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
 ] as const;
 
 const THINKING_LEVEL_SET: ReadonlySet<string> = new Set(VALID_THINKING_LEVELS);
 
 /** Unknown levels are ignored at spawn time, not a parse error. */
 export function resolveThinkingLevel(value: unknown): string | undefined {
-  if (typeof value !== "string" || !value) return undefined;
+  if (typeof value !== 'string' || !value) return undefined;
   const level = value.trim().toLowerCase();
   return THINKING_LEVEL_SET.has(level) ? level : undefined;
 }
@@ -44,9 +46,9 @@ export function resolveThinkingLevel(value: unknown): string | undefined {
  * field stays undefined so the child keeps full discovery.
  */
 export function normalizeSkillList(raw: unknown): string[] | undefined {
-  if (typeof raw === "string") {
+  if (typeof raw === 'string') {
     const trimmed = raw.trim();
-    if (trimmed.toLowerCase() === "none" || trimmed === "[]") return [];
+    if (trimmed.toLowerCase() === 'none' || trimmed === '[]') return [];
   }
   if (Array.isArray(raw)) {
     return raw.map((skill) => String(skill).trim()).filter(Boolean);
@@ -78,7 +80,7 @@ export async function resolveProfileSkills(
   });
   // Name resolution must be read-only. Missing configured packages are warned
   // about by Pi itself; spawning an agent must never install them implicitly.
-  const resolved = await packageManager.resolve(async () => "skip");
+  const resolved = await packageManager.resolve(async () => 'skip');
   const skillPaths = resolved.skills
     .filter((resource) => resource.enabled)
     .map((resource) => resource.path);
@@ -103,7 +105,7 @@ export async function resolveProfileSkills(
   for (const diagnostic of loadedDiagnostics) {
     const parent = diagnostic.path
       ? path.basename(path.dirname(diagnostic.path))
-      : "";
+      : '';
     const relevant =
       requested.has(parent) ||
       [...requested].some(
@@ -124,7 +126,7 @@ export async function resolveProfileSkills(
 function findNearestProjectAgentsDir(cwd: string): string | null {
   let current = cwd;
   while (true) {
-    const candidate = path.join(current, CONFIG_DIR_NAME, "agents");
+    const candidate = path.join(current, CONFIG_DIR_NAME, 'agents');
     if (isDirectory(candidate)) return candidate;
 
     const parent = path.dirname(current);
@@ -135,7 +137,7 @@ function findNearestProjectAgentsDir(cwd: string): string | null {
 
 async function loadAgentsFromDir(
   dir: string,
-  source: "user" | "project",
+  source: 'user' | 'project',
 ): Promise<AgentProfile[]> {
   let entries: string[];
   try {
@@ -146,12 +148,12 @@ async function loadAgentsFromDir(
 
   const agents: AgentProfile[] = [];
   for (const entry of entries) {
-    if (!entry.endsWith(".md")) continue;
+    if (!entry.endsWith('.md')) continue;
     const filePath = path.join(dir, entry);
 
     let content: string;
     try {
-      content = await fs.readFile(filePath, "utf8");
+      content = await fs.readFile(filePath, 'utf8');
     } catch {
       continue;
     }
@@ -160,29 +162,29 @@ async function loadAgentsFromDir(
       Record<string, unknown> & {
         tools?: string | string[];
         skills?: string | string[];
-        "system-prompt"?: unknown;
-        "disable-model-invocation"?: string | boolean;
+        'system-prompt'?: unknown;
+        'disable-model-invocation'?: string | boolean;
       }
     >(content);
     if (
-      typeof frontmatter.name !== "string" ||
-      typeof frontmatter.description !== "string"
+      typeof frontmatter.name !== 'string' ||
+      typeof frontmatter.description !== 'string'
     ) {
       continue;
     }
 
     const tools = normalizeTools(frontmatter.tools);
     const skills = normalizeSkillList(frontmatter.skills);
-    const rawPromptMode = frontmatter["system-prompt"];
+    const rawPromptMode = frontmatter['system-prompt'];
     const promptMode =
-      typeof rawPromptMode === "string"
+      typeof rawPromptMode === 'string'
         ? rawPromptMode.trim().toLowerCase()
         : undefined;
-    const disableFlag = frontmatter["disable-model-invocation"];
+    const disableFlag = frontmatter['disable-model-invocation'];
     const disableModelInvocation =
-      disableFlag === true || disableFlag === "true"
+      disableFlag === true || disableFlag === 'true'
         ? true
-        : disableFlag === false || disableFlag === "false"
+        : disableFlag === false || disableFlag === 'false'
           ? false
           : undefined;
 
@@ -191,14 +193,14 @@ async function loadAgentsFromDir(
       description: frontmatter.description,
       tools,
       model:
-        typeof frontmatter.model === "string" ? frontmatter.model : undefined,
+        typeof frontmatter.model === 'string' ? frontmatter.model : undefined,
       thinking:
-        typeof frontmatter.thinking === "string"
+        typeof frontmatter.thinking === 'string'
           ? frontmatter.thinking
           : undefined,
       skills,
       systemPromptMode:
-        promptMode === "replace" || promptMode === "append"
+        promptMode === 'replace' || promptMode === 'append'
           ? promptMode
           : undefined,
       disableModelInvocation,
@@ -212,11 +214,11 @@ async function loadAgentsFromDir(
 }
 
 export async function discoverAgents(cwd: string): Promise<AgentProfile[]> {
-  const userDir = path.join(getAgentDir(), "agents");
+  const userDir = path.join(getAgentDir(), 'agents');
   const projectDir = findNearestProjectAgentsDir(cwd);
-  const userAgents = await loadAgentsFromDir(userDir, "user");
+  const userAgents = await loadAgentsFromDir(userDir, 'user');
   const projectAgents = projectDir
-    ? await loadAgentsFromDir(projectDir, "project")
+    ? await loadAgentsFromDir(projectDir, 'project')
     : [];
 
   const byName = new Map<string, AgentProfile>();

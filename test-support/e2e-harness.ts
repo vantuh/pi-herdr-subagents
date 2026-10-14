@@ -1,11 +1,12 @@
-import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { promises as fs } from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
-import { fileURLToPath } from "node:url";
-import herdrAgentsExtension from "../src/index.ts";
-import type { HerdrAgentsState } from "../src/state.ts";
-import type { HerdrSessionSnapshot } from "../src/types.ts";
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import { promises as fs } from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import herdrAgentsExtension from '../src/index.ts';
+import type { HerdrAgentsState } from '../src/state.ts';
+import type { HerdrSessionSnapshot } from '../src/types.ts';
 import {
   type AgentProfileFixture,
   applyEnv,
@@ -14,8 +15,8 @@ import {
   type SentMessage,
   waitFor,
   writeAgentProfiles,
-} from "./mock-extension.ts";
-import { MockLlm } from "./mock-llm.ts";
+} from './mock-extension.ts';
+import { MockLlm } from './mock-llm.ts';
 
 /**
  * End-to-end harness: a real Herdr server, real panes and real Pi children.
@@ -33,7 +34,7 @@ import { MockLlm } from "./mock-llm.ts";
 
 const EXTENSION_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  "..",
+  '..',
 );
 
 export interface E2eOptions {
@@ -43,7 +44,7 @@ export interface E2eOptions {
    * Layout written to the fixture's herdr-agents.json. Existing scenarios
    * default to "pane"; "workspace" exercises the extension's real default.
    */
-  layout?: "pane" | "workspace";
+  layout?: 'pane' | 'workspace';
   coldShell?: boolean;
   /** Seconds to wait for the Herdr server socket. */
   serverTimeoutMs?: number;
@@ -84,11 +85,14 @@ function run(
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     execFile(
-      "herdr",
+      'herdr',
       args,
       { env, maxBuffer: 10 * 1024 * 1024 },
       (error, stdout, stderr) => {
-        if (error) reject(new Error(`herdr ${args.join(" ")}: ${stderr || error.message}`));
+        if (error)
+          reject(
+            new Error(`herdr ${args.join(' ')}: ${stderr || error.message}`),
+          );
         else resolve({ stdout, stderr });
       },
     );
@@ -98,60 +102,61 @@ function run(
 export async function createE2eHarness(
   options: E2eOptions = {},
 ): Promise<E2eHarness> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "herdr-agents-e2e-"));
-  const home = path.join(root, "home");
-  const tmp = path.join(root, "tmp");
-  const agentDir = path.join(home, ".pi", "agent");
-  const cwd = path.join(root, "repo");
-  const statePath = path.join(root, "state.json");
-  const socketPath = path.join(root, "herdr.sock");
-  const serverLog = path.join(root, "herdr-server.log");
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'herdr-agents-e2e-'));
+  const home = path.join(root, 'home');
+  const tmp = path.join(root, 'tmp');
+  const agentDir = path.join(home, '.pi', 'agent');
+  const cwd = path.join(root, 'repo');
+  const statePath = path.join(root, 'state.json');
+  const socketPath = path.join(root, 'herdr.sock');
+  const serverLog = path.join(root, 'herdr-server.log');
 
   await fs.mkdir(home, { recursive: true });
-  if (options.coldShell) await fs.writeFile(path.join(home, ".zshenv"), "sleep 0.5\n");
+  if (options.coldShell)
+    await fs.writeFile(path.join(home, '.zshenv'), 'sleep 0.5\n');
   await fs.mkdir(tmp, { recursive: true });
-  await fs.mkdir(path.join(agentDir, "agents"), { recursive: true });
-  await fs.mkdir(path.join(agentDir, "extensions"), { recursive: true });
+  await fs.mkdir(path.join(agentDir, 'agents'), { recursive: true });
+  await fs.mkdir(path.join(agentDir, 'extensions'), { recursive: true });
   await fs.mkdir(cwd, { recursive: true });
   await writeAgentProfiles(
-    path.join(cwd, ".pi", "agents"),
-    options.profiles ?? [{ name: "scout" }],
+    path.join(cwd, '.pi', 'agents'),
+    options.profiles ?? [{ name: 'scout' }],
   );
   // Layout config lives in the agent dir (herdr-agents.json), not in env.
   await fs.writeFile(
-    path.join(agentDir, "herdr-agents.json"),
-    `${JSON.stringify({ layout: options.layout ?? "pane" })}\n`,
-    "utf8",
+    path.join(agentDir, 'herdr-agents.json'),
+    `${JSON.stringify({ layout: options.layout ?? 'pane' })}\n`,
+    'utf8',
   );
 
   // The children load the extension under test from their own config dir.
   await fs.symlink(
     EXTENSION_DIR,
-    path.join(agentDir, "extensions", "herdr-agents"),
+    path.join(agentDir, 'extensions', 'herdr-agents'),
   );
 
   const llm = new MockLlm();
   const baseUrl = await llm.start();
 
   await fs.writeFile(
-    path.join(agentDir, "models.json"),
+    path.join(agentDir, 'models.json'),
     `${JSON.stringify(
       {
         providers: {
           mock: {
             baseUrl,
-            api: "openai-completions",
-            apiKey: "mock",
+            api: 'openai-completions',
+            apiKey: 'mock',
             compat: {
               supportsDeveloperRole: false,
               supportsReasoningEffort: false,
             },
             models: [
               {
-                id: "mock-model",
-                name: "Mock",
+                id: 'mock-model',
+                name: 'Mock',
                 reasoning: false,
-                input: ["text"],
+                input: ['text'],
                 cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
                 contextWindow: 32000,
                 maxTokens: 4096,
@@ -163,43 +168,43 @@ export async function createE2eHarness(
       null,
       2,
     )}\n`,
-    "utf8",
+    'utf8',
   );
   await fs.writeFile(
-    path.join(agentDir, "settings.json"),
+    path.join(agentDir, 'settings.json'),
     `${JSON.stringify(
       {
-        defaultProvider: "mock",
-        defaultModel: "mock-model",
-        defaultProjectTrust: "always",
+        defaultProvider: 'mock',
+        defaultModel: 'mock-model',
+        defaultProjectTrust: 'always',
         quietStartup: true,
         enableInstallTelemetry: false,
       },
       null,
       2,
     )}\n`,
-    "utf8",
+    'utf8',
   );
 
   // Children inherit this env from the server, so their config dir, temp dir
   // and model provider are the hermetic ones.
   const serverEnv: NodeJS.ProcessEnv = {
     PATH: process.env.PATH,
-    TERM: "xterm-256color",
-    LANG: process.env.LANG ?? "en_US.UTF-8",
+    TERM: 'xterm-256color',
+    LANG: process.env.LANG ?? 'en_US.UTF-8',
     HOME: home,
-    ...(options.coldShell ? { SHELL: "/bin/zsh", ZDOTDIR: home } : {}),
+    ...(options.coldShell ? { SHELL: '/bin/zsh', ZDOTDIR: home } : {}),
     TMPDIR: tmp,
     PI_CODING_AGENT_DIR: agentDir,
-    PI_SKIP_VERSION_CHECK: "1",
-    PI_TELEMETRY: "0",
+    PI_SKIP_VERSION_CHECK: '1',
+    PI_TELEMETRY: '0',
     HERDR_SOCKET_PATH: socketPath,
   };
 
-  const log = await fs.open(serverLog, "a");
-  const server: ChildProcess = spawn("herdr", ["server"], {
+  const log = await fs.open(serverLog, 'a');
+  const server: ChildProcess = spawn('herdr', ['server'], {
     env: serverEnv,
-    stdio: ["ignore", log.fd, log.fd],
+    stdio: ['ignore', log.fd, log.fd],
   });
   await log.close();
 
@@ -213,42 +218,45 @@ export async function createE2eHarness(
     async () => {
       if (server.exitCode !== null) {
         throw new Error(
-          `Herdr server exited with ${server.exitCode}: ${await fs.readFile(serverLog, "utf8")}`,
+          `Herdr server exited with ${server.exitCode}: ${await fs.readFile(serverLog, 'utf8')}`,
         );
       }
       try {
-        await herdr(["api", "snapshot"]);
+        await herdr(['api', 'snapshot']);
         return true;
       } catch {
         return false;
       }
     },
-    "hermetic Herdr server to accept connections",
+    'hermetic Herdr server to accept connections',
     options.serverTimeoutMs ?? 20000,
   );
 
-  await run(["integration", "install", "pi"], serverEnv);
+  await run(['integration', 'install', 'pi'], serverEnv);
   const integration = await fs.readFile(
-    path.join(agentDir, "extensions", "herdr-agent-state.ts"), "utf8",
+    path.join(agentDir, 'extensions', 'herdr-agent-state.ts'),
+    'utf8',
   );
-  if (!integration.includes("HERDR_INTEGRATION_VERSION=9")) {
-    throw new Error("E2E requires Herdr Pi integration v9.");
+  if (!integration.includes('HERDR_INTEGRATION_VERSION=9')) {
+    throw new Error('E2E requires Herdr Pi integration v9.');
   }
 
   const created = JSON.parse(
     await herdr([
-      "workspace",
-      "create",
-      "--cwd",
+      'workspace',
+      'create',
+      '--cwd',
       cwd,
-      "--label",
-      "e2e",
-      "--no-focus",
+      '--label',
+      'e2e',
+      '--no-focus',
     ]),
   );
   const orchestratorPaneId = created?.result?.root_pane?.pane_id as string;
   if (!orchestratorPaneId) {
-    throw new Error(`Could not create the Orchestrator pane: ${JSON.stringify(created)}`);
+    throw new Error(
+      `Could not create the Orchestrator pane: ${JSON.stringify(created)}`,
+    );
   }
 
   const restoreEnv = applyEnv({
@@ -267,8 +275,8 @@ export async function createE2eHarness(
 
   const host = createMockHost({ cwd });
   await Promise.resolve(herdrAgentsExtension(host.pi));
-  const tool = host.tools.get("herdr_agent");
-  if (!tool) throw new Error("herdr_agent tool was not registered");
+  const tool = host.tools.get('herdr_agent');
+  if (!tool) throw new Error('herdr_agent tool was not registered');
 
   return {
     llm,
@@ -297,30 +305,30 @@ export async function createE2eHarness(
       ),
     fire: host.fire,
     snapshot: async () =>
-      JSON.parse(await herdr(["api", "snapshot"]))?.result?.snapshot,
+      JSON.parse(await herdr(['api', 'snapshot']))?.result?.snapshot,
     herdr,
     readState: async () => {
       try {
-        return JSON.parse(await fs.readFile(statePath, "utf8"));
+        return JSON.parse(await fs.readFile(statePath, 'utf8'));
       } catch {
         return { version: 1, agents: {} };
       }
     },
     waitFor,
     dispose: async () => {
-      await host.fire("session_shutdown");
+      await host.fire('session_shutdown');
       restoreEnv();
       try {
-        await run(["server", "stop"], clientEnv);
+        await run(['server', 'stop'], clientEnv);
       } catch {
         // Already gone, or never came up.
       }
       if (server.exitCode === null) {
         await Promise.race([
-          new Promise((resolve) => server.once("exit", resolve)),
+          new Promise((resolve) => server.once('exit', resolve)),
           new Promise((resolve) => setTimeout(resolve, 3000)),
         ]);
-        if (server.exitCode === null) server.kill("SIGKILL");
+        if (server.exitCode === null) server.kill('SIGKILL');
       }
       await llm.stop();
       await fs.rm(root, { recursive: true, force: true });

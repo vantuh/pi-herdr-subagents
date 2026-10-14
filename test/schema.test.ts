@@ -1,6 +1,7 @@
-import assert from "node:assert/strict";
-import test from "node:test";
-import { buildHerdrAgentParams, describeAgentProfiles } from "../src/schema.ts";
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import { buildHerdrAgentParams, describeAgentProfiles } from '../src/schema.ts';
 
 /**
  * The parameter schema is the model-facing contract: renaming a field or
@@ -9,75 +10,75 @@ import { buildHerdrAgentParams, describeAgentProfiles } from "../src/schema.ts";
  */
 
 const HerdrAgentParams = buildHerdrAgentParams();
-test("exposes exactly the documented parameters", () => {
+test('exposes exactly the documented parameters', () => {
   assert.deepEqual(Object.keys(HerdrAgentParams.properties).sort(), [
-    "agent",
-    "model",
-    "resumeClosed",
-    "tabLabel",
-    "task",
-    "wait",
+    'agent',
+    'model',
+    'resumeClosed',
+    'tabLabel',
+    'task',
+    'wait',
   ]);
 });
 
-test("requires only the agent profile", () => {
+test('requires only the agent profile', () => {
   // task is optional on purpose: omitting it is re-wait mode.
-  assert.deepEqual(HerdrAgentParams.required, ["agent"]);
+  assert.deepEqual(HerdrAgentParams.required, ['agent']);
 });
 
-test("has no lifecycle or timeout parameters", () => {
+test('has no lifecycle or timeout parameters', () => {
   const names = Object.keys(HerdrAgentParams.properties);
-  assert.ok(!names.includes("lifecycle"));
-  assert.ok(!names.includes("timeoutMs"));
+  assert.ok(!names.includes('lifecycle'));
+  assert.ok(!names.includes('timeoutMs'));
 });
 
-test("declares parameter types the provider can validate", () => {
+test('declares parameter types the provider can validate', () => {
   const properties = HerdrAgentParams.properties as Record<
     string,
     { type?: string }
   >;
-  assert.equal(properties.agent?.type, "string");
-  assert.equal(properties.model?.type, "string");
-  assert.equal(properties.task?.type, "string");
-  assert.equal(properties.tabLabel?.type, "string");
-  assert.equal(properties.wait?.type, "boolean");
-  assert.equal(properties.resumeClosed?.type, "boolean");
+  assert.equal(properties.agent?.type, 'string');
+  assert.equal(properties.model?.type, 'string');
+  assert.equal(properties.task?.type, 'string');
+  assert.equal(properties.tabLabel?.type, 'string');
+  assert.equal(properties.wait?.type, 'boolean');
+  assert.equal(properties.resumeClosed?.type, 'boolean');
 });
 
-test("wait description matches the detached-by-default contract", () => {
+test('wait description matches the detached-by-default contract', () => {
   const wait = HerdrAgentParams.properties.wait as { description?: string };
-  assert.match(wait.description ?? "", /Default: false in TUI mode/);
+  assert.match(wait.description ?? '', /Default: false in TUI mode/);
   assert.match(
-    wait.description ?? "",
+    wait.description ?? '',
     /Non-TUI sessions default to wait: true; an explicit false is rejected/,
   );
 });
 
-test("resumeClosed description names the continuation contract", () => {
+test('resumeClosed description names the continuation contract', () => {
   const resume = HerdrAgentParams.properties.resumeClosed as {
     description?: string;
   };
-  assert.match(resume.description ?? "", /accumulated context/);
-  assert.match(resume.description ?? "", /tabLabel/);
-  assert.match(resume.description ?? "", /Never resumes over a live agent/);
+  assert.match(resume.description ?? '', /accumulated context/);
+  assert.match(resume.description ?? '', /tabLabel/);
+  assert.match(resume.description ?? '', /Never resumes over a live agent/);
 });
 
-test("describes every parameter for the model", () => {
+test('describes every parameter for the model', () => {
   for (const [name, schema] of Object.entries(
     HerdrAgentParams.properties as Record<string, { description?: string }>,
   )) {
     assert.ok(
-      (schema.description ?? "").length > 10,
+      (schema.description ?? '').length > 10,
       `${name} needs a description the model can act on`,
     );
   }
 });
 
-test("the dynamic agent listing drops disable-model-invocation profiles", () => {
+test('the dynamic agent listing drops disable-model-invocation profiles', () => {
   const description = describeAgentProfiles([
-    { name: "scout" },
-    { name: "secret", disableModelInvocation: true },
-    { name: "scout" },
+    { name: 'scout' },
+    { name: 'secret', disableModelInvocation: true },
+    { name: 'scout' },
   ]);
   assert.match(description, /Available: scout\./);
   assert.doesNotMatch(description, /secret/);
@@ -85,11 +86,11 @@ test("the dynamic agent listing drops disable-model-invocation profiles", () => 
   assert.doesNotMatch(description, /scout, scout/);
 });
 
-test("the agent listing falls back to the plain description", () => {
+test('the agent listing falls back to the plain description', () => {
   assert.match(describeAgentProfiles([]), /Agent profile name/);
   assert.doesNotMatch(describeAgentProfiles([]), /Available:/);
   assert.match(
-    describeAgentProfiles([{ name: "ghost", disableModelInvocation: true }]),
+    describeAgentProfiles([{ name: 'ghost', disableModelInvocation: true }]),
     /Agent profile name/,
   );
 });

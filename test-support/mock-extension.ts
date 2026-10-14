@@ -1,9 +1,10 @@
-import { promises as fs } from "node:fs";
-import * as path from "node:path";
+import { promises as fs } from 'node:fs';
+import * as path from 'node:path';
+
 import type {
   ExtensionAPI,
   ExtensionContext,
-} from "@earendil-works/pi-coding-agent";
+} from '@earendil-works/pi-coding-agent';
 
 /**
  * Mock Pi host shared by the integration harness (fake Herdr) and the e2e
@@ -35,7 +36,7 @@ export interface AgentProfileFixture {
   model?: string;
   thinking?: string;
   skills?: string[];
-  systemPromptMode?: "append" | "replace";
+  systemPromptMode?: 'append' | 'replace';
   disableModelInvocation?: boolean;
   body?: string;
 }
@@ -61,7 +62,7 @@ export interface MockHost {
 export function createMockHost(options: {
   cwd: string;
   hasUI?: boolean;
-  mode?: ExtensionContext["mode"];
+  mode?: ExtensionContext['mode'];
   isIdle?: boolean;
   sessionId?: string;
   sessionFile?: string;
@@ -123,13 +124,13 @@ export function createMockHost(options: {
   const ctx = {
     cwd: options.cwd,
     hasUI: options.hasUI ?? true,
-    mode: options.mode ?? (options.hasUI === false ? "print" : "tui"),
+    mode: options.mode ?? (options.hasUI === false ? 'print' : 'tui'),
     isIdle: () => options.isIdle ?? true,
     signal: undefined,
     sessionManager: {
-      getSessionId: () => options.sessionId ?? "test-orch-session",
+      getSessionId: () => options.sessionId ?? 'test-orch-session',
       getSessionFile: () =>
-        options.sessionFile ?? path.join(options.cwd, "orchestrator.jsonl"),
+        options.sessionFile ?? path.join(options.cwd, 'orchestrator.jsonl'),
       getCwd: () => options.cwd,
     },
     ui: {
@@ -158,7 +159,7 @@ export function createMockHost(options: {
     registerMessageRenderer: (customType: string, renderer: unknown) =>
       renderers.set(customType, renderer),
     sendMessage: (
-      message: Omit<SentMessage, "triggerTurn" | "deliverAs">,
+      message: Omit<SentMessage, 'triggerTurn' | 'deliverAs'>,
       sendOptions?: { triggerTurn?: boolean; deliverAs?: string },
     ) => messages.push({ ...message, ...sendOptions }),
     sendUserMessage: (content: string) => userMessages.push(content),
@@ -183,8 +184,12 @@ export function createMockHost(options: {
     fire: async (event, payload = {}) => {
       const input = {
         type: event,
-        ...(event === "before_agent_start"
-          ? { messageType: "user", prompt: "", systemPromptOptions: { sections: {} } }
+        ...(event === 'before_agent_start'
+          ? {
+              messageType: 'user',
+              prompt: '',
+              systemPromptOptions: { sections: {} },
+            }
           : {}),
         ...payload,
       };
@@ -192,15 +197,13 @@ export function createMockHost(options: {
       for (const handler of handlers.get(event) ?? []) {
         last = await handler(input, ctx);
       }
-      return event === "before_agent_start" ? input : last;
+      return event === 'before_agent_start' ? input : last;
     },
   };
 }
 
 /** Set env vars (undefined deletes) and return a restore function. */
-export function applyEnv(
-  vars: Record<string, string | undefined>,
-): () => void {
+export function applyEnv(vars: Record<string, string | undefined>): () => void {
   const previous = new Map<string, string | undefined>();
   for (const [key, value] of Object.entries(vars)) {
     previous.set(key, process.env[key]);
@@ -222,31 +225,31 @@ export async function writeAgentProfiles(
   await fs.mkdir(dir, { recursive: true });
   for (const profile of profiles) {
     const lines = [
-      "---",
+      '---',
       `name: ${profile.name}`,
       `description: ${profile.description ?? `${profile.name} test profile`}`,
     ];
-    if (profile.tools) lines.push(`tools: ${profile.tools.join(", ")}`);
+    if (profile.tools) lines.push(`tools: ${profile.tools.join(', ')}`);
     if (profile.model) lines.push(`model: ${profile.model}`);
     if (profile.thinking) lines.push(`thinking: ${profile.thinking}`);
     if (profile.skills) {
       lines.push(
         Array.isArray(profile.skills) && profile.skills.length > 0
-          ? `skills: ${profile.skills.join(", ")}`
-          : "skills: []",
+          ? `skills: ${profile.skills.join(', ')}`
+          : 'skills: []',
       );
     }
     if (profile.systemPromptMode) {
       lines.push(`system-prompt: ${profile.systemPromptMode}`);
     }
     if (profile.disableModelInvocation) {
-      lines.push("disable-model-invocation: true");
+      lines.push('disable-model-invocation: true');
     }
-    lines.push("---", "", profile.body ?? `You are the ${profile.name}.`);
+    lines.push('---', '', profile.body ?? `You are the ${profile.name}.`);
     await fs.writeFile(
       path.join(dir, `${profile.name}.md`),
-      `${lines.join("\n")}\n`,
-      "utf8",
+      `${lines.join('\n')}\n`,
+      'utf8',
     );
   }
 }

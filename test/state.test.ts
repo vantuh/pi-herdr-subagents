@@ -1,10 +1,11 @@
-import assert from "node:assert/strict";
-import { promises as fs } from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
-import test, { after } from "node:test";
-import { spawn, type ChildProcess } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import assert from 'node:assert/strict';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { promises as fs } from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import test, { after } from 'node:test';
+import { fileURLToPath } from 'node:url';
+
 import {
   claimDetachedAgent,
   clearAgentSpawnWarnings,
@@ -29,25 +30,25 @@ import {
   CLOSED_HISTORY_MAX_PER_OWNER,
   CLOSED_HISTORY_TTL_MS,
   type ClosedAgentHistoryRecord,
-} from "../src/state.ts";
-import type { PaneInfo } from "../src/types.ts";
+} from '../src/state.ts';
+import type { PaneInfo } from '../src/types.ts';
 
 function pane(overrides: Partial<PaneInfo> = {}): PaneInfo {
   return {
-    pane_id: "pane-1",
-    tab_id: "tab-1",
-    workspace_id: "workspace-1",
-    terminal_id: "term-1",
+    pane_id: 'pane-1',
+    tab_id: 'tab-1',
+    workspace_id: 'workspace-1',
+    terminal_id: 'term-1',
     ...overrides,
   };
 }
 
 async function tempStatePath(): Promise<string> {
   const dir = await fs.mkdtemp(
-    path.join(os.tmpdir(), "herdr-agents-state-test-"),
+    path.join(os.tmpdir(), 'herdr-agents-state-test-'),
   );
   tempDirs.push(dir);
-  return path.join(dir, "state.json");
+  return path.join(dir, 'state.json');
 }
 
 // Every test here needs its own state file, so the dirs are removed in one
@@ -59,145 +60,153 @@ after(async () => {
   }
 });
 
-test("uses terminal id as the durable pane state key", () => {
-  assert.equal(paneStateKey(pane()), "terminal:term-1");
+test('uses terminal id as the durable pane state key', () => {
+  assert.equal(paneStateKey(pane()), 'terminal:term-1');
   assert.equal(paneStateKey(pane({ terminal_id: undefined })), undefined);
 });
 
-test("records and loads agent lifecycle state", async () => {
+test('records and loads agent lifecycle state', async () => {
   const filePath = await tempStatePath();
 
   await recordAgentLifecycle(
     pane(),
     {
-      tabLabel: "Researcher",
-      agent: "researcher",
-      automationName: "researcher_ab12cd34",
-      resultFile: "/tmp/herdr-agent-test/result.md",
-      layout: "pane",
-      spawnWarnings: ["Skill missing."],
-      ownerTerminalId: "term-orch",
+      tabLabel: 'Researcher',
+      agent: 'researcher',
+      automationName: 'researcher_ab12cd34',
+      resultFile: '/tmp/herdr-agent-test/result.md',
+      layout: 'pane',
+      spawnWarnings: ['Skill missing.'],
+      ownerTerminalId: 'term-orch',
     },
     filePath,
   );
 
   const state = await loadHerdrAgentsState(filePath);
-  assert.deepEqual(state.agents["terminal:term-1"], {
-    lifecycle: "oneshot",
-    tabLabel: "Researcher",
-    agent: "researcher",
-    automationName: "researcher_ab12cd34",
-    resultFile: "/tmp/herdr-agent-test/result.md",
-    layout: "pane",
-    spawnWarnings: ["Skill missing."],
-    ownerTerminalId: "term-orch",
-    updatedAt: state.agents["terminal:term-1"]?.updatedAt,
+  assert.deepEqual(state.agents['terminal:term-1'], {
+    lifecycle: 'oneshot',
+    tabLabel: 'Researcher',
+    agent: 'researcher',
+    automationName: 'researcher_ab12cd34',
+    resultFile: '/tmp/herdr-agent-test/result.md',
+    layout: 'pane',
+    spawnWarnings: ['Skill missing.'],
+    ownerTerminalId: 'term-orch',
+    updatedAt: state.agents['terminal:term-1']?.updatedAt,
   });
 });
 
-test("preserves inert persistent records without restamping or claiming them", async () => {
+test('preserves inert persistent records without restamping or claiming them', async () => {
   const filePath = await tempStatePath();
   const record = {
-    lifecycle: "persistent", detached: true, tabLabel: "Legacy",
-    ownerTerminalId: "term-orch", updatedAt: "2026-01-01T00:00:00.000Z",
+    lifecycle: 'persistent',
+    detached: true,
+    tabLabel: 'Legacy',
+    ownerTerminalId: 'term-orch',
+    updatedAt: '2026-01-01T00:00:00.000Z',
   };
   const before = JSON.stringify({
-    version: 2, agents: { "terminal:term-1": record }, closedHistory: [],
+    version: 2,
+    agents: { 'terminal:term-1': record },
+    closedHistory: [],
   });
   await fs.writeFile(filePath, before);
-  await recordAgentLifecycle(pane(), { tabLabel: "Replacement" }, filePath);
+  await recordAgentLifecycle(pane(), { tabLabel: 'Replacement' }, filePath);
   assert.equal(await claimDetachedAgent(pane(), filePath), false);
-  assert.deepEqual((await loadHerdrAgentsState(filePath)).agents["terminal:term-1"], record);
-  assert.equal(await fs.readFile(filePath, "utf8"), before);
+  assert.deepEqual(
+    (await loadHerdrAgentsState(filePath)).agents['terminal:term-1'],
+    record,
+  );
+  assert.equal(await fs.readFile(filePath, 'utf8'), before);
 });
 
-test("preserves owner when a later record omits it", async () => {
+test('preserves owner when a later record omits it', async () => {
   const filePath = await tempStatePath();
   const agentPane = pane();
 
   await recordAgentLifecycle(
     agentPane,
-    { tabLabel: "Scout", ownerTerminalId: "term-orch" },
+    { tabLabel: 'Scout', ownerTerminalId: 'term-orch' },
     filePath,
   );
   await recordAgentLifecycle(
     agentPane,
-    { tabLabel: "Scout", detached: true },
+    { tabLabel: 'Scout', detached: true },
     filePath,
   );
 
   assert.equal(
-    (await loadHerdrAgentsState(filePath)).agents["terminal:term-1"]
+    (await loadHerdrAgentsState(filePath)).agents['terminal:term-1']
       ?.ownerTerminalId,
-    "term-orch",
+    'term-orch',
   );
 });
 
-test("treats a stamped record as owned only by that orchestrator", () => {
+test('treats a stamped record as owned only by that orchestrator', () => {
   const record = {
-    lifecycle: "oneshot" as const,
-    ownerTerminalId: "term-a",
-    updatedAt: "2026-01-01T00:00:00.000Z",
+    lifecycle: 'oneshot' as const,
+    ownerTerminalId: 'term-a',
+    updatedAt: '2026-01-01T00:00:00.000Z',
   };
-  assert.equal(isAgentOwnedBy(record, "term-a", "tab-b", "tab-a"), true);
-  assert.equal(isAgentOwnedBy(record, "term-b", "tab-b", "tab-a"), false);
-  assert.equal(isAgentOwnedBy(record, undefined, "tab-a", "tab-a"), false);
+  assert.equal(isAgentOwnedBy(record, 'term-a', 'tab-b', 'tab-a'), true);
+  assert.equal(isAgentOwnedBy(record, 'term-b', 'tab-b', 'tab-a'), false);
+  assert.equal(isAgentOwnedBy(record, undefined, 'tab-a', 'tab-a'), false);
 });
 
-test("legacy pane records without owner stay in the current tab only", () => {
+test('legacy pane records without owner stay in the current tab only', () => {
   const record = {
-    lifecycle: "oneshot" as const,
-    layout: "pane" as const,
-    updatedAt: "2026-01-01T00:00:00.000Z",
+    lifecycle: 'oneshot' as const,
+    layout: 'pane' as const,
+    updatedAt: '2026-01-01T00:00:00.000Z',
   };
-  assert.equal(isAgentOwnedBy(record, "term-a", "tab-a", "tab-a"), true);
-  assert.equal(isAgentOwnedBy(record, "term-a", "tab-b", "tab-a"), false);
+  assert.equal(isAgentOwnedBy(record, 'term-a', 'tab-a', 'tab-a'), true);
+  assert.equal(isAgentOwnedBy(record, 'term-a', 'tab-b', 'tab-a'), false);
 });
 
-test("legacy tab records without owner stay visible until restamped", () => {
+test('legacy tab records without owner stay visible until restamped', () => {
   const record = {
-    lifecycle: "oneshot" as const,
-    layout: "tab" as const,
-    updatedAt: "2026-01-01T00:00:00.000Z",
+    lifecycle: 'oneshot' as const,
+    layout: 'tab' as const,
+    updatedAt: '2026-01-01T00:00:00.000Z',
   };
-  assert.equal(isAgentOwnedBy(record, "term-b", "tab-worker", "tab-a"), true);
+  assert.equal(isAgentOwnedBy(record, 'term-b', 'tab-worker', 'tab-a'), true);
 });
 
-test("workspace records without owner are never treated as owned", () => {
+test('workspace records without owner are never treated as owned', () => {
   // Workspace layout has no pre-stamping era, so an unstamped record cannot
   // be a leftover from an older version — it must stay invisible (and
   // unstealable) to every Orchestrator.
   const record = {
-    lifecycle: "oneshot" as const,
-    layout: "workspace" as const,
-    updatedAt: "2026-01-01T00:00:00.000Z",
+    lifecycle: 'oneshot' as const,
+    layout: 'workspace' as const,
+    updatedAt: '2026-01-01T00:00:00.000Z',
   };
   // A workspace record's pane lives in the Agents workspace, never in the
   // Orchestrator's current tab, so the pane-locality fallback cannot claim it.
-  assert.equal(isAgentOwnedBy(record, "term-a", "tab-worker", "tab-a"), false);
+  assert.equal(isAgentOwnedBy(record, 'term-a', 'tab-worker', 'tab-a'), false);
 });
 
-test("clears spawn warnings after a successful collect", async () => {
+test('clears spawn warnings after a successful collect', async () => {
   const filePath = await tempStatePath();
   const agentPane = pane();
 
   await recordAgentLifecycle(
     agentPane,
-    { spawnWarnings: ["Skill missing."] },
+    { spawnWarnings: ['Skill missing.'] },
     filePath,
   );
   await clearAgentSpawnWarnings(agentPane, filePath);
 
   assert.equal(
-    (await loadHerdrAgentsState(filePath)).agents["terminal:term-1"]
+    (await loadHerdrAgentsState(filePath)).agents['terminal:term-1']
       ?.spawnWarnings,
     undefined,
   );
 });
 
-test("ignores corrupted state files", async () => {
+test('ignores corrupted state files', async () => {
   const filePath = await tempStatePath();
-  await fs.writeFile(filePath, "not json", "utf8");
+  await fs.writeFile(filePath, 'not json', 'utf8');
 
   assert.deepEqual(
     await loadHerdrAgentsState(filePath),
@@ -205,42 +214,38 @@ test("ignores corrupted state files", async () => {
   );
 });
 
-test("prunes state for terminals no longer reported by Herdr", () => {
+test('prunes state for terminals no longer reported by Herdr', () => {
   const state = emptyHerdrAgentsState();
-  state.agents["terminal:term-1"] = {
-    lifecycle: "oneshot",
-    updatedAt: "2026-01-01T00:00:00.000Z",
+  state.agents['terminal:term-1'] = {
+    lifecycle: 'oneshot',
+    updatedAt: '2026-01-01T00:00:00.000Z',
   };
-  state.agents["terminal:gone"] = {
-    lifecycle: "oneshot",
-    updatedAt: "2026-01-01T00:00:00.000Z",
+  state.agents['terminal:gone'] = {
+    lifecycle: 'oneshot',
+    updatedAt: '2026-01-01T00:00:00.000Z',
   };
 
   assert.equal(pruneHerdrAgentsState(state, [pane()]), true);
-  assert.deepEqual(Object.keys(state.agents), ["terminal:term-1"]);
+  assert.deepEqual(Object.keys(state.agents), ['terminal:term-1']);
   assert.equal(pruneHerdrAgentsState(state, [pane()]), false);
 });
 
-test("recordAgentLifecycle is a no-op when terminal_id is missing", async () => {
+test('recordAgentLifecycle is a no-op when terminal_id is missing', async () => {
   const filePath = await tempStatePath();
 
-  await recordAgentLifecycle(
-    pane({ terminal_id: undefined }),
-    {},
-    filePath,
-  );
+  await recordAgentLifecycle(pane({ terminal_id: undefined }), {}, filePath);
 
   await assert.rejects(fs.access(filePath));
 });
 
-test("deleteAgentLifecycle is a no-op when terminal_id is missing", async () => {
+test('deleteAgentLifecycle is a no-op when terminal_id is missing', async () => {
   const filePath = await tempStatePath();
   await recordAgentLifecycle(pane(), {}, filePath);
 
   await deleteAgentLifecycle(pane({ terminal_id: undefined }), filePath);
 
   const state = await loadHerdrAgentsState(filePath);
-  assert.ok(state.agents["terminal:term-1"]);
+  assert.ok(state.agents['terminal:term-1']);
 });
 
 test("concurrent recordAgentLifecycle calls in the same process don't lose entries", async () => {
@@ -265,27 +270,27 @@ test("concurrent recordAgentLifecycle calls in the same process don't lose entri
 
 test("concurrent record and delete calls for the same terminal don't corrupt state", async () => {
   const filePath = await tempStatePath();
-  const survivor = pane({ terminal_id: "term-survivor" });
+  const survivor = pane({ terminal_id: 'term-survivor' });
 
   await Promise.all([
-    recordAgentLifecycle(pane(), { agent: "a" }, filePath),
-    recordAgentLifecycle(survivor, { agent: "b" }, filePath),
+    recordAgentLifecycle(pane(), { agent: 'a' }, filePath),
+    recordAgentLifecycle(survivor, { agent: 'b' }, filePath),
     deleteAgentLifecycle(pane(), filePath),
-    recordAgentLifecycle(survivor, { agent: "c" }, filePath),
+    recordAgentLifecycle(survivor, { agent: 'c' }, filePath),
   ]);
 
   const state = await loadHerdrAgentsState(filePath);
   // The last queued write for the survivor terminal must win.
-  assert.equal(state.agents["terminal:term-survivor"]?.agent, "c");
+  assert.equal(state.agents['terminal:term-survivor']?.agent, 'c');
 });
 
-test("claims a detached agent exactly once", async () => {
+test('claims a detached agent exactly once', async () => {
   const filePath = await tempStatePath();
-  const target = pane({ terminal_id: "term-async" });
+  const target = pane({ terminal_id: 'term-async' });
 
   await recordAgentLifecycle(
     target,
-    { tabLabel: "Async", detached: true },
+    { tabLabel: 'Async', detached: true },
     filePath,
   );
 
@@ -293,24 +298,24 @@ test("claims a detached agent exactly once", async () => {
   assert.equal(await claimDetachedAgent(target, filePath), false);
 
   const state = await loadHerdrAgentsState(filePath);
-  assert.equal(state.agents["terminal:term-async"]?.detached, undefined);
+  assert.equal(state.agents['terminal:term-async']?.detached, undefined);
   // Only the claim is released; the record itself must survive.
-  assert.equal(state.agents["terminal:term-async"]?.tabLabel, "Async");
+  assert.equal(state.agents['terminal:term-async']?.tabLabel, 'Async');
 });
 
-test("does not claim an agent that was never detached", async () => {
+test('does not claim an agent that was never detached', async () => {
   const filePath = await tempStatePath();
-  const target = pane({ terminal_id: "term-sync" });
+  const target = pane({ terminal_id: 'term-sync' });
 
-  await recordAgentLifecycle(target, { tabLabel: "Sync" }, filePath);
+  await recordAgentLifecycle(target, { tabLabel: 'Sync' }, filePath);
 
   assert.equal(await claimDetachedAgent(target, filePath), false);
 });
 
-test("does not claim an unknown agent", async () => {
+test('does not claim an unknown agent', async () => {
   const filePath = await tempStatePath();
   assert.equal(
-    await claimDetachedAgent(pane({ terminal_id: "term-missing" }), filePath),
+    await claimDetachedAgent(pane({ terminal_id: 'term-missing' }), filePath),
     false,
   );
   assert.equal(
@@ -319,13 +324,13 @@ test("does not claim an unknown agent", async () => {
   );
 });
 
-test("serializes concurrent claims so only one wins", async () => {
+test('serializes concurrent claims so only one wins', async () => {
   const filePath = await tempStatePath();
-  const target = pane({ terminal_id: "term-race" });
+  const target = pane({ terminal_id: 'term-race' });
 
   await recordAgentLifecycle(
     target,
-    { tabLabel: "Race", detached: true },
+    { tabLabel: 'Race', detached: true },
     filePath,
   );
 
@@ -338,18 +343,18 @@ test("serializes concurrent claims so only one wins", async () => {
   assert.equal(results.filter(Boolean).length, 1);
 });
 
-test("persists the detached flag across a reload of the state file", async () => {
+test('persists the detached flag across a reload of the state file', async () => {
   const filePath = await tempStatePath();
-  const target = pane({ terminal_id: "term-reload" });
+  const target = pane({ terminal_id: 'term-reload' });
 
   await recordAgentLifecycle(
     target,
-    { tabLabel: "Reload", detached: true },
+    { tabLabel: 'Reload', detached: true },
     filePath,
   );
 
   const reloaded = await loadHerdrAgentsState(filePath);
-  assert.equal(reloaded.agents["terminal:term-reload"]?.detached, true);
+  assert.equal(reloaded.agents['terminal:term-reload']?.detached, true);
 });
 
 function history(
@@ -357,34 +362,34 @@ function history(
 ): ClosedAgentHistoryRecord {
   return {
     id: overrides.id ?? `ch_${Math.random().toString(16).slice(2)}`,
-    ownerSessionId: "orch-a",
-    profileName: "scout",
-    tabLabel: "Scout Resume",
-    childSessionFile: "/tmp/child.jsonl",
-    childSessionId: "child-1",
-    cwd: "/tmp/repo",
-    layout: "pane",
-    lifecycle: "oneshot",
-    createdAt: "2026-01-01T00:00:00.000Z",
+    ownerSessionId: 'orch-a',
+    profileName: 'scout',
+    tabLabel: 'Scout Resume',
+    childSessionFile: '/tmp/child.jsonl',
+    childSessionId: 'child-1',
+    cwd: '/tmp/repo',
+    layout: 'pane',
+    lifecycle: 'oneshot',
+    createdAt: '2026-01-01T00:00:00.000Z',
     closedAt: new Date().toISOString(),
-    status: "resumable",
+    status: 'resumable',
     claimGeneration: 0,
     ...overrides,
   };
 }
 
-test("migrates v1 state to v2 and keeps live terminal-keyed records", async () => {
+test('migrates v1 state to v2 and keeps live terminal-keyed records', async () => {
   const filePath = await tempStatePath();
   await fs.writeFile(
     filePath,
     JSON.stringify({
       version: 1,
       agents: {
-        "terminal:term-1": {
-          lifecycle: "oneshot",
-          tabLabel: "Scout",
-          ownerTerminalId: "term-orch",
-          updatedAt: "2026-01-01T00:00:00.000Z",
+        'terminal:term-1': {
+          lifecycle: 'oneshot',
+          tabLabel: 'Scout',
+          ownerTerminalId: 'term-orch',
+          updatedAt: '2026-01-01T00:00:00.000Z',
         },
       },
     }),
@@ -392,34 +397,34 @@ test("migrates v1 state to v2 and keeps live terminal-keyed records", async () =
 
   const loaded = await loadHerdrAgentsState(filePath);
   assert.equal(loaded.version, 2);
-  assert.equal(loaded.agents["terminal:term-1"]?.tabLabel, "Scout");
+  assert.equal(loaded.agents['terminal:term-1']?.tabLabel, 'Scout');
   assert.deepEqual(loaded.closedHistory, []);
 });
 
-test("archives one newest continuation slot per owner session and label", async () => {
+test('archives one newest continuation slot per owner session and label', async () => {
   const filePath = await tempStatePath();
   const first = await archiveClosedOneShot(
     {
-      ownerSessionId: "orch-a",
-      profileName: "scout",
-      tabLabel: "Scout Resume",
-      childSessionFile: "/tmp/a.jsonl",
-      childSessionId: "sid-a",
-      cwd: "/tmp/repo",
-      layout: "pane",
+      ownerSessionId: 'orch-a',
+      profileName: 'scout',
+      tabLabel: 'Scout Resume',
+      childSessionFile: '/tmp/a.jsonl',
+      childSessionId: 'sid-a',
+      cwd: '/tmp/repo',
+      layout: 'pane',
     },
     filePath,
   );
   const second = await archiveClosedOneShot(
     {
       id: first.id,
-      ownerSessionId: "orch-a",
-      profileName: "scout",
-      tabLabel: "Scout Resume",
-      childSessionFile: "/tmp/b.jsonl",
-      childSessionId: "sid-b",
-      cwd: "/tmp/repo",
-      layout: "pane",
+      ownerSessionId: 'orch-a',
+      profileName: 'scout',
+      tabLabel: 'Scout Resume',
+      childSessionFile: '/tmp/b.jsonl',
+      childSessionId: 'sid-b',
+      cwd: '/tmp/repo',
+      layout: 'pane',
     },
     filePath,
   );
@@ -427,30 +432,30 @@ test("archives one newest continuation slot per owner session and label", async 
   const state = await loadHerdrAgentsState(filePath);
   assert.equal(state.closedHistory.length, 1);
   assert.equal(state.closedHistory[0]?.id, first.id);
-  assert.equal(state.closedHistory[0]?.childSessionId, "sid-b");
+  assert.equal(state.closedHistory[0]?.childSessionId, 'sid-b');
   assert.equal(second.id, first.id);
 });
 
-test("does not let another orchestrator session claim closed history", async () => {
+test('does not let another orchestrator session claim closed history', async () => {
   const filePath = await tempStatePath();
   await archiveClosedOneShot(
     {
-      ownerSessionId: "orch-a",
-      profileName: "scout",
-      tabLabel: "Scout Resume",
-      childSessionFile: "/tmp/a.jsonl",
-      childSessionId: "sid-a",
-      cwd: "/tmp/repo",
-      layout: "pane",
+      ownerSessionId: 'orch-a',
+      profileName: 'scout',
+      tabLabel: 'Scout Resume',
+      childSessionFile: '/tmp/a.jsonl',
+      childSessionId: 'sid-a',
+      cwd: '/tmp/repo',
+      layout: 'pane',
     },
     filePath,
   );
 
   const other = await claimClosedHistory(
     {
-      ownerSessionId: "orch-b",
-      tabLabel: "Scout Resume",
-      profileName: "scout",
+      ownerSessionId: 'orch-b',
+      tabLabel: 'Scout Resume',
+      profileName: 'scout',
     },
     filePath,
   );
@@ -459,17 +464,17 @@ test("does not let another orchestrator session claim closed history", async () 
     assert.match(other.error, /owned by this Orchestrator session/);
 });
 
-test("claims a closed history slot exactly once and can release it", async () => {
+test('claims a closed history slot exactly once and can release it', async () => {
   const filePath = await tempStatePath();
   const archived = await archiveClosedOneShot(
     {
-      ownerSessionId: "orch-a",
-      profileName: "scout",
-      tabLabel: "Scout Resume",
-      childSessionFile: "/tmp/a.jsonl",
-      childSessionId: "sid-a",
-      cwd: "/tmp/repo",
-      layout: "pane",
+      ownerSessionId: 'orch-a',
+      profileName: 'scout',
+      tabLabel: 'Scout Resume',
+      childSessionFile: '/tmp/a.jsonl',
+      childSessionId: 'sid-a',
+      cwd: '/tmp/repo',
+      layout: 'pane',
     },
     filePath,
   );
@@ -477,25 +482,25 @@ test("claims a closed history slot exactly once and can release it", async () =>
   const results = await Promise.all([
     claimClosedHistory(
       {
-        ownerSessionId: "orch-a",
-        tabLabel: "Scout Resume",
-        profileName: "scout",
+        ownerSessionId: 'orch-a',
+        tabLabel: 'Scout Resume',
+        profileName: 'scout',
       },
       filePath,
     ),
     claimClosedHistory(
       {
-        ownerSessionId: "orch-a",
-        tabLabel: "Scout Resume",
-        profileName: "scout",
+        ownerSessionId: 'orch-a',
+        tabLabel: 'Scout Resume',
+        profileName: 'scout',
       },
       filePath,
     ),
     claimClosedHistory(
       {
-        ownerSessionId: "orch-a",
-        tabLabel: "Scout Resume",
-        profileName: "scout",
+        ownerSessionId: 'orch-a',
+        tabLabel: 'Scout Resume',
+        profileName: 'scout',
       },
       filePath,
     ),
@@ -511,9 +516,9 @@ test("claims a closed history slot exactly once and can release it", async () =>
   );
   const again = await claimClosedHistory(
     {
-      ownerSessionId: "orch-a",
-      tabLabel: "Scout Resume",
-      profileName: "scout",
+      ownerSessionId: 'orch-a',
+      tabLabel: 'Scout Resume',
+      profileName: 'scout',
     },
     filePath,
   );
@@ -521,11 +526,11 @@ test("claims a closed history slot exactly once and can release it", async () =>
   assert.equal(archived.id, winner.record.id);
 });
 
-test("keeps live records terminal-keyed while pruning closed history bounds", () => {
+test('keeps live records terminal-keyed while pruning closed history bounds', () => {
   const state = emptyHerdrAgentsState();
-  state.agents["terminal:term-1"] = {
-    lifecycle: "oneshot",
-    updatedAt: "2026-01-01T00:00:00.000Z",
+  state.agents['terminal:term-1'] = {
+    lifecycle: 'oneshot',
+    updatedAt: '2026-01-01T00:00:00.000Z',
   };
   for (let i = 0; i < CLOSED_HISTORY_MAX_PER_OWNER + 5; i++) {
     state.closedHistory.push(
@@ -537,23 +542,23 @@ test("keeps live records terminal-keyed while pruning closed history bounds", ()
     );
   }
   assert.equal(pruneHerdrAgentsState(state, [pane()]), false);
-  assert.ok(state.agents["terminal:term-1"]);
+  assert.ok(state.agents['terminal:term-1']);
   pruneClosedHistory(state);
   assert.equal(state.closedHistory.length, CLOSED_HISTORY_MAX_PER_OWNER);
 });
 
-test("drops expired closed history but never claimed in-flight slots", () => {
+test('drops expired closed history but never claimed in-flight slots', () => {
   const state = emptyHerdrAgentsState();
   state.closedHistory.push(
     history({
-      id: "old",
+      id: 'old',
       closedAt: new Date(
         Date.now() - CLOSED_HISTORY_TTL_MS - 1000,
       ).toISOString(),
     }),
     history({
-      id: "claimed-old",
-      status: "claimed",
+      id: 'claimed-old',
+      status: 'claimed',
       closedAt: new Date(
         Date.now() - CLOSED_HISTORY_TTL_MS - 1000,
       ).toISOString(),
@@ -562,18 +567,18 @@ test("drops expired closed history but never claimed in-flight slots", () => {
   pruneClosedHistory(state);
   assert.deepEqual(
     state.closedHistory.map((record) => record.id),
-    ["claimed-old"],
+    ['claimed-old'],
   );
 });
 
-test("caps closed history globally without deleting session files", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "herdr-hist-jsonl-"));
+test('caps closed history globally without deleting session files', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'herdr-hist-jsonl-'));
   tempDirs.push(dir);
   const state = emptyHerdrAgentsState();
   const files: string[] = [];
   for (let i = 0; i < CLOSED_HISTORY_MAX_GLOBAL + 3; i++) {
     const sessionFile = path.join(dir, `s-${i}.jsonl`);
-    await fs.writeFile(sessionFile, "{}\n");
+    await fs.writeFile(sessionFile, '{}\n');
     files.push(sessionFile);
     state.closedHistory.push(
       history({
@@ -592,34 +597,34 @@ test("caps closed history globally without deleting session files", async () => 
   }
 });
 
-test("loads v2 closed history without rewriting an unknown future version", async () => {
+test('loads v2 closed history without rewriting an unknown future version', async () => {
   const filePath = await tempStatePath();
   await fs.writeFile(
     filePath,
     JSON.stringify({
       version: 2,
       agents: {},
-      closedHistory: [history({ id: "keep-me" })],
+      closedHistory: [history({ id: 'keep-me' })],
     }),
   );
   const loaded = await loadHerdrAgentsState(filePath);
   assert.equal(loaded.version, 2);
-  assert.equal(loaded.closedHistory[0]?.id, "keep-me");
-  const onDisk = JSON.parse(await fs.readFile(filePath, "utf8")) as {
+  assert.equal(loaded.closedHistory[0]?.id, 'keep-me');
+  const onDisk = JSON.parse(await fs.readFile(filePath, 'utf8')) as {
     version: number;
   };
   assert.equal(onDisk.version, 2);
 });
 
-test("quarantines unknown future versions instead of silently rewriting them", async () => {
+test('quarantines unknown future versions instead of silently rewriting them', async () => {
   const filePath = await tempStatePath();
   const original = {
     version: 99,
     agents: {
-      "terminal:term-1": {
-        lifecycle: "oneshot",
-        tabLabel: "Keep",
-        updatedAt: "2026-01-01T00:00:00.000Z",
+      'terminal:term-1': {
+        lifecycle: 'oneshot',
+        tabLabel: 'Keep',
+        updatedAt: '2026-01-01T00:00:00.000Z',
       },
     },
   };
@@ -628,45 +633,45 @@ test("quarantines unknown future versions instead of silently rewriting them", a
   assert.deepEqual(loaded, emptyHerdrAgentsState());
   await assert.rejects(fs.access(filePath));
   const quarantined = JSON.parse(
-    await fs.readFile(`${filePath}.quarantine.v99`, "utf8"),
+    await fs.readFile(`${filePath}.quarantine.v99`, 'utf8'),
   ) as typeof original;
   assert.equal(quarantined.version, 99);
-  assert.equal(quarantined.agents["terminal:term-1"]?.tabLabel, "Keep");
+  assert.equal(quarantined.agents['terminal:term-1']?.tabLabel, 'Keep');
 });
 
-test("explicitly migrates numeric v1 to in-memory v2", async () => {
+test('explicitly migrates numeric v1 to in-memory v2', async () => {
   const filePath = await tempStatePath();
   await fs.writeFile(
     filePath,
     JSON.stringify({
       version: 1,
       agents: {
-        "terminal:term-1": {
-          lifecycle: "oneshot",
-          tabLabel: "Legacy",
-          updatedAt: "2026-01-01T00:00:00.000Z",
+        'terminal:term-1': {
+          lifecycle: 'oneshot',
+          tabLabel: 'Legacy',
+          updatedAt: '2026-01-01T00:00:00.000Z',
         },
       },
     }),
   );
   const loaded = await loadHerdrAgentsState(filePath);
   assert.equal(loaded.version, 2);
-  assert.equal(loaded.agents["terminal:term-1"]?.tabLabel, "Legacy");
+  assert.equal(loaded.agents['terminal:term-1']?.tabLabel, 'Legacy');
   assert.deepEqual(loaded.closedHistory, []);
-  const onDisk = JSON.parse(await fs.readFile(filePath, "utf8")) as {
+  const onDisk = JSON.parse(await fs.readFile(filePath, 'utf8')) as {
     version: number;
   };
   assert.equal(onDisk.version, 1);
 });
 
-test("quarantines missing versions instead of treating them as v1", async () => {
+test('quarantines missing versions instead of treating them as v1', async () => {
   const filePath = await tempStatePath();
   const original = JSON.stringify({
     agents: {
-      "terminal:term-1": {
-        lifecycle: "oneshot",
-        tabLabel: "Keep",
-        updatedAt: "2026-01-01T00:00:00.000Z",
+      'terminal:term-1': {
+        lifecycle: 'oneshot',
+        tabLabel: 'Keep',
+        updatedAt: '2026-01-01T00:00:00.000Z',
       },
     },
   });
@@ -676,88 +681,88 @@ test("quarantines missing versions instead of treating them as v1", async () => 
   await assert.rejects(fs.access(filePath));
   const quarantined = await fs.readFile(
     `${filePath}.quarantine.vmissing`,
-    "utf8",
+    'utf8',
   );
   assert.equal(quarantined.trim(), original);
 });
 
-test("quarantines malformed JSON instead of overwriting it", async () => {
+test('quarantines malformed JSON instead of overwriting it', async () => {
   const filePath = await tempStatePath();
-  await fs.writeFile(filePath, "{not json\n");
+  await fs.writeFile(filePath, '{not json\n');
   const loaded = await loadHerdrAgentsState(filePath);
   assert.deepEqual(loaded, emptyHerdrAgentsState());
   await fs.access(`${filePath}.quarantine.vjson`);
   assert.equal(
-    await fs.readFile(`${filePath}.quarantine.vjson`, "utf8"),
-    "{not json\n",
+    await fs.readFile(`${filePath}.quarantine.vjson`, 'utf8'),
+    '{not json\n',
   );
 });
 
-test("quarantines malformed versions instead of migrating them", async () => {
+test('quarantines malformed versions instead of migrating them', async () => {
   const filePath = await tempStatePath();
   await fs.writeFile(
     filePath,
-    `${JSON.stringify({ version: "two", agents: {} })}\n`,
+    `${JSON.stringify({ version: 'two', agents: {} })}\n`,
   );
   const loaded = await loadHerdrAgentsState(filePath);
   assert.deepEqual(loaded, emptyHerdrAgentsState());
   await fs.access(`${filePath}.quarantine.vtwo`);
 });
 
-test("releases stale claimed history that has no live generation", async () => {
+test('releases stale claimed history that has no live generation', async () => {
   const filePath = await tempStatePath();
   const archived = await archiveClosedOneShot(
     {
-      ownerSessionId: "orch-a",
-      profileName: "scout",
-      tabLabel: "Scout Resume",
-      childSessionFile: "/tmp/a.jsonl",
-      childSessionId: "sid-a",
-      cwd: "/tmp/repo",
-      layout: "pane",
+      ownerSessionId: 'orch-a',
+      profileName: 'scout',
+      tabLabel: 'Scout Resume',
+      childSessionFile: '/tmp/a.jsonl',
+      childSessionId: 'sid-a',
+      cwd: '/tmp/repo',
+      layout: 'pane',
     },
     filePath,
   );
   const claimed = await claimClosedHistory(
     {
-      ownerSessionId: "orch-a",
-      tabLabel: "Scout Resume",
-      profileName: "scout",
+      ownerSessionId: 'orch-a',
+      tabLabel: 'Scout Resume',
+      profileName: 'scout',
     },
     filePath,
   );
   assert.equal(claimed.ok, true);
   const previous = process.env.HERDR_AGENTS_CLAIM_LEASE_MS;
-  process.env.HERDR_AGENTS_CLAIM_LEASE_MS = "0";
+  process.env.HERDR_AGENTS_CLAIM_LEASE_MS = '0';
   try {
     const loaded = await loadHerdrAgentsState(filePath);
     assert.equal(loaded.closedHistory[0]?.id, archived.id);
-    assert.equal(loaded.closedHistory[0]?.status, "resumable");
+    assert.equal(loaded.closedHistory[0]?.status, 'resumable');
   } finally {
     if (previous === undefined) delete process.env.HERDR_AGENTS_CLAIM_LEASE_MS;
     else process.env.HERDR_AGENTS_CLAIM_LEASE_MS = previous;
   }
 });
 
-test("does not release a claimed generation that still has a live agent", async () => {
+test('does not release a claimed generation that still has a live agent', async () => {
   const filePath = await tempStatePath();
   await archiveClosedOneShot(
     {
-      ownerSessionId: "orch-a",
-      profileName: "scout",
-      tabLabel: "Scout Resume",
-      childSessionFile: "/tmp/a.jsonl",
-      childSessionId: "sid-a",
-      cwd: "/tmp/repo",
-      layout: "pane",
+      ownerSessionId: 'orch-a',
+      profileName: 'scout',
+      tabLabel: 'Scout Resume',
+      childSessionFile: '/tmp/a.jsonl',
+      childSessionId: 'sid-a',
+      cwd: '/tmp/repo',
+      layout: 'pane',
     },
     filePath,
   );
   const claimed = await claimClosedHistory(
     {
-      ownerSessionId: "orch-a",
-      tabLabel: "Scout Resume",
-      profileName: "scout",
+      ownerSessionId: 'orch-a',
+      tabLabel: 'Scout Resume',
+      profileName: 'scout',
     },
     filePath,
   );
@@ -766,22 +771,22 @@ test("does not release a claimed generation that still has a live agent", async 
   await recordAgentLifecycle(
     pane(),
     {
-      tabLabel: "Scout Resume",
+      tabLabel: 'Scout Resume',
       closedHistoryId: claimed.record.id,
       closedHistoryGeneration: claimed.record.claimGeneration,
     },
     filePath,
   );
   const previous = process.env.HERDR_AGENTS_CLAIM_LEASE_MS;
-  process.env.HERDR_AGENTS_CLAIM_LEASE_MS = "0";
+  process.env.HERDR_AGENTS_CLAIM_LEASE_MS = '0';
   try {
     const loaded = await loadHerdrAgentsState(filePath);
-    assert.equal(loaded.closedHistory[0]?.status, "claimed");
+    assert.equal(loaded.closedHistory[0]?.status, 'claimed');
     const again = await claimClosedHistory(
       {
-        ownerSessionId: "orch-a",
-        tabLabel: "Scout Resume",
-        profileName: "scout",
+        ownerSessionId: 'orch-a',
+        tabLabel: 'Scout Resume',
+        profileName: 'scout',
       },
       filePath,
     );
@@ -792,44 +797,44 @@ test("does not release a claimed generation that still has a live agent", async 
   }
 });
 
-test("finalizes staged history after the live pane disappears", async () => {
+test('finalizes staged history after the live pane disappears', async () => {
   const state = emptyHerdrAgentsState();
-  state.agents["terminal:term-1"] = {
-    lifecycle: "oneshot",
-    closedHistoryId: "ch-1",
-    updatedAt: "2026-01-01T00:00:00.000Z",
+  state.agents['terminal:term-1'] = {
+    lifecycle: 'oneshot',
+    closedHistoryId: 'ch-1',
+    updatedAt: '2026-01-01T00:00:00.000Z',
   };
   state.closedHistory.push(
-    history({ id: "ch-1", status: "staged", tabLabel: "Scout Resume" }),
+    history({ id: 'ch-1', status: 'staged', tabLabel: 'Scout Resume' }),
   );
   pruneHerdrAgentsState(state, []);
-  assert.equal(state.agents["terminal:term-1"], undefined);
-  assert.equal(state.closedHistory[0]?.status, "resumable");
+  assert.equal(state.agents['terminal:term-1'], undefined);
+  assert.equal(state.closedHistory[0]?.status, 'resumable');
 });
 
-test("stages continuation metadata and finalizes it atomically", async () => {
+test('stages continuation metadata and finalizes it atomically', async () => {
   const filePath = await tempStatePath();
   await recordAgentLifecycle(
     pane(),
-    { tabLabel: "Scout Resume", agent: "scout", ownerSessionId: "orch-a" },
+    { tabLabel: 'Scout Resume', agent: 'scout', ownerSessionId: 'orch-a' },
     filePath,
   );
   const staged = await stageClosedOneShot(
     {
       livePane: pane(),
-      ownerSessionId: "orch-a",
-      profileName: "scout",
-      tabLabel: "Scout Resume",
-      childSessionFile: "/tmp/a.jsonl",
-      childSessionId: "sid-a",
-      cwd: "/tmp/repo",
-      layout: "pane",
+      ownerSessionId: 'orch-a',
+      profileName: 'scout',
+      tabLabel: 'Scout Resume',
+      childSessionFile: '/tmp/a.jsonl',
+      childSessionId: 'sid-a',
+      cwd: '/tmp/repo',
+      layout: 'pane',
     },
     filePath,
   );
-  assert.equal(staged.status, "staged");
+  assert.equal(staged.status, 'staged');
   assert.equal(
-    (await loadHerdrAgentsState(filePath)).agents["terminal:term-1"]
+    (await loadHerdrAgentsState(filePath)).agents['terminal:term-1']
       ?.closedHistoryId,
     staged.id,
   );
@@ -838,15 +843,15 @@ test("stages continuation metadata and finalizes it atomically", async () => {
     filePath,
   );
   const after = await loadHerdrAgentsState(filePath);
-  assert.equal(after.agents["terminal:term-1"], undefined);
-  assert.equal(after.closedHistory[0]?.status, "resumable");
+  assert.equal(after.agents['terminal:term-1'], undefined);
+  assert.equal(after.closedHistory[0]?.status, 'resumable');
 });
 
-test("stage write failure leaves live state and no resumable history", async () => {
+test('stage write failure leaves live state and no resumable history', async () => {
   const filePath = await tempStatePath();
   await recordAgentLifecycle(
     pane(),
-    { tabLabel: "Scout Resume", agent: "scout", ownerSessionId: "orch-a" },
+    { tabLabel: 'Scout Resume', agent: 'scout', ownerSessionId: 'orch-a' },
     filePath,
   );
   setFailNextStateSaves(1);
@@ -856,30 +861,30 @@ test("stage write failure leaves live state and no resumable history", async () 
         stageClosedOneShot(
           {
             livePane: pane(),
-            ownerSessionId: "orch-a",
-            profileName: "scout",
-            tabLabel: "Scout Resume",
-            childSessionFile: "/tmp/a.jsonl",
-            childSessionId: "sid-a",
-            cwd: "/tmp/repo",
-            layout: "pane",
+            ownerSessionId: 'orch-a',
+            profileName: 'scout',
+            tabLabel: 'Scout Resume',
+            childSessionFile: '/tmp/a.jsonl',
+            childSessionId: 'sid-a',
+            cwd: '/tmp/repo',
+            layout: 'pane',
           },
           filePath,
         ),
       /injected state save failure/,
     );
     const after = await loadHerdrAgentsState(filePath);
-    assert.ok(after.agents["terminal:term-1"]);
+    assert.ok(after.agents['terminal:term-1']);
     assert.equal(after.closedHistory.length, 0);
   } finally {
     setFailNextStateSaves(0);
   }
 });
 
-test("a prior lock holder does not remove a replacement lock directory", async () => {
+test('a prior lock holder does not remove a replacement lock directory', async () => {
   const filePath = await tempStatePath();
   const lockPath = `${filePath}.lock`;
-  const replacementSentinel = "owner.0.replacement-token";
+  const replacementSentinel = 'owner.0.replacement-token';
   await withHerdrAgentsStateLock(filePath, async () => {
     const original = await fs.readdir(lockPath);
     assert.equal(original.length, 1);
@@ -889,27 +894,27 @@ test("a prior lock holder does not remove a replacement lock directory", async (
       path.join(lockPath, replacementSentinel),
       `${JSON.stringify({
         pid: 0,
-        token: "replacement-token",
+        token: 'replacement-token',
         createdAt: Date.now(),
       })}\n`,
     );
   });
   assert.deepEqual(await fs.readdir(lockPath), [replacementSentinel]);
   assert.match(
-    await fs.readFile(path.join(lockPath, replacementSentinel), "utf8"),
+    await fs.readFile(path.join(lockPath, replacementSentinel), 'utf8'),
     /replacement-token/,
   );
 });
 
-test("a waiter cannot steal a live lock after the old stale threshold", async () => {
+test('a waiter cannot steal a live lock after the old stale threshold', async () => {
   const filePath = await tempStatePath();
   const dir = path.dirname(filePath);
   const stateModule = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    "../src/state.ts",
+    '../src/state.ts',
   );
-  const holderScript = path.join(dir, "holder.ts");
-  const waiterScript = path.join(dir, "waiter.ts");
+  const holderScript = path.join(dir, 'holder.ts');
+  const waiterScript = path.join(dir, 'waiter.ts');
   await fs.writeFile(
     holderScript,
     `import { withHerdrAgentsStateLock } from ${JSON.stringify(stateModule)};
@@ -938,11 +943,11 @@ await withHerdrAgentsStateLock(filePath, async () => {
 
   const env = {
     ...process.env,
-    HERDR_AGENTS_LOCK_STALE_MS: "40",
-    HERDR_AGENTS_LOCK_WAIT_MS: "2000",
+    HERDR_AGENTS_LOCK_STALE_MS: '40',
+    HERDR_AGENTS_LOCK_WAIT_MS: '2000',
   };
   const holder = spawn(process.execPath, [holderScript], { env });
-  await waitForChildFile(dir, "holder-entered");
+  await waitForChildFile(dir, 'holder-entered');
   const waiter = spawn(process.execPath, [waiterScript], { env });
   const [holderCode, waiterCode] = await Promise.all([
     waitForExit(holder),
@@ -951,19 +956,19 @@ await withHerdrAgentsStateLock(filePath, async () => {
   assert.equal(holderCode, 0);
   assert.equal(waiterCode, 0);
   assert.equal(
-    await fs.readFile(path.join(dir, "waiter-entered"), "utf8"),
-    "after-holder",
+    await fs.readFile(path.join(dir, 'waiter-entered'), 'utf8'),
+    'after-holder',
   );
 });
 
-test("two processes cannot occupy the state lock at the same time", async () => {
+test('two processes cannot occupy the state lock at the same time', async () => {
   const filePath = await tempStatePath();
   const dir = path.dirname(filePath);
   const stateModule = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    "../src/state.ts",
+    '../src/state.ts',
   );
-  const lockerScript = path.join(dir, "locker.ts");
+  const lockerScript = path.join(dir, 'locker.ts');
   await fs.writeFile(
     lockerScript,
     `import { withHerdrAgentsStateLock } from ${JSON.stringify(stateModule)};
@@ -979,27 +984,27 @@ await withHerdrAgentsStateLock(filePath, async () => {
 });
 `,
   );
-  const env = { ...process.env, HERDR_AGENTS_LOCK_WAIT_MS: "2000" };
-  const a = spawn(process.execPath, [lockerScript, "a"], { env });
-  const b = spawn(process.execPath, [lockerScript, "b"], { env });
+  const env = { ...process.env, HERDR_AGENTS_LOCK_WAIT_MS: '2000' };
+  const a = spawn(process.execPath, [lockerScript, 'a'], { env });
+  const b = spawn(process.execPath, [lockerScript, 'b'], { env });
   const [aCode, bCode] = await Promise.all([waitForExit(a), waitForExit(b)]);
   assert.equal(aCode, 0);
   assert.equal(bCode, 0);
   const aEntered = Number(
-    await fs.readFile(path.join(dir, "a-entered"), "utf8"),
+    await fs.readFile(path.join(dir, 'a-entered'), 'utf8'),
   );
-  const aLeft = Number(await fs.readFile(path.join(dir, "a-left"), "utf8"));
+  const aLeft = Number(await fs.readFile(path.join(dir, 'a-left'), 'utf8'));
   const bEntered = Number(
-    await fs.readFile(path.join(dir, "b-entered"), "utf8"),
+    await fs.readFile(path.join(dir, 'b-entered'), 'utf8'),
   );
-  const bLeft = Number(await fs.readFile(path.join(dir, "b-left"), "utf8"));
+  const bLeft = Number(await fs.readFile(path.join(dir, 'b-left'), 'utf8'));
   assert.ok(aLeft <= bEntered || bLeft <= aEntered);
 });
 
 function waitForExit(child: ChildProcess): Promise<number | null> {
   return new Promise((resolve, reject) => {
-    child.once("error", reject);
-    child.once("exit", (code) => resolve(code));
+    child.once('error', reject);
+    child.once('exit', (code) => resolve(code));
   });
 }
 
@@ -1017,27 +1022,27 @@ async function waitForChildFile(dir: string, name: string): Promise<void> {
   throw new Error(`timed out waiting for ${filePath}`);
 }
 
-test("persistPrunedAgentsState finalizes staged history when the live terminal is gone", async () => {
+test('persistPrunedAgentsState finalizes staged history when the live terminal is gone', async () => {
   const filePath = await tempStatePath();
   await recordAgentLifecycle(
     pane(),
-    { tabLabel: "Scout Resume", agent: "scout", ownerSessionId: "orch-a" },
+    { tabLabel: 'Scout Resume', agent: 'scout', ownerSessionId: 'orch-a' },
     filePath,
   );
   const staged = await stageClosedOneShot(
     {
       livePane: pane(),
-      ownerSessionId: "orch-a",
-      profileName: "scout",
-      tabLabel: "Scout Resume",
-      childSessionFile: "/tmp/a.jsonl",
-      childSessionId: "sid-a",
-      cwd: "/tmp/repo",
-      layout: "pane",
+      ownerSessionId: 'orch-a',
+      profileName: 'scout',
+      tabLabel: 'Scout Resume',
+      childSessionFile: '/tmp/a.jsonl',
+      childSessionId: 'sid-a',
+      cwd: '/tmp/repo',
+      layout: 'pane',
     },
     filePath,
   );
-  setFailNextStateMutation("finalize");
+  setFailNextStateMutation('finalize');
   await assert.rejects(
     () =>
       finalizeStagedClosedOneShot(
@@ -1047,27 +1052,27 @@ test("persistPrunedAgentsState finalizes staged history when the live terminal i
     /injected finalize state save failure/,
   );
   const before = await loadHerdrAgentsState(filePath);
-  assert.equal(before.closedHistory[0]?.status, "staged");
-  assert.ok(before.agents["terminal:term-1"]);
+  assert.equal(before.closedHistory[0]?.status, 'staged');
+  assert.ok(before.agents['terminal:term-1']);
   const after = await persistPrunedAgentsState([], filePath);
-  assert.equal(after.agents["terminal:term-1"], undefined);
-  assert.equal(after.closedHistory[0]?.status, "resumable");
+  assert.equal(after.agents['terminal:term-1'], undefined);
+  assert.equal(after.closedHistory[0]?.status, 'resumable');
 });
 
-test("two waiters observing a legacy lock file never unlink it or both win", async () => {
+test('two waiters observing a legacy lock file never unlink it or both win', async () => {
   const filePath = await tempStatePath();
   const lockPath = `${filePath}.lock`;
   const dir = path.dirname(filePath);
-  const stale = "not-a-lock";
+  const stale = 'not-a-lock';
   await fs.writeFile(lockPath, stale);
   const old = new Date(Date.now() - 60_000);
   await fs.utimes(lockPath, old, old);
 
   const stateModule = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    "../src/state.ts",
+    '../src/state.ts',
   );
-  const waiterScript = path.join(dir, "stale-waiter.ts");
+  const waiterScript = path.join(dir, 'stale-waiter.ts');
   await fs.writeFile(
     waiterScript,
     `import { withHerdrAgentsStateLock } from ${JSON.stringify(stateModule)};
@@ -1081,7 +1086,7 @@ try {
 }
 `,
   );
-  const env = { ...process.env, HERDR_AGENTS_LOCK_WAIT_MS: "80" };
+  const env = { ...process.env, HERDR_AGENTS_LOCK_WAIT_MS: '80' };
   const first = spawn(process.execPath, [waiterScript], { env });
   const second = spawn(process.execPath, [waiterScript], { env });
   const [firstCode, secondCode] = await Promise.all([
@@ -1090,5 +1095,5 @@ try {
   ]);
   assert.equal(firstCode, 2);
   assert.equal(secondCode, 2);
-  assert.equal(await fs.readFile(lockPath, "utf8"), stale);
+  assert.equal(await fs.readFile(lockPath, 'utf8'), stale);
 });

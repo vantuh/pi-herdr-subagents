@@ -16,7 +16,7 @@ If a call times out or was aborted but the agent is still running, call \`herdr_
 export function buildRunTurnInstructions(agent?: string): string {
   const profile = agent
     ? `Use \`herdr_agent\` with \`agent: "${agent}"\` unless a different profile is clearly better.`
-    : "Pick the smallest suitable \`herdr_agent\` profile: scout, researcher, planner, worker, reviewer.";
+    : 'Pick the smallest suitable \`herdr_agent\` profile: scout, researcher, planner, worker, reviewer.';
   return `## /run delegation
 
 This turn authorizes delegation via \`/run\`.
@@ -56,11 +56,11 @@ export function formatAgentQuestion(
 ): string {
   return [
     `Herdr agent ${tabLabel} (${agent}) asked a question instead of finishing:`,
-    "",
+    '',
     question,
-    "",
-    "The agent is still open and waiting. Answer it by calling herdr_agent again",
+    '',
+    'The agent is still open and waiting. Answer it by calling herdr_agent again',
     `with tabLabel "${tabLabel}" and task set to your answer.`,
-    "Answer from your own context, or ask the user if the decision is theirs.",
-  ].join("\n");
+    'Answer from your own context, or ask the user if the decision is theirs.',
+  ].join('\n');
 }

@@ -1,11 +1,13 @@
-import type { ExtensionMode } from "@earendil-works/pi-coding-agent";
-import { promises as fs } from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
-import { fileURLToPath } from "node:url";
-import herdrAgentsExtension from "../src/index.ts";
-import type { HerdrAgentsState } from "../src/state.ts";
-import { FakeHerdr } from "./fake-herdr.ts";
+import { promises as fs } from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import type { ExtensionMode } from '@earendil-works/pi-coding-agent';
+
+import herdrAgentsExtension from '../src/index.ts';
+import type { HerdrAgentsState } from '../src/state.ts';
+import { FakeHerdr } from './fake-herdr.ts';
 import {
   type AgentProfileFixture,
   applyEnv,
@@ -14,7 +16,7 @@ import {
   type SentMessage,
   waitFor,
   writeAgentProfiles,
-} from "./mock-extension.ts";
+} from './mock-extension.ts';
 
 /**
  * Boots the real extension with a mock ExtensionAPI against a FakeHerdr, so a
@@ -29,7 +31,7 @@ import {
 
 const SHIM_PATH = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
-  "herdr-shim.mjs",
+  'herdr-shim.mjs',
 );
 
 export interface HarnessOptions {
@@ -39,7 +41,7 @@ export interface HarnessOptions {
    * Layout written to the fixture's herdr-agents.json. Existing tests default
    * to "pane"; "workspace" exercises the extension's real default explicitly.
    */
-  layout?: "pane" | "tab" | "workspace";
+  layout?: 'pane' | 'tab' | 'workspace';
   hasUI?: boolean;
   mode?: ExtensionMode;
   isIdle?: boolean;
@@ -90,23 +92,23 @@ export interface Harness {
 export async function createHarness(
   options: HarnessOptions = {},
 ): Promise<Harness> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "hat-"));
-  const cwd = path.join(root, "repo");
-  const agentDir = path.join(root, "pi-agent-dir");
-  const statePath = path.join(root, "state.json");
-  const tmp = path.join(root, "tmp");
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'hat-'));
+  const cwd = path.join(root, 'repo');
+  const agentDir = path.join(root, 'pi-agent-dir');
+  const statePath = path.join(root, 'state.json');
+  const tmp = path.join(root, 'tmp');
 
-  await fs.mkdir(path.join(agentDir, "agents"), { recursive: true });
+  await fs.mkdir(path.join(agentDir, 'agents'), { recursive: true });
   await fs.mkdir(tmp, { recursive: true });
   await writeAgentProfiles(
-    path.join(cwd, ".pi", "agents"),
-    options.profiles ?? [{ name: "scout" }],
+    path.join(cwd, '.pi', 'agents'),
+    options.profiles ?? [{ name: 'scout' }],
   );
   // Layout config lives in the agent dir (herdr-agents.json), not in env.
   await fs.writeFile(
-    path.join(agentDir, "herdr-agents.json"),
-    `${JSON.stringify({ layout: options.layout ?? "pane" })}\n`,
-    "utf8",
+    path.join(agentDir, 'herdr-agents.json'),
+    `${JSON.stringify({ layout: options.layout ?? 'pane' })}\n`,
+    'utf8',
   );
 
   const fake = new FakeHerdr();
@@ -139,8 +141,8 @@ export async function createHarness(
   });
   await Promise.resolve(herdrAgentsExtension(host.pi));
 
-  const tool = host.tools.get("herdr_agent");
-  if (!tool) throw new Error("herdr_agent tool was not registered");
+  const tool = host.tools.get('herdr_agent');
+  if (!tool) throw new Error('herdr_agent tool was not registered');
 
   return {
     fake,
@@ -173,14 +175,14 @@ export async function createHarness(
       ),
     fire: host.fire,
     getTool: (name) => host.tools.get(name),
-    runCommand: async (name, args = "") => {
+    runCommand: async (name, args = '') => {
       const command = host.commands.get(name);
       if (!command) throw new Error(`command /${name} is not registered`);
       await command.handler(args, host.ctx);
     },
     readState: async () => {
       try {
-        return JSON.parse(await fs.readFile(statePath, "utf8"));
+        return JSON.parse(await fs.readFile(statePath, 'utf8'));
       } catch {
         return { version: 1, agents: {} };
       }
@@ -188,7 +190,7 @@ export async function createHarness(
     waitFor,
     dispose: async () => {
       // Stops the widget interval this extension instance started.
-      await host.fire("session_shutdown");
+      await host.fire('session_shutdown');
       await fake.stop();
       restoreEnv();
       await fs.rm(root, { recursive: true, force: true });

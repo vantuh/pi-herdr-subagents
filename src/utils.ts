@@ -1,16 +1,16 @@
-import { randomBytes } from "node:crypto";
-import { promises as fs } from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
+import { randomBytes } from 'node:crypto';
+import { promises as fs } from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
-export const RESULT_FILE_MARKER = "HERDR_RESULT_FILE:";
+export const RESULT_FILE_MARKER = 'HERDR_RESULT_FILE:';
 
-export const ASK_QUESTION_TOOL = "ask_question";
+export const ASK_QUESTION_TOOL = 'ask_question';
 
 /** Child-only: absolute path to the private session metadata artifact. */
-export const SESSION_META_ENV = "HERDR_AGENT_SESSION_META";
+export const SESSION_META_ENV = 'HERDR_AGENT_SESSION_META';
 
-export const SESSION_META_FILE_NAME = "session.json";
+export const SESSION_META_FILE_NAME = 'session.json';
 
 export interface ChildSessionMeta {
   sessionId: string;
@@ -38,12 +38,14 @@ export function buildChildToolAllowlist(
   return [...new Set([...tools, ASK_QUESTION_TOOL])];
 }
 
-export function buildChildToolArgs(tools: readonly string[] | undefined): string[] {
+export function buildChildToolArgs(
+  tools: readonly string[] | undefined,
+): string[] {
   const allowlist = buildChildToolAllowlist(tools);
   if (!allowlist) return [];
-  const args = ["--tools", allowlist.join(",")];
-  if (!allowlist.some((name) => name === "*" || name.startsWith("mcp__"))) {
-    args.push("--exclude-tools", "mcp__*");
+  const args = ['--tools', allowlist.join(',')];
+  if (!allowlist.some((name) => name === '*' || name.startsWith('mcp__'))) {
+    args.push('--exclude-tools', 'mcp__*');
   }
   return args;
 }
@@ -52,10 +54,10 @@ export function makeHerdrAgentName(profileName: string): string {
   const base =
     profileName
       .toLowerCase()
-      .replace(/[^a-z0-9_-]+/g, "-")
-      .replace(/^[^a-z]+/, "")
-      .slice(0, 22) || "agent";
-  return `${base}_${randomBytes(4).toString("hex")}`;
+      .replace(/[^a-z0-9_-]+/g, '-')
+      .replace(/^[^a-z]+/, '')
+      .slice(0, 22) || 'agent';
+  return `${base}_${randomBytes(4).toString('hex')}`;
 }
 
 export function titleCase(value: string): string {
@@ -63,15 +65,15 @@ export function titleCase(value: string): string {
     .split(/[-_\s]+/)
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+    .join(' ');
 }
 
 export function normalizeTools(rawTools: unknown): string[] | undefined {
   const tools = Array.isArray(rawTools)
     ? rawTools.map((tool) => String(tool).trim()).filter(Boolean)
-    : typeof rawTools === "string"
+    : typeof rawTools === 'string'
       ? rawTools
-          .split(",")
+          .split(',')
           .map((tool) => tool.trim())
           .filter(Boolean)
       : undefined;
@@ -98,58 +100,58 @@ export function formatSpawnWarnings(
   warnings: readonly string[],
 ): string {
   if (warnings.length === 0) return text;
-  return `${text}\n\nSpawn warnings:\n${warnings.map((warning) => `- ${warning}`).join("\n")}`;
+  return `${text}\n\nSpawn warnings:\n${warnings.map((warning) => `- ${warning}`).join('\n')}`;
 }
 
 /** Outer abort / Herdr wait timeout — child may still be running. */
 export function isRecoverableWaitInterrupt(error: unknown): boolean {
-  if (typeof error === "object" && error !== null) {
+  if (typeof error === 'object' && error !== null) {
     const code = (error as { code?: unknown }).code;
-    if (code === "timeout" || code === "ABORT_ERR") return true;
-    if ((error as { name?: unknown }).name === "AbortError") return true;
+    if (code === 'timeout' || code === 'ABORT_ERR') return true;
+    if ((error as { name?: unknown }).name === 'AbortError') return true;
   }
   const message = error instanceof Error ? error.message : String(error);
   const lower = message.toLowerCase();
   // Prompt never accepted — re-wait without task will not help.
-  if (lower.includes("agent_prompt_stalled")) return false;
+  if (lower.includes('agent_prompt_stalled')) return false;
   return (
-    lower === "aborted" ||
-    lower.includes("operation was aborted") ||
-    lower.includes(" failed [timeout]") ||
+    lower === 'aborted' ||
+    lower.includes('operation was aborted') ||
+    lower.includes(' failed [timeout]') ||
     /\babort(ed)?\b/.test(lower)
   );
 }
 
-export function waitInterruptReason(error: unknown): "aborted" | "timeout" {
+export function waitInterruptReason(error: unknown): 'aborted' | 'timeout' {
   if (
-    typeof error === "object" &&
+    typeof error === 'object' &&
     error !== null &&
-    (error as { code?: unknown }).code === "timeout"
+    (error as { code?: unknown }).code === 'timeout'
   ) {
-    return "timeout";
+    return 'timeout';
   }
   const message = error instanceof Error ? error.message : String(error);
   const lower = message.toLowerCase();
-  if (lower.includes(" failed [timeout]") || /\[timeout\]/.test(lower)) {
-    return "timeout";
+  if (lower.includes(' failed [timeout]') || /\[timeout\]/.test(lower)) {
+    return 'timeout';
   }
-  return "aborted";
+  return 'aborted';
 }
 
 export function formatWaitInterrupted(
   tabLabel: string,
-  reason: "aborted" | "timeout" = "aborted",
+  reason: 'aborted' | 'timeout' = 'aborted',
 ): string {
   const why =
-    reason === "timeout"
-      ? "Wait timed out"
-      : "Wait was aborted (outer tool/session timeout)";
+    reason === 'timeout'
+      ? 'Wait timed out'
+      : 'Wait was aborted (outer tool/session timeout)';
   return [
     `${why} while Herdr agent ${tabLabel} is still running.`,
-    "The child was not closed and no new prompt was sent.",
+    'The child was not closed and no new prompt was sent.',
     `Call herdr_agent again with the same tabLabel "${tabLabel}" and omit task to re-wait.`,
-    "Do not resend the task.",
-  ].join("\n");
+    'Do not resend the task.',
+  ].join('\n');
 }
 
 export async function createAgentTempFiles(systemPrompt: string): Promise<{
@@ -157,30 +159,30 @@ export async function createAgentTempFiles(systemPrompt: string): Promise<{
   resultFile: string;
   sessionMetaFile: string;
 }> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "herdr-agent-"));
-  const systemFile = path.join(dir, "system.md");
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'herdr-agent-'));
+  const systemFile = path.join(dir, 'system.md');
   await fs.writeFile(systemFile, systemPrompt, {
-    encoding: "utf8",
+    encoding: 'utf8',
     mode: 0o600,
   });
   return {
     systemFile,
-    resultFile: path.join(dir, "result.md"),
+    resultFile: path.join(dir, 'result.md'),
     sessionMetaFile: path.join(dir, SESSION_META_FILE_NAME),
   };
 }
 
 export async function createResultFile(): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "herdr-agent-"));
-  return path.join(dir, "result.md");
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'herdr-agent-'));
+  return path.join(dir, 'result.md');
 }
 
 export function isManagedHerdrTempPath(filePath: string): boolean {
   const resolved = path.resolve(filePath);
   const relative = path.relative(os.tmpdir(), resolved);
   return (
-    !relative.startsWith("..") &&
-    relative.split(path.sep)[0]?.startsWith("herdr-agent-") === true
+    !relative.startsWith('..') &&
+    relative.split(path.sep)[0]?.startsWith('herdr-agent-') === true
   );
 }
 
@@ -192,7 +194,7 @@ function isManagedAgentFile(filePath: string, fileName: string): boolean {
 }
 
 export function isManagedResultFile(filePath: string): boolean {
-  return isManagedAgentFile(filePath, "result.md");
+  return isManagedAgentFile(filePath, 'result.md');
 }
 
 /**
@@ -204,7 +206,7 @@ export function questionFileFor(
   resultFile: string | undefined,
 ): string | undefined {
   if (!resultFile || !isManagedResultFile(resultFile)) return undefined;
-  return path.join(path.dirname(path.resolve(resultFile)), "question.md");
+  return path.join(path.dirname(path.resolve(resultFile)), 'question.md');
 }
 
 export function isManagedSessionMetaFile(filePath: string): boolean {
@@ -222,7 +224,7 @@ export function sessionMetaFileFor(
 }
 
 function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 export async function writeAgentSessionMeta(
@@ -232,7 +234,7 @@ export async function writeAgentSessionMeta(
   if (!filePath || !isManagedSessionMetaFile(filePath)) return undefined;
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, `${JSON.stringify(meta)}\n`, {
-    encoding: "utf8",
+    encoding: 'utf8',
     mode: 0o600,
   });
   return filePath;
@@ -244,7 +246,7 @@ export async function readAgentSessionMeta(
   const filePath = sessionMetaFileFor(resultFile);
   if (!filePath) return undefined;
   try {
-    const raw = await fs.readFile(filePath, "utf8");
+    const raw = await fs.readFile(filePath, 'utf8');
     const parsed = JSON.parse(raw) as Partial<ChildSessionMeta>;
     if (!isNonEmptyString(parsed.sessionId) || !isNonEmptyString(parsed.cwd)) {
       return undefined;
@@ -253,7 +255,7 @@ export async function readAgentSessionMeta(
       sessionId: parsed.sessionId.trim(),
       cwd: parsed.cwd.trim(),
       updatedAt:
-        typeof parsed.updatedAt === "string"
+        typeof parsed.updatedAt === 'string'
           ? parsed.updatedAt
           : new Date(0).toISOString(),
       ...(isNonEmptyString(parsed.sessionFile)
@@ -261,7 +263,7 @@ export async function readAgentSessionMeta(
         : {}),
     };
   } catch (error) {
-    if ((error as { code?: string }).code === "ENOENT") return undefined;
+    if ((error as { code?: string }).code === 'ENOENT') return undefined;
     if (error instanceof SyntaxError) return undefined;
     throw error;
   }
@@ -279,18 +281,18 @@ export async function readPiSessionHeader(
   }
   if (!stat.isFile()) return undefined;
 
-  const handle = await fs.open(sessionFile, "r");
+  const handle = await fs.open(sessionFile, 'r');
   try {
     const buf = Buffer.alloc(8192);
     const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
-    const firstLine = buf.toString("utf8", 0, bytesRead).split(/\r?\n/, 1)[0];
+    const firstLine = buf.toString('utf8', 0, bytesRead).split(/\r?\n/, 1)[0];
     if (!firstLine) return undefined;
     const parsed = JSON.parse(firstLine) as {
       type?: unknown;
       id?: unknown;
       cwd?: unknown;
     };
-    if (parsed.type !== "session") return undefined;
+    if (parsed.type !== 'session') return undefined;
     if (!isNonEmptyString(parsed.id) || !isNonEmptyString(parsed.cwd)) {
       return undefined;
     }
@@ -319,11 +321,11 @@ export async function assertResumableSessionDir(
   try {
     const stat = await fs.stat(cwd);
     if (!stat.isDirectory())
-      return "Session working directory is not a directory.";
+      return 'Session working directory is not a directory.';
     return undefined;
   } catch (error) {
     const code = (error as { code?: string }).code;
-    if (code === "ENOENT") return "Session working directory is missing.";
+    if (code === 'ENOENT') return 'Session working directory is missing.';
     return error instanceof Error ? error.message : String(error);
   }
 }
@@ -335,7 +337,7 @@ export async function writeAgentQuestion(
   const filePath = questionFileFor(resultFile);
   if (!filePath) return undefined;
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, question, { encoding: "utf8", mode: 0o600 });
+  await fs.writeFile(filePath, question, { encoding: 'utf8', mode: 0o600 });
   return filePath;
 }
 
@@ -345,10 +347,10 @@ export async function readAgentQuestion(
   const filePath = questionFileFor(resultFile);
   if (!filePath) return undefined;
   try {
-    const question = await fs.readFile(filePath, "utf8");
+    const question = await fs.readFile(filePath, 'utf8');
     return question.trim() || undefined;
   } catch (error) {
-    if ((error as { code?: string }).code === "ENOENT") return undefined;
+    if ((error as { code?: string }).code === 'ENOENT') return undefined;
     throw error;
   }
 }
@@ -369,18 +371,18 @@ export function findResultFileMarker(prompt: string): string | undefined {
 
 export function assistantText(message: unknown): string {
   const content = (message as { content?: unknown })?.content;
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
   return content
     .filter(
-      (part): part is { type: "text"; text: string } =>
-        typeof part === "object" &&
+      (part): part is { type: 'text'; text: string } =>
+        typeof part === 'object' &&
         part !== null &&
-        (part as { type?: unknown }).type === "text" &&
-        typeof (part as { text?: unknown }).text === "string",
+        (part as { type?: unknown }).type === 'text' &&
+        typeof (part as { text?: unknown }).text === 'string',
     )
     .map((part) => part.text)
-    .join("\n");
+    .join('\n');
 }
 
 export async function writeAgentResult(
@@ -389,7 +391,7 @@ export async function writeAgentResult(
 ): Promise<void> {
   if (!isManagedResultFile(filePath)) return;
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, output, { encoding: "utf8", mode: 0o600 });
+  await fs.writeFile(filePath, output, { encoding: 'utf8', mode: 0o600 });
 }
 
 export async function clearAgentResult(
@@ -411,10 +413,10 @@ export async function readAgentResult(
 ): Promise<string | undefined> {
   if (!filePath || !isManagedResultFile(filePath)) return undefined;
   try {
-    const output = await fs.readFile(filePath, "utf8");
+    const output = await fs.readFile(filePath, 'utf8');
     return output.trim() || undefined;
   } catch (error) {
-    if ((error as { code?: string }).code === "ENOENT") return undefined;
+    if ((error as { code?: string }).code === 'ENOENT') return undefined;
     throw error;
   }
 }
