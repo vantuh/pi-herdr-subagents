@@ -6,8 +6,8 @@ import { test } from 'vitest';
 import {
   AGENT_QUESTION_MESSAGE_TYPE,
   AGENT_RESULT_MESSAGE_TYPE,
-} from '../src/index.ts';
-import { AGENTS_WIDGET_ID } from '../src/widget.ts';
+} from '../src/ui/renderers.ts';
+import { AGENTS_WIDGET_ID } from '../src/ui/widget.ts';
 import {
   type Harness,
   type HarnessOptions,

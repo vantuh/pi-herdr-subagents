@@ -48,7 +48,7 @@ src/
 - Module-level mutable state moves together with every function that touches
   it; no state is split across two modules.
 - Dependency direction stays acyclic:
-  `index → tool → ui/herdr/state → artifacts/utils/types`.
+  `index → tool/execute → ui → tool/one-shot → herdr/state → artifacts/utils/types`.
   `state` never imports `herdr`.
 - Tests are not split or rewritten. Update import paths only. Rename a test file
   only when its module is renamed 1:1 (`constants.test.ts` → `prompts.test.ts`).
@@ -120,7 +120,7 @@ Done when: no import cycle (`imports.test.ts` green); commit
 Done when: `src/herdr.ts` is gone; tests green; commit
 `refactor: split herdr wrappers by concern`.
 
-### [ ] Phase 4 — UI out of index
+### [~] Phase 4 — UI out of index
 
 - `widget.ts` → `ui/widget.ts`.
 - `ui/renderers.ts`: `AGENT_RESULT_MESSAGE_TYPE`, `AGENT_QUESTION_MESSAGE_TYPE`,
@@ -134,7 +134,11 @@ Done when: `src/herdr.ts` is gone; tests green; commit
   `showHerdrAgentsManager`.
 - Shared helpers they need from `index.ts` (`bestEffort`, `errorMessage`,
   `closeOneShot`, `readSettledAgentOutput`, …) move first to their phase-5 home
-  if the dependency forces it; otherwise phase 5 picks them up.
+  if the dependency forces it; otherwise phase 5 picks them up. The poller and
+  the manager call `closeOneShot`, `formatCollectedOutput`, `bestEffort`,
+  `readSettledAgentOutput`, `spawnWarningDetails` and
+  `dropCollectedSpawnWarnings`, so those one-shot helpers moved into
+  `tool/one-shot.ts` in this phase instead of phase 5.
 - `index.ts` re-exports the two message type constants only if
   `test/contract.test.ts` cannot be pointed at `ui/renderers.ts`; prefer
   updating the test import.
@@ -148,13 +152,14 @@ green; commit `refactor: move widget, poller and manager into ui`.
 - `tool/child-args.ts`: `herdrChildEnvArgs`, `orchestratorIdentity`,
   `buildChildPiArgs`, plus `buildChildToolAllowlist` / `buildChildToolArgs`
   from `utils.ts`.
-- `tool/one-shot.ts`: `bestEffort`, `independentCleanupSignal`, `errorMessage`
-  (or `utils.ts` if UI also uses them), `rebalanceCurrentPaneAgents`,
-  `closeOneShot`, `stageClosedOneShotIfEligible`, `formatCollectedOutput`,
-  `readSettledAgentOutput`, placement lock (`panePlacementQueue`,
-  `acquirePanePlacementLock`), timeout constants.
-- `tool/rewait.ts`: `executeRewait`, `resumedDetails`, `spawnWarningDetails`,
-  `dropCollectedSpawnWarnings`, `resumeClosedLiveDecision`.
+- `tool/one-shot.ts`: already holds `bestEffort`, `independentCleanupSignal`,
+  `errorMessage`, `rebalanceCurrentPaneAgents`, `closeOneShot`,
+  `stageClosedOneShotIfEligible`, `formatCollectedOutput`,
+  `readSettledAgentOutput`, `spawnWarningDetails` and
+  `dropCollectedSpawnWarnings` (moved in phase 4); phase 5 adds the placement
+  lock (`panePlacementQueue`, `acquirePanePlacementLock`) and timeout constants.
+- `tool/rewait.ts`: `executeRewait`, `resumedDetails`,
+  `resumeClosedLiveDecision`.
 - Update imports: `test/schema.test.ts`, `test/pi-contract.test.ts`,
   `docs/agent-profiles.md`.
 

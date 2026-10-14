@@ -43,12 +43,16 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 - `src/herdr/agent.ts` — named-agent start, prompt, wait, and read wrappers with their snapshot parsers.
 - `src/schema.ts` — TypeBox schema for tool parameters.
 - `src/prompts.ts` — injected Orchestrator instructions and child-agent protocol.
+- `src/tool/one-shot.ts` — one-shot close/staging, collected-output formatting, and best-effort state cleanup helpers.
 - `src/artifacts.ts` — result/question/session-meta file IO and child protocol constants.
 - `src/utils.ts` — agent-name generation, title casing, tool allowlist, and formatting helpers.
 - `src/types.ts` — shared TypeScript interfaces.
 - `src/state/store.ts` — managed-agent lifecycle records, state lock, load/save/migrate/prune, and the pure closed-history parser/reconciler.
 - `src/state/closed-history.ts` — closed one-shot archive/stage/finalize/claim/release/find.
-- `src/widget.ts` — agents widget rendering.
+- `src/ui/widget.ts` — agents widget rendering.
+- `src/ui/poller.ts` — the per-second widget poller, awaited-label state, and detached result/question delivery.
+- `src/ui/manager.ts` — the `/herdr-agents` dialog.
+- `src/ui/renderers.ts` — result/question message renderers and their message type constants.
 - `src/child.ts` — child-mode `ask_question` and result writer.
 - `test-support/` — test harnesses: `mock-extension.ts` (shared mock `ExtensionAPI` host, env and profile fixtures), `fake-herdr.ts` (in-process Herdr simulator), `herdr-shim.mjs` (executable `herdr` stand-in), `harness.ts` (integration harness), `mock-llm.ts` (scripted `openai-completions` server), `e2e-harness.ts` (hermetic real Herdr server).
 - `e2e/` — end-to-end scenarios against a real Herdr server and real Pi children.
