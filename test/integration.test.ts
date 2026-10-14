@@ -600,6 +600,57 @@ test('delivers a detached result through the widget poller and closes the one-sh
   });
 });
 
+test('session_shutdown waits for an in-flight widget tick', async () => {
+  await withHarness({}, async (harness) => {
+    // Hold the tick inside its first Herdr call, which is where a real tick sits
+    // when a test tears its harness down.
+    harness.fake.holdCommand('api snapshot');
+    await fs.writeFile(
+      harness.statePath,
+      `${JSON.stringify(
+        {
+          version: 2,
+          agents: {
+            'terminal:gone': {
+              lifecycle: 'oneshot',
+              tabLabel: 'Gone',
+              updatedAt: new Date().toISOString(),
+            },
+          },
+          closedHistory: [],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    await harness.fire('session_start');
+    await harness.waitFor(
+      () => harness.fake.callsMatching('api', 'snapshot').length > 0,
+      'the first widget tick',
+    );
+
+    let settled = false;
+    const shutdown = harness
+      .fire('session_shutdown')
+      .then(() => (settled = true));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    // Recorded before the release, so a failed assertion still tears down.
+    const settledWhileHeld = settled;
+
+    harness.fake.releaseCommands();
+    await shutdown;
+
+    assert.equal(
+      settledWhileHeld,
+      false,
+      'shutdown resolved while a tick was running',
+    );
+    // The held tick pruned the stale record, so shutdown resolved after it.
+    assert.deepEqual((await harness.readState()).agents, {});
+  });
+});
+
 test('delivers a detached question without closing the agent', async () => {
   await withHarness({}, async (harness) => {
     harness.fake.setBehavior(() => ({ question: 'Which module first?' }));

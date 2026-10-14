@@ -89,6 +89,7 @@ import {
   beginAwaitingAgent,
   endAwaitingAgent,
   ensureAgentsWidget,
+  settleAgentsWidgetPoller,
   stopAgentsWidgetPoller,
 } from './ui/poller.ts';
 import { registerAgentMessageRenderers } from './ui/renderers.ts';
@@ -464,6 +465,9 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
   // Covers quit/new/resume/fork too, not just the reload path above.
   pi.on('session_shutdown', async () => {
     stopAgentsWidgetPoller();
+    // Stopping the interval is not enough on its own: a tick that is already
+    // running would keep pruning state and calling Herdr after shutdown.
+    await settleAgentsWidgetPoller();
   });
 
   pi.on('before_agent_start', async (event) => {

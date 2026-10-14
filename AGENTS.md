@@ -54,7 +54,7 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 - `src/ui/manager.ts` — the `/herdr-agents` dialog.
 - `src/ui/renderers.ts` — result/question message renderers and their message type constants.
 - `src/child.ts` — child-mode `ask_question` and result writer.
-- `test-support/` — test harnesses: `mock-extension.ts` (shared mock `ExtensionAPI` host, env and profile fixtures), `fake-herdr.ts` (in-process Herdr simulator), `herdr-shim.mjs` (executable `herdr` stand-in), `harness.ts` (integration harness), `mock-llm.ts` (scripted `openai-completions` server), `e2e-harness.ts` (hermetic real Herdr server).
+- `test-support/` — test harnesses: `mock-extension.ts` (shared mock `ExtensionAPI` host, env and profile fixtures), `fake-herdr.ts` (in-process Herdr simulator), `herdr-shim.mjs` (executable `herdr` stand-in), `harness.ts` (integration harness), `mock-llm.ts` (scripted `openai-completions` server), `e2e-harness.ts` (hermetic real Herdr server), `state-path-guard.ts` (per-run state-path pin and its sentinel teardown).
 - `e2e/` — end-to-end scenarios against a real Herdr server and real Pi children.
 - `docs/` — detailed implementation and session notes.
 
@@ -68,6 +68,7 @@ Write each plan to `docs/plans/<short-task-name>.md`. The filename names the wor
 - `HERDR_PANE_ID` is preferred over focused pane detection. Focus can move while a tool is running.
 - New agents start through `herdr agent start`; prompts use atomic `herdr agent prompt` (no `--wait`), then wait for newer `state_change_seq` activity with `working`/`blocked` or an actual newer `completion_seq` while settled, before `herdr agent wait --until idle --until done`. This avoids Herdr's hardcoded 5s `agent_prompt_stalled` gate. Abort / Herdr wait timeout returns a soft re-wait hint (child stays); re-wait uses `herdr agent wait` only.
 - Explicit `wait: false` is rejected outside TUI mode, including taskless re-waits. RPC can report `hasUI: true` but has no widget collector. TUI defaults to detaching; its poller delivers outcomes and closes completed one-shots.
+- `session_shutdown` stops the widget interval and then awaits the tick already in flight, so shutdown resolves only once nothing of that instance is still pruning the state file or calling Herdr. A tick that outlived the session was how a test process reached the real state file after the harness restored the env.
 - Layout defaults to `workspace`, configured via `herdr-agents.json` in the Pi agent dir (`layout: "pane"` or `"tab"` for the legacy layouts); the model receives no layout parameter.
 - Workspace mode keeps every agent tab in a dedicated subagents workspace (label from `herdr-agents.json` → `workspace.label`, default `subagents`), so the Orchestrator's screen never gains splits or tabs. The workspace is re-resolved from `herdr workspace list` on every spawn and recreated if the user closed it. `/herdr-agents` lists agents across workspaces and focuses them via `tab focus` (workspace-qualified ids). A detached agent that finishes unseen also raises a native `herdr notification show`.
 - Pane mode splits the Orchestrator 60/40 on the first spawn and stacks additional agents down the right column. The placement lock is held through `agent start`, managed-state recording, and rebalancing so parallel calls cannot create competing right columns; in workspace mode the same lock serializes the subagents-workspace lookup within one Orchestrator process and is released once the agent's tab is visible to the next `listTabs` (label uniqueness is computed client-side by `uniqueLabel`). Across separate Orchestrator processes a duplicate workspace creation degrades gracefully: lookups take the first label match and managed records stay ownership-scoped. Changing `layout` in `herdr-agents.json` while agents are live orphans them (they stay visible/closable via `/herdr-agents`); close live agents before switching.
@@ -137,7 +138,11 @@ The unit project runs the helper, integration, and contract files together. E2E 
 
 Both harnesses redirect `TMPDIR`, `HERDR_AGENTS_STATE_PATH` and
 `PI_CODING_AGENT_DIR` per test, so the live session, its state file and its temp
-artifacts are never touched.
+artifacts are never touched. On top of that, `vitest.config.ts` pins
+`HERDR_AGENTS_STATE_PATH` to a throwaway file for the whole run
+(`test-support/state-path-guard.ts`), seeded with a sentinel record: work that
+escapes a harness teardown writes there instead of the live file, and the run's
+teardown fails if that file is no longer unchanged.
 
 Covered by the integration layer: one-shot spawn/collect/close, scrollback
 fallback, the `ask_question` round trip (parked one-shot answered by label),

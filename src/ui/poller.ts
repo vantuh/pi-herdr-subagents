@@ -65,6 +65,22 @@ type WidgetTimerHolder = {
 
 let widgetTicking = false;
 
+// The interval fires on its own schedule, so a tick can still be running when
+// the session shuts down. Shutdown awaits it: a tick that outlives the session
+// keeps pruning the state file and calling Herdr after teardown.
+let widgetTick: Promise<void> | null = null;
+
+/** Resolve once no widget tick is running, so shutdown can wait for one. */
+export async function settleAgentsWidgetPoller(): Promise<void> {
+  await widgetTick;
+}
+
+function startWidgetTick(pi: ExtensionAPI, ctx: ExtensionContext): void {
+  if (widgetTicking) return;
+  widgetTicking = true;
+  widgetTick = updateAgentsWidget(pi, ctx);
+}
+
 // Labels the Orchestrator is currently blocked on inside a `wait: true` call.
 // Kept in-process rather than in the state file: it describes this session's
 // call stack, not the agent, and it must stay accurate across the re-wait path
@@ -264,8 +280,6 @@ async function updateAgentsWidget(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
 ): Promise<void> {
-  if (widgetTicking) return;
-  widgetTicking = true;
   try {
     const agents = await bestEffort<HerdrAgentInfo[]>([], loadAgentsForWidget);
 
@@ -305,12 +319,12 @@ export function ensureAgentsWidget(
   ctx: ExtensionContext,
 ): void {
   if (ctx.mode !== 'tui') return;
-  void updateAgentsWidget(pi, ctx);
+  startWidgetTick(pi, ctx);
 
   const holder = globalThis as WidgetTimerHolder;
   if (holder.__herdrAgentsWidgetTimer) return;
   const timer = setInterval(() => {
-    void updateAgentsWidget(pi, ctx);
+    startWidgetTick(pi, ctx);
   }, AGENTS_WIDGET_TICK_MS);
   timer.unref?.();
   holder.__herdrAgentsWidgetTimer = timer;

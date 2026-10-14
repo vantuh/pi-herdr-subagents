@@ -201,6 +201,9 @@ export class FakeHerdr {
     { code: string; times: number }
   >();
   private readonly commandMalformed = new Map<string, string>();
+  /** `herdr <group> <command>` keys whose calls block until released. */
+  private readonly heldCommands = new Set<string>();
+  private readonly commandWaiters: Array<() => void> = [];
   private omitTabIdOnCreate = false;
   private omitSessionMeta = false;
   private agentStartDelayMs = 0;
@@ -262,6 +265,21 @@ export class FakeHerdr {
    */
   holdChildren(): void {
     this.childrenHeld = true;
+  }
+
+  /**
+   * Block `herdr <group> <command>` calls until `releaseCommands()`, so a test
+   * can hold a widget tick inside a Herdr call and assert on it.
+   */
+  holdCommand(prefix: string): void {
+    this.heldCommands.add(prefix);
+  }
+
+  /** Let every held command through; calls made after this are not held. */
+  releaseCommands(): void {
+    this.heldCommands.clear();
+    const waiters = this.commandWaiters.splice(0);
+    for (const wake of waiters) wake();
   }
 
   /** Fail a `herdr <group> <command>` with a Herdr error code. */
@@ -466,6 +484,9 @@ export class FakeHerdr {
     const [group, command] = argv;
 
     const key = `${group} ${command}`;
+    if (this.heldCommands.has(key)) {
+      await new Promise<void>((resolve) => this.commandWaiters.push(resolve));
+    }
     const malformed = this.commandMalformed.get(key);
     if (malformed !== undefined) return { stdout: malformed };
     const failure = this.commandFailures.get(key);
