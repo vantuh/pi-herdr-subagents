@@ -1,3 +1,4 @@
+import type { ExtensionMode } from "@earendil-works/pi-coding-agent";
 import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -40,6 +41,7 @@ export interface HarnessOptions {
    */
   layout?: "pane" | "tab" | "workspace";
   hasUI?: boolean;
+  mode?: ExtensionMode;
   isIdle?: boolean;
   /** Keystrokes per `ctx.ui.custom` overlay, for the `/herdr-agents` manager. */
   dialogInputs?: string[][];
@@ -129,6 +131,7 @@ export async function createHarness(
   const host = createMockHost({
     cwd,
     hasUI: options.hasUI,
+    mode: options.mode,
     isIdle: options.isIdle,
     dialogInputs: options.dialogInputs,
     sessionId: options.sessionId,

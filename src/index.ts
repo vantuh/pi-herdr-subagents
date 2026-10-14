@@ -690,7 +690,7 @@ async function updateAgentsWidget(
 }
 
 function ensureAgentsWidget(pi: ExtensionAPI, ctx: ExtensionContext): void {
-  if (!ctx.hasUI) return;
+  if (ctx.mode !== "tui") return;
   void updateAgentsWidget(pi, ctx);
 
   const holder = globalThis as WidgetTimerHolder;
@@ -1300,6 +1300,11 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
         return;
       }
 
+      if (ctx.mode !== "tui") {
+        ctx.ui.notify("/council requires TUI mode for detached delivery.", "warning");
+        return;
+      }
+
       const configPath = join(getAgentDir(), "council.json");
       const { models, error } = await readCouncilConfig(configPath);
       if (models.length === 0) {
@@ -1386,9 +1391,8 @@ function registerHerdrAgentTool(
         };
       }
 
-      // Detach is the default in UI sessions (the widget poller delivers the
-      // result); headless sessions block because nothing would collect it.
-      const wait = params.wait ?? !ctx.hasUI;
+      // Only TUI sessions have a detached collector.
+      const wait = params.wait ?? ctx.mode !== "tui";
       const config = await loadHerdrAgentsConfig();
       const layout = getHerdrAgentsLayout(config);
       const timeoutMs = DEFAULT_WAIT_TIMEOUT_MS;
@@ -1423,6 +1427,20 @@ function registerHerdrAgentTool(
         }
       }
 
+      // Detached collection needs the TUI widget poller.
+      if (!wait && ctx.mode !== "tui") {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "wait: false requires TUI mode with the agents widget poller. Non-TUI sessions require wait: true because no background collector exists.",
+            },
+          ],
+          details: { waited: false },
+          isError: true,
+        };
+      }
+
       if (params.task === undefined) {
         // Re-wait mode: no new task, just reconnect to an existing tab that is
         // (expected to be) still running — e.g. after a previous call to this
@@ -1442,21 +1460,6 @@ function registerHerdrAgentTool(
       }
 
       const task = params.task;
-
-      // Detached collection needs the widget poller, so any explicit
-      // wait: false is forbidden where no poller runs.
-      if (!wait && !ctx.hasUI) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "wait: false requires a UI session with the agents widget poller; requires wait: true in a headless session because nothing would deliver the result or close the agent.",
-            },
-          ],
-          details: { waited: false },
-          isError: true,
-        };
-      }
 
       let tabLabel = baseLabel;
       let tabId: string | undefined;

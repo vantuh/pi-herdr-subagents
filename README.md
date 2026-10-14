@@ -17,8 +17,8 @@ and closes the target.
   prior context through `resumeClosed`.
 - A question channel: a child can call `ask_question` and the orchestrator
   answers it with a normal follow-up task.
-- Async delivery: with a UI, results (or questions) are delivered by a widget
-  poller once the agent settles. Headless task submissions wait for the outcome.
+- Async delivery: in TUI mode, results (or questions) are delivered by a widget
+  poller once the agent settles. RPC, JSON, and print sessions wait for the outcome.
 - Result artifacts, so large outputs do not depend on terminal scrollback.
 - Per-spawn `model` override, for asking the same profile to several models.
 - Commands: `/run`, `/council`, `/herdr-agents`.
@@ -78,7 +78,7 @@ Fields of the `herdr_agent` tool:
 | `agent` | Profile name. |
 | `task` | Self-contained task. Omit it to re-wait on a running agent by `tabLabel`. |
 | `tabLabel` | Agent label; defaults to the title-cased profile name. Identifies the agent for re-wait, answers and resume. |
-| `wait` | `true` blocks for the result. Default `false` in UI sessions: the poller delivers the outcome later. Headless task submissions default to `true` and reject an explicit `false`. A taskless re-wait with `false` can report status without waiting. |
+| `wait` | `true` blocks for the result. Default `false` in TUI mode: the poller delivers the outcome later. RPC, JSON, and print sessions default to `true` and reject explicit `false`, including taskless re-waits. |
 | `resumeClosed` | Continue a closed one-shot, matched by exact `tabLabel`, with its prior context. Requires `task`. |
 | `model` | Overrides the profile model for a fresh spawn only. |
 
@@ -103,9 +103,9 @@ Lifecycle:
   `/run scout find where auth is handled`.
 - `/council <question>` — ask every model listed in `council.json` in the Pi
   agent dir (`{ "models": ["provider/model-id", ...] }`) and consolidate the
-  answers. Requires a UI session for detached result delivery. It spawns one
+  answers. Requires TUI mode for detached result delivery. It spawns one
   `researcher` per model, so a `researcher` profile must exist.
-- `/herdr-agents` — list managed agents across workspaces, focus or close them.
+- `/herdr-agents` — TUI-only overlay to list managed agents across workspaces, focus or close them.
 
 ## Configuration
 

@@ -261,6 +261,47 @@ test("delivers a detached real child's result and closes its pane on its own", a
   });
 });
 
+test("batches a real detached result and question with one turn trigger", async () => {
+  await withE2e({}, async (harness) => {
+    const replies = Promise.withResolvers<void>();
+    harness.llm.setScript(async (body) => {
+      await replies.promise;
+      return lastUserText(body).includes("QUESTION_BATCH")
+        ? { toolCall: { name: "ask_question", args: { question: "Batch decision?" } }, delayMs: 0 }
+        : { text: DEFAULT_RESULT_TEXT, delayMs: 0 };
+    });
+    try {
+      await Promise.all([
+        harness.callRaw({ agent: "scout", task: "RESULT_BATCH", tabLabel: "Batch Result" }),
+        harness.callRaw({ agent: "scout", task: "QUESTION_BATCH", tabLabel: "Batch Question" }),
+      ]);
+      await harness.waitFor(() => harness.llm.requests.length === 2, "both real children to start");
+      await harness.fire("session_shutdown");
+      replies.resolve();
+      await harness.waitFor(async () => {
+        const children = (await harness.snapshot()).panes.filter(
+          (pane) => pane.pane_id !== harness.orchestratorPaneId,
+        );
+        return children.length === 2 &&
+          children.every((pane) => ["idle", "done"].includes(pane.agent_status ?? ""));
+      }, "both real children to settle", 60000);
+      await harness.fire("session_start");
+      await harness.waitFor(() => harness.messages.length === 2, "batched detached delivery");
+      assert.deepEqual(harness.messages.map((message) => message.triggerTurn), [undefined, true]);
+      assert.deepEqual(harness.messages.map((message) => message.customType).sort(),
+        ["herdr_agent_question", "herdr_agent_result"]);
+      assert.equal(harness.llm.requests.length, 2);
+      const records = Object.values((await harness.readState()).agents);
+      assert.equal(records.length, 1);
+      assert.equal(records[0]?.tabLabel, "Batch Question");
+      assert.equal(records[0]?.detached, undefined);
+      assert.equal((await harness.snapshot()).panes.length, 2);
+    } finally {
+      replies.resolve();
+    }
+  });
+});
+
 test("resumes a closed real one-shot with prior conversation context", async () => {
   await withE2e({}, async (harness) => {
     const first = await harness.call({

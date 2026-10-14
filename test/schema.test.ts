@@ -46,10 +46,10 @@ test("declares parameter types the provider can validate", () => {
 
 test("wait description matches the detached-by-default contract", () => {
   const wait = HerdrAgentParams.properties.wait as { description?: string };
-  assert.match(wait.description ?? "", /Default: false/);
+  assert.match(wait.description ?? "", /Default: false in TUI mode/);
   assert.match(
     wait.description ?? "",
-    /Headless sessions require wait: true; an explicit false is rejected/,
+    /Non-TUI sessions default to wait: true; an explicit false is rejected/,
   );
 });
 

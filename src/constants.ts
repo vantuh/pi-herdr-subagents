@@ -7,7 +7,7 @@ Each task must be self-contained: goal, scope, repo paths or source links, const
 
 Subagents are one-shot: an agent closes after delivering its result. To continue a closed one-shot with its accumulated context, call \`herdr_agent\` again with \`resumeClosed: true\`, the exact \`tabLabel\`, and a new self-contained \`task\`. If a live agent with that label exists, do not spawn a duplicate over it: omit task to re-wait while it is working, or answer a parked question with the same \`tabLabel\`.
 
-By default the tool returns as soon as the prompt is accepted and the result is delivered to you on its own once the agent finishes — you do not need to re-wait to collect it. Do not start the delegated work yourself while a detached agent is still on it; if you need the answer before continuing this turn, pass \`wait: true\` instead.
+By default in TUI mode, the tool returns as soon as the prompt is accepted and the result is delivered to you on its own once the agent finishes — you do not need to re-wait to collect it. Do not start the delegated work yourself while a detached agent is still on it; if you need the answer before continuing this turn, pass \`wait: true\` instead. Outside TUI mode, calls block by default and explicit \`wait: false\` is rejected.
 
 A detached agent may come back with a question instead of a result. Answer it the same way as a synchronous one: call \`herdr_agent\` with the same \`tabLabel\` and \`task\` set to your answer. The agent stays open until it really finishes.
 

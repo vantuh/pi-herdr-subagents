@@ -530,7 +530,7 @@ test("refuses a detached one-shot without a UI poller to collect it", async () =
     assert.equal(result.isError, true);
     assert.match(
       result.content[0].text,
-      /requires wait: true in a headless session/,
+      /Non-TUI sessions require wait: true/,
     );
     assert.equal(harness.fake.calls.length, 0);
   });
@@ -1072,6 +1072,7 @@ test("/council injects the question and a persisted per-model spawn contract", a
     const council = harness.commands.get("council");
     assert.ok(council, "expected a /council command");
     await council.handler("Why is X better than Y?", {
+      mode: "tui",
       isIdle: () => true,
       ui: { notify: () => undefined },
     });
@@ -1099,6 +1100,7 @@ test("/council refuses while busy and warns on an empty config", async () => {
     await writeHarnessCouncilConfig(JSON.stringify({ models: [] }));
     const notifications: string[] = [];
     const commandCtx = {
+      mode: "tui",
       isIdle: () => true,
       ui: { notify: (message: string) => notifications.push(message) },
     };

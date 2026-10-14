@@ -15,14 +15,7 @@ export interface MockReply {
   text?: string;
   /** Emit a tool call instead of (or before) text. */
   toolCall?: { name: string; args: unknown };
-  /**
-   * How long to stall before the content chunk.
-   *
-   * Not cosmetic: Herdr's agent detection samples the pane, so an instant
-   * reply can start and finish a turn without Herdr ever reporting `working`,
-   * and the extension would then never see the lifecycle change it waits for.
-   * Real models take seconds; so does this.
-   */
+  /** Keeps detached children live for assertions; fast-completion tests use zero. */
   delayMs?: number;
 }
 

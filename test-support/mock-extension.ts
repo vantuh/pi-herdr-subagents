@@ -61,6 +61,7 @@ export interface MockHost {
 export function createMockHost(options: {
   cwd: string;
   hasUI?: boolean;
+  mode?: ExtensionContext["mode"];
   isIdle?: boolean;
   sessionId?: string;
   sessionFile?: string;
@@ -122,7 +123,7 @@ export function createMockHost(options: {
   const ctx = {
     cwd: options.cwd,
     hasUI: options.hasUI ?? true,
-    mode: "tui",
+    mode: options.mode ?? (options.hasUI === false ? "print" : "tui"),
     isIdle: () => options.isIdle ?? true,
     signal: undefined,
     sessionManager: {

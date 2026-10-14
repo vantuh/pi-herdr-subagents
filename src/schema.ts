@@ -55,7 +55,7 @@ export function buildHerdrAgentParams(
     wait: Type.Optional(
       Type.Boolean({
         description:
-          "Wait for the Herdr agent to finish and read its result. Default: false — the tool returns as soon as the prompt is accepted and the result is delivered to you on its own once the agent finishes. Pass true only when you need the answer before continuing this turn. Headless sessions require wait: true; an explicit false is rejected.",
+          "Wait for the Herdr agent to finish and read its result. Default: false in TUI mode — the tool returns as soon as the prompt is accepted and the result is delivered to you on its own once the agent finishes. Pass true only when you need the answer before continuing this turn. Non-TUI sessions default to wait: true; an explicit false is rejected.",
       }),
     ),
     resumeClosed: Type.Optional(

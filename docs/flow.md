@@ -8,7 +8,9 @@ Current runtime: Pi `1.2.0`, Herdr client/server `0.9.4`, official Pi integratio
 Pi loads `src/index.ts` through the package manifest or an explicit
 `pi -e ./src/index.ts`. The main session registers `herdr_agent`, commands,
 renderers, and orchestration guidance. `HERDR_AGENT_CHILD=1` registers only the
-child result/session writer and `ask_question`.
+child result/session writer and model-only `ask_question`.
+Orchestration guidance uses the named `herdr_agents` system-prompt section for
+both user and custom-message runs, preserving Pi's other prompt sections.
 
 `src/agents.ts` discovers profiles on every call from `getAgentDir()/agents`
 and the nearest project `.pi/agents`. Project profiles override user profiles
@@ -47,13 +49,18 @@ herdr agent start <automation-name> --kind pi --pane <pane-id> --timeout 30000 -
 
 Profile model, thinking, skills, and tool restrictions add Pi arguments.
 The automation name is distinct from the display label and terminal ID.
-Herdr returns only when Pi is detected and ready for input.
+Herdr owns cold-shell startup retries and terminal-identity checks. It returns
+only when Pi is detected and ready for input. A current ACP provider may briefly
+own the foreground; kind-mismatch recovery waits for Pi without launching twice.
 
 ## Prompt submission and waiting
 
 Every task uses atomic `herdr agent prompt` without `--wait`. The upstream
 `--wait` path has a five-second activity gate, which is too short for some
-Pi transitions. The extension owns the longer acceptance wait, then uses:
+Pi transitions. For blocking calls, the longer acceptance wait requires newer working/blocked
+activity or a newer actual `completion_seq` while idle/done. An arbitrary idle
+state change does not count. The extension never sends an extra Enter. After
+acceptance it uses:
 
 ```bash
 herdr agent wait <target> --until idle --until done --timeout 600000
@@ -65,7 +72,8 @@ marks the waiting orchestrator through the official Pi integration.
 In TUI sessions, task submission detaches by default. The per-second widget
 poller collects settled agents and delivers custom result/question messages.
 Explicit `wait: true` blocks. Non-TUI submission must wait because it has no
-background collector. A taskless `wait: false` re-wait can report status.
+background collector. Explicit `wait: false` is rejected outside TUI mode,
+including taskless re-waits. RPC's `hasUI` does not provide a widget collector.
 
 Timeout or abort leaves the child running. Re-wait with the same `tabLabel`
 and no `task`; this never resubmits the prompt or resurrects a closed agent.
@@ -77,7 +85,9 @@ Child `message_end` writes each non-empty finalized assistant response to
 Session metadata is stored beside the result for durable resume.
 
 Collection checks `question.md` before `result.md`. `ask_question` writes the
-question, and the child settles without completing its task. The parent
+question and returns `terminate: true`, without a redundant assistant response
+or provider request. Call it alone, not in a batch with other tools. Failed
+question delivery does not terminate the turn. The parent
 returns/delivers the question and leaves the one-shot open. Answer by sending
 a normal `task` with the same `tabLabel`.
 
@@ -91,7 +101,9 @@ tick are batched; only the final custom message triggers a turn.
 
 ## Close and resume
 
-Every new agent is a one-shot. Successful collection stages continuation
+Every new agent is a one-shot. Historical persistent records remain stored but
+unmanaged; they are never converted to closable one-shots or claimed for delivery.
+Successful collection stages continuation
 metadata before closing the owned pane/tab. Only then does the extension
 finalize the archived history and clean up temporary files. Close failures
 return the collected output with a warning and leave the target inspectable.

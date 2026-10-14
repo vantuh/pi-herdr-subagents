@@ -15,7 +15,7 @@ The intended model behavior:
 - `herdr_agent` starts a Pi process in a named Herdr target using an agent profile from `~/.pi/agent/agents/*.md`. Every agent is a one-shot: the target closes after a successful result.
 - Continuation with accumulated context goes through `resumeClosed: true` with the same `tabLabel`: the archived child session is reopened, so the resumed agent keeps the prior conversation. A live agent is never resumed over: working agents are re-waited (omit `task`), parked questions are answered in place, settled detached results are collected first.
 - The Orchestrator waits for the child result, reads it, and synthesizes the answer.
-- With `wait: false` nobody waits: the record is marked `detached` and the widget poller delivers the outcome once the agent settles — a result as `herdr_agent_result`, or a question as `herdr_agent_question` (checked first, same order as the blocking path). One-shot targets are closed only when they actually finished. `claimDetachedAgent` clears the flag in one locked read-modify-write, and synchronous collection releases it too, so delivery happens exactly once. Detaching is the default in UI sessions; headless sessions (`!ctx.hasUI`) default to `wait: true` because nobody would collect a detached result, and an explicit `wait: false` there is rejected.
+- With `wait: false` nobody waits: the record is marked `detached` and the widget poller delivers the outcome once the agent settles — a result as `herdr_agent_result`, or a question as `herdr_agent_question` (checked first, same order as the blocking path). One-shot targets are closed only when they actually finished. `claimDetachedAgent` clears the flag in one locked read-modify-write, and synchronous collection releases it too, so delivery happens exactly once. Detaching is the default only in TUI mode (`ctx.mode === "tui"`); RPC, JSON, and print sessions default to `wait: true` because nobody would collect a detached result, and an explicit `wait: false` there is rejected.
 - A child may instead call `ask_question`, which writes `question.md` beside the result artifact and returns. The child ends its turn and goes idle, the existing wait fires, and the Orchestrator returns the question early while leaving the target open — one-shots included. The answer is a normal `task` with the same `tabLabel`; the parked target is reachable by label.
 
 ## Delegation policy
@@ -54,7 +54,7 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 - Child panes start with `HERDR_AGENT_CHILD=1` and `PROCESS_LAUNCHED_BY_Q=1`: delegation tools stay disabled, final responses are persisted, zsh selects `HISTFILE=/dev/null` from the child marker, and Kiro's terminal wrapper cannot hide the real shell from `herdr agent start`.
 - `HERDR_PANE_ID` is preferred over focused pane detection. Focus can move while a tool is running.
 - New agents start through `herdr agent start`; prompts use atomic `herdr agent prompt` (no `--wait`), then wait for newer `state_change_seq` activity with `working`/`blocked` or an actual newer `completion_seq` while settled, before `herdr agent wait --until idle --until done`. This avoids Herdr's hardcoded 5s `agent_prompt_stalled` gate. Abort / Herdr wait timeout returns a soft re-wait hint (child stays); re-wait uses `herdr agent wait` only.
-- An explicit `wait: false` in a headless session (`!ctx.hasUI`) is rejected, because nobody is around to collect a detached result. With a UI, `wait: false` (the default) is valid: the widget poller delivers the outcome and closes one-shot targets. `/council` depends on that path.
+- Explicit `wait: false` is rejected outside TUI mode, including taskless re-waits. RPC can report `hasUI: true` but has no widget collector. TUI defaults to detaching; its poller delivers outcomes and closes completed one-shots. `/council` requires TUI mode.
 - `herdr_agent` accepts a fresh-spawn-only `model` override that replaces the profile model for that spawn.
 - `/council <question>` reads `council.json` from `getAgentDir()` (`~/.pi/agent/council.json` by default). It injects a persisted user message with the question and a per-model spawn contract (`researcher`, `wait: false`, `tabLabel: "Council — <model>"`). The Orchestrator consolidates after every council answer is delivered. Empty question shows usage; a busy Orchestrator or empty/unreadable config warns and injects nothing.
 - Layout defaults to `workspace`, configured via `herdr-agents.json` in the Pi agent dir (`layout: "pane"` or `"tab"` for the legacy layouts); the model receives no layout parameter.
@@ -170,16 +170,18 @@ with `resumeClosed` and still sees prior context; a real `ask_question` tool cal
 travels from a tools-restricted child back to the Orchestrator and the answer
 finishes it; two real agent panes stack into one right column with the
 Orchestrator held at 60%; a detached real child is delivered and closed by the
-poller with nobody waiting.
+poller with nobody waiting; real result/question batching uses one turn trigger.
+The SDK boundary test verifies both custom messages reach one real Pi model
+request with orchestration guidance.
 
 Not covered: the Orchestrator's own Pi process (the extension is driven
 directly, not through a real model emitting `herdr_agent` tool calls), and the zsh
 `HISTFILE` child guard (§14, it lives in the `zsh` package).
 
-One e2e-specific constraint worth knowing: `MockLlm` stalls ~1.5s before its
-content chunk on purpose. Herdr samples the pane for agent state, so an instant
-reply can start and finish a turn without Herdr ever reporting `working`, and
-the extension's prompt-acceptance wait would never see the lifecycle change.
+`MockLlm` defaults to a 1.5s response delay so live-pane assertions can run
+before detached completion. Fast-completion scenarios explicitly use zero
+delay and rely on authoritative `completion_seq`. The E2E harness installs
+official Pi integration v9 into its isolated HOME.
 
 Writing a scenario:
 
