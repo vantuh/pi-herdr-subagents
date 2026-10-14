@@ -45,7 +45,6 @@ import {
   findOwnedClosedHistory,
   markClosedHistoryInvalid,
   releaseClosedHistory,
-  type ClosedAgentHistoryRecord,
 } from '../state/closed-history.ts';
 import {
   claimDetachedAgent,
@@ -53,6 +52,7 @@ import {
   paneStateKey,
   persistPrunedAgentsState,
   recordAgentLifecycle,
+  type ClosedAgentHistoryRecord,
   type HerdrAgentsState,
 } from '../state/store.ts';
 import type {
@@ -770,7 +770,7 @@ async function createAgentPane(
   const managedPanes = current.panes.filter((pane) =>
     managedPaneIds.has(pane.pane_id),
   );
-  let splitTarget = managedPanes[0];
+  let splitTarget: PaneInfo | undefined = managedPanes[0];
   if (managedPanes.length > 0) {
     const layoutOutput = await execHerdr(
       ['pane', 'layout', '--pane', current.currentPane.pane_id],

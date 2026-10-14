@@ -4,6 +4,8 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { Box, Text } from '@earendil-works/pi-tui';
 
+import { assistantText } from '../artifacts.ts';
+
 export const AGENT_RESULT_MESSAGE_TYPE = 'herdr_agent_result';
 export const AGENT_QUESTION_MESSAGE_TYPE = 'herdr_agent_question';
 
@@ -41,9 +43,9 @@ export function registerAgentMessageRenderers(pi: ExtensionAPI): void {
       );
       // The header carries the attribution the content also states for the
       // model's benefit, so display the bare body and avoid repeating it.
-      box.addChild(
-        new Text(details?.result ?? details?.question ?? message.content, 1, 0),
-      );
+      const body =
+        details?.result ?? details?.question ?? assistantText(message);
+      box.addChild(new Text(body, 1, 0));
       if (expanded && message.details) {
         box.addChild(
           new Text(

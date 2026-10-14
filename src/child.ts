@@ -106,6 +106,7 @@ export function registerChildMode(pi: ExtensionAPI): void {
       if (!question) {
         return {
           content: [{ type: 'text', text: 'question must not be empty.' }],
+          details: {},
           isError: true,
         };
       }
@@ -121,6 +122,7 @@ export function registerChildMode(pi: ExtensionAPI): void {
               text: 'No Orchestrator channel is available in this session, so the question cannot be delivered. Decide yourself, state the assumption you made, and continue.',
             },
           ],
+          details: {},
           isError: true,
         };
       }

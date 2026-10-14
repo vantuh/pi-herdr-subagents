@@ -95,9 +95,16 @@ npm ci --ignore-scripts
 npm test                  # unit project: helpers, integration, contract (no real Herdr, ~60s)
 npx vitest run --project unit --exclude test/integration.test.ts --exclude test/contract.test.ts  # fast subset (~3s)
 npx vitest run test/herdr.test.ts  # one file
+npm run typecheck         # tsc over src/**/*.ts: no emit, strict, NodeNext
 npm run test:e2e          # e2e project: real Herdr server + real Pi children (~50s)
 npm run test:all          # both projects
 ```
+
+`npm run typecheck` runs `tsc` from the repo root against `tsconfig.json`
+(`strict`, `noEmit`, `module: nodenext`, `.ts` import extensions allowed) over
+`src/**/*.ts` only; test harnesses and e2e are not covered. `skipLibCheck`
+excludes incompatible external peer declarations, not source files. Node types
+match the local Node 24 runtime; this is not a minimum-runtime compatibility check.
 
 `integration.test.ts` (~57s) and `contract.test.ts` (~19s) take nearly all of
 `npm test`. While iterating, and for import-only moves, run the fast subset plus

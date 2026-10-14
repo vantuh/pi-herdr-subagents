@@ -94,6 +94,7 @@ export async function executeRewait(
           text: 'tabLabel is required when task is omitted (re-wait mode).',
         },
       ],
+      details: {},
       isError: true,
     };
   }
@@ -139,6 +140,7 @@ export async function executeRewait(
           text: `No running Herdr agent named "${baseLabel}" found to re-wait on.`,
         },
       ],
+      details: {},
       isError: true,
     };
   }

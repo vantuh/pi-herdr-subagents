@@ -5,13 +5,16 @@
   "scripts": {
     "lint": "oxlint",
     "format": "oxfmt",
+    "typecheck": "tsc",
     "test": "vitest run --project unit",
     "test:e2e": "vitest run --project e2e",
     "test:all": "vitest run"
   },
   "devDependencies": {
+    "@types/node": "^24.19.2",
     "oxfmt": "^0.73.0",
     "oxlint": "^1.88.0",
+    "typescript": "^7.0.2",
     "vitest": "^5.0.4"
   },
   "peerDependencies": {

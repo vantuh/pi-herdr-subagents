@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
+
 import { test } from 'vitest';
 
 import {
@@ -670,6 +671,38 @@ test('renders delivered results and questions as their own blocks', async () => 
       // The header carries the attribution, so the inline copy is not repeated.
       assert.doesNotMatch(rendered, /inline attribution/);
     }
+  });
+});
+
+test('renders block content by keeping its text and dropping image blocks', async () => {
+  await withHarness({}, async (harness) => {
+    const renderer = harness.renderers.get(AGENT_RESULT_MESSAGE_TYPE) as (
+      message: unknown,
+      options: unknown,
+      theme: unknown,
+    ) => { render: (width: number) => string[] };
+
+    // A custom message may carry blocks instead of a string; the image has no
+    // text representation, so only the text block reaches the body.
+    const component = renderer(
+      {
+        content: [
+          { type: 'text', text: 'BLOCK BODY TEXT' },
+          { type: 'image', data: 'AAAA', mimeType: 'image/png' },
+        ],
+        details: { tabLabel: 'Scout', agent: 'scout' },
+      },
+      { expanded: false, outputPad: 1 },
+      {
+        fg: (_c: string, t: string) => t,
+        bg: (_c: string, t: string) => t,
+        bold: (t: string) => t,
+      },
+    );
+
+    const rendered = component.render(80).join('\n');
+    assert.match(rendered, /BLOCK BODY TEXT/);
+    assert.doesNotMatch(rendered, /AAAA|image\/png/);
   });
 });
 
