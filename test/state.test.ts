@@ -275,22 +275,34 @@ test('two server snapshots sharing a state file prune only their own records', a
   await recordAgentLifecycle(childA, { serverSocketPath: serverA }, filePath);
   await recordAgentLifecycle(childB, { serverSocketPath: serverB }, filePath);
 
-  await persistPrunedAgentsState([childA], filePath, serverA);
+  await persistPrunedAgentsState(
+    { panes: [childA] },
+    { filePath, serverSocketPath: serverA },
+  );
   assert.deepEqual(Object.keys((await loadHerdrAgentsState(filePath)).agents), [
     'terminal:child-a',
     'terminal:child-b',
   ]);
-  await persistPrunedAgentsState([childB], filePath, serverB);
+  await persistPrunedAgentsState(
+    { panes: [childB] },
+    { filePath, serverSocketPath: serverB },
+  );
   assert.equal(
     (await loadHerdrAgentsState(filePath)).agents['terminal:child-a']
       ?.serverSocketPath,
     serverA,
   );
-  await persistPrunedAgentsState([], filePath, serverA);
+  await persistPrunedAgentsState(
+    { panes: [] },
+    { filePath, serverSocketPath: serverA },
+  );
   assert.deepEqual(Object.keys((await loadHerdrAgentsState(filePath)).agents), [
     'terminal:child-b',
   ]);
-  await persistPrunedAgentsState([], filePath, serverB);
+  await persistPrunedAgentsState(
+    { panes: [] },
+    { filePath, serverSocketPath: serverB },
+  );
   assert.deepEqual((await loadHerdrAgentsState(filePath)).agents, {});
 });
 
@@ -346,11 +358,8 @@ test('handoff reconciles only the recorded automation target and owner pane on t
     { ...foreign, name: 'foreign_1234' },
   ];
   const state = await persistPrunedAgentsState(
-    [child, owner, foreign],
-    filePath,
-    socket,
-    undefined,
-    names,
+    { panes: [child, owner, foreign], agents: names },
+    { filePath, serverSocketPath: socket },
   );
   assert.equal(state.agents['terminal:term-1'], undefined);
   assert.equal(
@@ -1160,7 +1169,7 @@ test('persistPrunedAgentsState finalizes staged history when the live terminal i
   const before = await loadHerdrAgentsState(filePath);
   assert.equal(before.closedHistory[0]?.status, 'staged');
   assert.ok(before.agents['terminal:term-1']);
-  const after = await persistPrunedAgentsState([], filePath);
+  const after = await persistPrunedAgentsState({ panes: [] }, { filePath });
   assert.equal(after.agents['terminal:term-1'], undefined);
   assert.equal(after.closedHistory[0]?.status, 'resumable');
 });

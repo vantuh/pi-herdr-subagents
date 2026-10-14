@@ -7,13 +7,9 @@ import { readAgentQuestion, readAgentResult } from '../artifacts.ts';
 import { isSettledAgentStatus } from '../herdr/agent.ts';
 import { execHerdr } from '../herdr/cli.ts';
 import { listManagedWorkspaceAgents } from '../herdr/placement.ts';
-import { getCurrentContext } from '../herdr/snapshot.ts';
+import { loadContextWithState } from '../herdr/snapshot.ts';
 import { formatAgentQuestion } from '../prompts.ts';
-import {
-  claimDetachedAgent,
-  emptyHerdrAgentsState,
-  persistPrunedAgentsState,
-} from '../state/store.ts';
+import { claimDetachedAgent } from '../state/store.ts';
 import {
   closeOneShot,
   dropCollectedSpawnWarnings,
@@ -37,37 +33,11 @@ import {
   type WidgetPaint,
 } from './widget.ts';
 
-export async function loadCurrentAgents(): Promise<HerdrAgentInfo[]> {
-  const current = await getCurrentContext();
-  const state = await bestEffort(emptyHerdrAgentsState(), () =>
-    persistPrunedAgentsState(
-      current.panes,
-      undefined,
-      undefined,
-      undefined,
-      current.agents,
-    ),
-  );
-  return listManagedWorkspaceAgents(current, state);
-}
-
-// Widget ticks prune only when live terminals disappeared so staged
-// history can finalize without a second-long write on every idle tick.
-async function loadAgentsForWidget(
-  signal: AbortSignal,
+export async function loadCurrentAgents(
+  signal?: AbortSignal,
 ): Promise<HerdrAgentInfo[]> {
-  const current = await getCurrentContext(signal);
-  signal.throwIfAborted();
-  const state = await bestEffort(emptyHerdrAgentsState(), () =>
-    persistPrunedAgentsState(
-      current.panes,
-      undefined,
-      undefined,
-      signal,
-      current.agents,
-    ),
-  );
-  return listManagedWorkspaceAgents(current, state);
+  const { context, state } = await loadContextWithState(signal);
+  return listManagedWorkspaceAgents(context, state);
 }
 
 // An extension instance replaced by /reload keeps its interval alive with a
@@ -318,7 +288,7 @@ async function updateAgentsWidget(
 ): Promise<void> {
   const signal = poller.controller.signal;
   try {
-    const agents = await loadAgentsForWidget(signal);
+    const agents = await loadCurrentAgents(signal);
     signal.throwIfAborted();
     await bestEffort(undefined, () =>
       deliverDetachedOutcomes(pi, ctx, agents, signal),

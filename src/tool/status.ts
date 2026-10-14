@@ -15,18 +15,13 @@ import {
 } from '../herdr/placement.ts';
 import {
   findAgentsWorkspaceId,
-  getCurrentContext,
   listTabs,
+  loadContextWithState,
 } from '../herdr/snapshot.ts';
 import { formatAgentQuestion } from '../prompts.ts';
-import {
-  emptyHerdrAgentsState,
-  paneStateKey,
-  persistPrunedAgentsState,
-  type HerdrAgentStateRecord,
-} from '../state/store.ts';
+import { paneStateKey, type HerdrAgentStateRecord } from '../state/store.ts';
 import type { AgentProfile, HerdrAgentLayout, PaneInfo } from '../types.ts';
-import { bestEffort, formatSpawnWarnings } from '../utils.ts';
+import { formatSpawnWarnings } from '../utils.ts';
 import { spawnWarningDetails } from './one-shot.ts';
 
 export function resumedDetails(resumed: boolean): { resumed?: boolean } {
@@ -81,16 +76,7 @@ export async function executeAgentStatus(args: {
     };
   }
 
-  const current = await getCurrentContext(signal);
-  const state = await bestEffort(emptyHerdrAgentsState(), () =>
-    persistPrunedAgentsState(
-      current.panes,
-      undefined,
-      undefined,
-      undefined,
-      current.agents,
-    ),
-  );
+  const { context: current, state } = await loadContextWithState(signal);
   // Tab and workspace layouts reuse by tab label; workspace tabs live in the
   // dedicated Agents workspace, so they are listed from there. A status check
   // is a pure lookup — it must never create the workspace.

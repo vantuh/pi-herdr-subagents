@@ -10,7 +10,7 @@ import {
   listManagedWorkspaceAgents,
   setLayoutSplitRatio,
 } from '../herdr/placement.ts';
-import { getCurrentContext, getSessionSnapshot } from '../herdr/snapshot.ts';
+import { getSessionSnapshot, loadContextWithState } from '../herdr/snapshot.ts';
 import {
   finalizeStagedClosedOneShot,
   stageClosedOneShot,
@@ -18,7 +18,6 @@ import {
 import {
   clearAgentSpawnWarnings,
   deleteAgentLifecycle,
-  emptyHerdrAgentsState,
   loadHerdrAgentsState,
   paneStateKey,
   persistPrunedAgentsState,
@@ -38,16 +37,7 @@ export function independentCleanupSignal(
 export async function rebalanceCurrentPaneAgents(
   signal?: AbortSignal,
 ): Promise<void> {
-  const current = await getCurrentContext(signal);
-  const state = await bestEffort(emptyHerdrAgentsState(), () =>
-    persistPrunedAgentsState(
-      current.panes,
-      undefined,
-      undefined,
-      signal,
-      current.agents,
-    ),
-  );
+  const { context: current, state } = await loadContextWithState(signal);
   const agents = listManagedWorkspaceAgents(current, state).filter(
     (agent) => agent.layout === 'pane' && agent.tabId === current.currentTab,
   );
@@ -133,11 +123,8 @@ export async function closeOneShot(target: {
       const cleanupSignal = target.signal ?? independentCleanupSignal();
       const snapshot = await getSessionSnapshot(cleanupSignal);
       const state = await persistPrunedAgentsState(
-        snapshot.panes,
-        undefined,
-        undefined,
-        cleanupSignal,
-        snapshot.agents,
+        { panes: snapshot.panes, agents: snapshot.agents },
+        { signal: cleanupSignal },
       );
       if (!stagedId) return true;
       const record = state.closedHistory.find((item) => item.id === stagedId);

@@ -1,3 +1,8 @@
+import {
+  emptyHerdrAgentsState,
+  persistPrunedAgentsState,
+  type HerdrAgentsState,
+} from '../state/store.ts';
 import type {
   HerdrContext,
   HerdrSessionSnapshot,
@@ -5,7 +10,7 @@ import type {
   TabInfo,
   WorkspaceInfo,
 } from '../types.ts';
-import { errorMessage } from '../utils.ts';
+import { bestEffort, errorMessage } from '../utils.ts';
 import { execHerdr } from './cli.ts';
 
 export async function getSessionSnapshot(
@@ -189,4 +194,19 @@ export async function resolveAgentsWorkspace(
   throw new Error(
     `Malformed Herdr workspace create output: missing result.workspace.workspace_id. Output: ${output}`,
   );
+}
+
+/** Snapshot plus pruned managed state, the pair every listing caller needs. */
+export async function loadContextWithState(
+  signal?: AbortSignal,
+): Promise<{ context: HerdrContext; state: HerdrAgentsState }> {
+  const context = await getCurrentContext(signal);
+  signal?.throwIfAborted();
+  const state = await bestEffort(emptyHerdrAgentsState(), () =>
+    persistPrunedAgentsState(
+      { panes: context.panes, agents: context.agents },
+      { signal },
+    ),
+  );
+  return { context, state };
 }

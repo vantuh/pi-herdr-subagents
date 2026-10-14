@@ -447,11 +447,8 @@ async function resolveAgentPlacement(
     : [];
   const state = await bestEffort(emptyHerdrAgentsState(), () =>
     persistPrunedAgentsState(
-      current.panes,
-      undefined,
-      undefined,
-      undefined,
-      current.agents,
+      { panes: current.panes, agents: current.agents },
+      { signal },
     ),
   );
 
@@ -595,17 +592,8 @@ async function claimClosedHistoryForResume(
       isError: true,
     };
   }
-  const historyState = await bestEffort(emptyHerdrAgentsState(), () =>
-    persistPrunedAgentsState(
-      placement.current.panes,
-      undefined,
-      undefined,
-      undefined,
-      placement.current.agents,
-    ),
-  );
   const existing = findOwnedClosedHistory(
-    historyState,
+    placement.state,
     owner.sessionId,
     params.tabLabel!.trim(),
   );

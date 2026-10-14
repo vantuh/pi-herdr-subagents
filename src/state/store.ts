@@ -514,16 +514,29 @@ export function pruneHerdrAgentsState(
 
 /** Reconcile handoff identities before pruning and finalizing staged history. */
 export async function persistPrunedAgentsState(
-  panes: PaneInfo[],
-  filePath = getHerdrAgentsStatePath(),
-  serverSocketPath = process.env.HERDR_SOCKET_PATH,
-  signal?: AbortSignal,
-  agents: readonly HerdrNamedAgent[] = [],
+  snapshot: { panes: PaneInfo[]; agents?: readonly HerdrNamedAgent[] },
+  options: {
+    filePath?: string;
+    serverSocketPath?: string;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<HerdrAgentsState> {
-  return mutateHerdrAgentsState(filePath, { signal }, (state) => ({
-    save: pruneHerdrAgentsState(state, panes, serverSocketPath, agents),
-    value: state,
-  }));
+  const filePath = options.filePath ?? getHerdrAgentsStatePath();
+  const serverSocketPath =
+    options.serverSocketPath ?? process.env.HERDR_SOCKET_PATH;
+  return mutateHerdrAgentsState(
+    filePath,
+    { signal: options.signal },
+    (state) => ({
+      save: pruneHerdrAgentsState(
+        state,
+        snapshot.panes,
+        serverSocketPath,
+        snapshot.agents,
+      ),
+      value: state,
+    }),
+  );
 }
 
 /**
