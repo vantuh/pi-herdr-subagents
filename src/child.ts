@@ -130,10 +130,11 @@ export function registerChildMode(pi: ExtensionAPI): void {
         content: [
           {
             type: "text",
-            text: "Question sent to the Orchestrator. Reply with one short line saying you are waiting for the answer, then stop — do not emit HERDR_RESULT and do not call other tools. The answer will arrive as your next prompt.",
+            text: "Question sent to the Orchestrator. The answer will arrive as your next prompt.",
           },
         ],
         details: { delivered: true },
+        terminate: true,
       };
     },
   });

@@ -100,7 +100,7 @@ export async function createE2eHarness(
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "herdr-agents-e2e-"));
   const home = path.join(root, "home");
   const tmp = path.join(root, "tmp");
-  const agentDir = path.join(root, "pi-agent");
+  const agentDir = path.join(home, ".pi", "agent");
   const cwd = path.join(root, "repo");
   const statePath = path.join(root, "state.json");
   const socketPath = path.join(root, "herdr.sock");
@@ -223,6 +223,14 @@ export async function createE2eHarness(
     "hermetic Herdr server to accept connections",
     options.serverTimeoutMs ?? 20000,
   );
+
+  await run(["integration", "install", "pi"], serverEnv);
+  const integration = await fs.readFile(
+    path.join(agentDir, "extensions", "herdr-agent-state.ts"), "utf8",
+  );
+  if (!integration.includes("HERDR_INTEGRATION_VERSION=9")) {
+    throw new Error("E2E requires Herdr Pi integration v9.");
+  }
 
   const created = JSON.parse(
     await herdr([

@@ -34,8 +34,8 @@ Keep work focused on the assigned task.
 
 If requirements are genuinely ambiguous, or a decision would materially change
 the scope or approach, call \`ask_question\` once with a single specific
-question. Then close that turn with one short line saying you are waiting, and
-stop: no other tool calls and no HERDR_RESULT. Do not guess and proceed anyway.
+question. Call it alone: it ends the turn without an extra assistant response.
+No other tool calls and no HERDR_RESULT. Do not guess and proceed anyway.
 The Orchestrator's answer arrives as your next prompt, and you continue from
 there. Do not ask about trivia you can settle by reading the repo.
 

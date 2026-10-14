@@ -127,7 +127,8 @@ test("carries a real ask_question tool call from the child back to the Orchestra
         `expected ask_question in ${JSON.stringify(offeredTools(harness.llm.requests[0] ?? {}))}`,
       );
 
-      // Parked, not closed.
+      // A successful question terminates without a redundant model request.
+      assert.equal(harness.llm.requests.length, 1);
       assert.equal((await harness.snapshot()).panes.length, 2);
 
       const answered = await harness.call({
@@ -136,6 +137,7 @@ test("carries a real ask_question tool call from the child back to the Orchestra
         tabLabel: "Scout",
       });
 
+      assert.equal(harness.llm.requests.length, 2);
       assert.equal(answered.details.reused, true);
       assert.equal(answered.details.closed, true);
       assert.match(answered.content[0].text, /MOCK_CHILD_OK/);

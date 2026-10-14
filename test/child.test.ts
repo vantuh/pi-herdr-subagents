@@ -143,6 +143,7 @@ test("ask_question writes the question beside the result file", async () => {
     const questionFile = path.join(path.dirname(resultFile), "question.md");
     assert.equal(result.details.questionFile, undefined);
     assert.equal(result.details.delivered, true);
+    assert.equal(result.terminate, true);
     assert.equal(await fs.readFile(questionFile, "utf8"), "Cookie or JWT?");
     // Asking is not answering: the result artifact stays absent.
     assert.equal(await fs.stat(resultFile).catch(() => null), null);
@@ -155,11 +156,13 @@ test("ask_question fails loudly instead of stranding the child", async () => {
     const tool = host.tools.get("ask_question");
     const noChannel = await tool.execute("call-1", { question: "Anything?" });
     assert.equal(noChannel.isError, true);
+    assert.equal(noChannel.terminate, undefined);
     assert.match(noChannel.content[0].text, /No Orchestrator channel/);
     assert.match(noChannel.content[0].text, /Decide yourself/);
 
     const empty = await tool.execute("call-2", { question: "   " });
     assert.equal(empty.isError, true);
+    assert.equal(empty.terminate, undefined);
     assert.match(empty.content[0].text, /must not be empty/);
   });
 });
