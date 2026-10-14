@@ -194,6 +194,142 @@ Done when: no function in `tool/execute.ts` exceeds ~150 lines; unit + e2e
 green; reviewer findings resolved; commit
 `refactor: split herdr_agent execute into phases`.
 
+## Follow-up: recover collection after a Herdr live handoff
+
+Schedule: after the main restructure phases 1–7. Do not mix these behavior
+changes into the extraction/refactor commits. Complete the investigation before
+choosing a state migration or changing ownership rules.
+
+### Incident and verified evidence
+
+The Phase 6 worker (`worker_14ad9eb5`, label `Phase 6 execute`, pane
+`w5D:p3`) continued working after the Orchestrator lost its wait. It did not
+hang. Timeline on 2026-10-14 (UTC):
+
+- `16:37:56`: Herdr accepted the task prompt.
+- `16:38:50.331`: the Herdr server began a live handoff.
+- `16:38:50.762`: the imported server started and the old server exited.
+- `16:38:50.818`: the outstanding `agent.wait` request ended with
+  `client_disconnected` in the server log.
+- `16:38:50.820`: the Orchestrator received
+  `herdr agent wait worker_14ad9eb5 --until idle --until done --timeout 600000 failed: Error: Custom { kind: Other, error: EmptyResponse }`.
+- `16:38:55`: taskless re-wait with the same label returned
+  `No running Herdr agent named "Phase 6 execute" found to re-wait on.`
+- `16:51:12`: the worker persisted its final assistant response. Its session
+  shows continued edits and tests after the wait failed.
+- Subsequent read-only inspection found the named worker alive and idle,
+  with its result artifact and session metadata intact, but no live managed
+  record in `herdr-agents-state.json`.
+
+Evidence locations:
+
+- Herdr log: `~/.config/herdr/herdr-server.log`, around lines 10198–10216
+  at investigation time; use the timestamps above if the log rotates.
+- Worker session:
+  `~/.pi/agent/sessions/--Users-vantuh-projects-personal-pi-herdr-subagents--/2026-10-14T16-37-53-914Z_01a13b47-0a7a-757e-9eae-7659d86682d9.jsonl`.
+- Worker artifacts at investigation time:
+  `/var/folders/s6/tp19nj5j46ndywvct64rt9480000gn/T/herdr-agent-WPhYp4/`;
+  temporary files may disappear and must not become implementation dependencies.
+- Installed client and server were both Herdr `0.9.5` when inspected; do not
+  assume the package's documented `0.9.4` target describes this incident.
+
+### Confirmed extension gaps versus unresolved cause
+
+- `src/herdr/agent.ts` delegates waiting to `execHerdr`; a CLI transport error
+  rejects before result collection.
+- `src/utils.ts:isRecoverableWaitInterrupt` recognizes aborts and timeouts,
+  not this `EmptyResponse`. The error escapes `src/tool/execute.ts` and
+  `src/tool/rewait.ts` without recovery or an artifact read.
+- This invocation used `wait: true`, so its lifecycle had `detached: false`.
+  The widget poller does not automatically collect such a result after the
+  synchronous waiter disappears. This explains the missing final delivery.
+- Label lookup requires managed state and matching ownership in
+  `src/herdr/placement.ts`; a visible Pi pane alone is insufficient.
+- The exact time and cause of the missing managed record remain unverified.
+  Terminal-ID changes during handoff, pruning against a transient snapshot,
+  cross-server pruning, or a failed lifecycle save are hypotheses, not findings.
+  The first spawn's `agent_pane_busy` is separate from the later wait failure.
+
+### Work sequence after phase 7
+
+1. **Reproduce and identify state loss before modifying identity rules.**
+   - Use an isolated Herdr server and test state file, never the live session.
+   - Capture the worker and owner terminal IDs, pane/tab IDs, automation name,
+     label, lifecycle record, and server/socket identity before and after handoff.
+   - Observe the snapshots consumed by pruning and the state writes around the
+     disconnect. Determine whether the record was never saved, was deleted, or
+     remains present but fails an ownership/lookup predicate.
+   - Check whether handoff preserves terminal IDs and whether snapshots can
+     temporarily omit live panes. Do not claim either without evidence.
+   - Track the server-side interrupted-wait behavior separately if a Herdr fix
+     is required; the extension still needs a safe recovery path.
+
+2. **Recover an interrupted wait without duplicating work.**
+   - Share the smallest suitable recovery path between initial execution and
+     taskless re-wait. Limit recovery to identified wait transport failures;
+     do not retry arbitrary CLI mutations or broadly swallow errors.
+   - Refresh the known automation target's live status after reconnecting.
+     Retry only the read/wait operation with bounded attempts and the original
+     abort signal and remaining timeout budget. Never resend the task, spawn a
+     replacement, or close a still-working child because a connection failed.
+   - Check question before result when collecting, preserving the parked-child
+     contract. An existing intermediate result artifact is not proof that the
+     turn completed; require authoritative settled/completion evidence.
+   - If recovery cannot complete, return an explicit child-preserving recovery
+     outcome with actionable target/label guidance rather than only a raw CLI
+     error. Keep ordinary cancellation and timeout behavior intentional.
+
+3. **Fix lookup/state continuity according to the reproduced failure.**
+   - If identities change, reconcile only against a verified server, agent,
+     and owner identity. If pruning is responsible, prevent deletion from the
+     demonstrated invalid/transient snapshot. Coordinate with the separate
+     cross-server pruning follow-up below.
+   - Never adopt an arbitrary same-label pane, weaken ownership checks, or
+     resurrect a closed copy over a live child.
+   - Preserve enough owned target information for retry/re-wait when the normal
+     managed-state path is unavailable. Define any record migration and legacy
+     behavior only after confirming which identity fields remain stable.
+   - A failed lookup must distinguish inability to identify an owned target
+     from evidence that no child exists. Do not encourage duplicate spawns.
+
+4. **Define collection ownership after synchronous recovery is exhausted.**
+   - Prefer retaining the synchronous collector while bounded recovery works.
+   - If handing off to the TUI poller, explicitly persist the detached claim
+     only when no synchronous collector still owns delivery. Non-TUI sessions
+     cannot rely on a widget and must retain a usable explicit re-wait path.
+   - Keep result/question delivery exactly once, including a race between
+     explicit re-wait and poller collection. Close and archive a one-shot only
+     after its final outcome is collected; questions keep it open.
+
+### Regression checks and acceptance
+
+- [ ] Integration: inject the actual `EmptyResponse` wait failure while the child
+  stays live, then recover and collect its eventual final artifact. Assert one
+  task prompt and one child start, no premature close, and exactly one result.
+- [ ] Integration: repeat the failure during taskless re-wait; preserve the same
+  target and collect without another prompt.
+- [ ] Integration: keep an intermediate artifact while the child is working;
+  recovery must not deliver it or close the child.
+- [ ] Integration: child asks a question across reconnect; return the question
+  once, leave the child open, and finish when answered by the same label.
+- [ ] Regression for the verified state-loss cause: handoff identity change,
+  transient snapshot, failed save, or another demonstrated condition. Include
+  a foreign same-label agent to prove ownership remains enforced.
+- [ ] Check abort/timeout during reconnect and repeated transport failures:
+  bounded work, child retained, and actionable recovery guidance.
+- [ ] If poller handoff is implemented, test explicit re-wait racing delivery,
+  plus non-TUI behavior with no background collector.
+- [ ] Isolated real-Herdr reproduction: hand off a server while its child is
+  working; verify collection, context preservation, and eventual one-shot close.
+  Check handoff capability in the installed CLI before using it. Do not update,
+  restart, or hand off the user's live server to run this test.
+- [ ] Run full `npm test`, `npm run test:e2e`, bundle check, and independent
+  review. Record any unavailable handoff test and its residual risk explicitly.
+
+Done when: a live handoff cannot silently strand a running or completed owned
+worker; interrupted waits remain recoverable without duplicate prompts or
+spawns, ownership remains enforced, and results/questions are collected once.
+
 ## Follow-up: scope state pruning to one Herdr server
 
 Not part of the restructure; tracked here so it is not lost.
