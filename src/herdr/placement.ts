@@ -1,5 +1,6 @@
 import {
   isAgentOwnedBy,
+  liveAgentWithAutomationName,
   paneStateKey,
   type HerdrAgentsState,
   type HerdrAgentStateRecord,
@@ -27,9 +28,7 @@ export function findUnresolvedOwnedAgent(
       record.ownerSessionId === ownerSessionId &&
       record.tabLabel === label &&
       !context.panes.some((pane) => paneStateKey(pane) === key) &&
-      context.agents?.some(
-        (agent) => agent.name === record.automationName && agent.agent === 'pi',
-      ),
+      liveAgentWithAutomationName(record, context.agents ?? []) !== undefined,
   )?.[1];
 }
 

@@ -8,7 +8,6 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, test } from 'vitest';
 
 import {
-  archiveClosedOneShot,
   claimClosedHistory,
   finalizeStagedClosedOneShot,
   releaseClosedHistory,
@@ -509,6 +508,45 @@ function history(
   };
 }
 
+/** Seeds the live record `stageClosedOneShot` requires, then stages history. */
+async function stageHistory(
+  filePath: string,
+  input: Partial<Parameters<typeof stageClosedOneShot>[0]> = {},
+): Promise<ClosedAgentHistoryRecord> {
+  await recordAgentLifecycle(
+    pane(),
+    { tabLabel: 'Scout Resume', agent: 'scout', ownerSessionId: 'orch-a' },
+    filePath,
+  );
+  return stageClosedOneShot(
+    {
+      livePane: pane(),
+      ownerSessionId: 'orch-a',
+      profileName: 'scout',
+      tabLabel: 'Scout Resume',
+      childSessionFile: '/tmp/a.jsonl',
+      childSessionId: 'sid-a',
+      cwd: '/tmp/repo',
+      layout: 'pane',
+      ...input,
+    },
+    filePath,
+  );
+}
+
+/** Stage plus finalize: a claimable history slot with no live record. */
+async function resumableHistory(
+  filePath: string,
+  input: Partial<Parameters<typeof stageClosedOneShot>[0]> = {},
+): Promise<ClosedAgentHistoryRecord> {
+  const staged = await stageHistory(filePath, input);
+  await finalizeStagedClosedOneShot(
+    { historyId: staged.id, livePane: pane() },
+    filePath,
+  );
+  return staged;
+}
+
 test('migrates v1 state to v2 and keeps live terminal-keyed records', async () => {
   const filePath = await tempStatePath();
   await fs.writeFile(
@@ -532,33 +570,14 @@ test('migrates v1 state to v2 and keeps live terminal-keyed records', async () =
   assert.deepEqual(loaded.closedHistory, []);
 });
 
-test('archives one newest continuation slot per owner session and label', async () => {
+test('keeps one newest continuation slot per owner session and label', async () => {
   const filePath = await tempStatePath();
-  const first = await archiveClosedOneShot(
-    {
-      ownerSessionId: 'orch-a',
-      profileName: 'scout',
-      tabLabel: 'Scout Resume',
-      childSessionFile: '/tmp/a.jsonl',
-      childSessionId: 'sid-a',
-      cwd: '/tmp/repo',
-      layout: 'pane',
-    },
-    filePath,
-  );
-  const second = await archiveClosedOneShot(
-    {
-      id: first.id,
-      ownerSessionId: 'orch-a',
-      profileName: 'scout',
-      tabLabel: 'Scout Resume',
-      childSessionFile: '/tmp/b.jsonl',
-      childSessionId: 'sid-b',
-      cwd: '/tmp/repo',
-      layout: 'pane',
-    },
-    filePath,
-  );
+  const first = await stageHistory(filePath);
+  const second = await stageHistory(filePath, {
+    id: first.id,
+    childSessionFile: '/tmp/b.jsonl',
+    childSessionId: 'sid-b',
+  });
 
   const state = await loadHerdrAgentsState(filePath);
   assert.equal(state.closedHistory.length, 1);
@@ -569,18 +588,7 @@ test('archives one newest continuation slot per owner session and label', async 
 
 test('does not let another orchestrator session claim closed history', async () => {
   const filePath = await tempStatePath();
-  await archiveClosedOneShot(
-    {
-      ownerSessionId: 'orch-a',
-      profileName: 'scout',
-      tabLabel: 'Scout Resume',
-      childSessionFile: '/tmp/a.jsonl',
-      childSessionId: 'sid-a',
-      cwd: '/tmp/repo',
-      layout: 'pane',
-    },
-    filePath,
-  );
+  await stageHistory(filePath);
 
   const other = await claimClosedHistory(
     {
@@ -597,18 +605,7 @@ test('does not let another orchestrator session claim closed history', async () 
 
 test('claims a closed history slot exactly once and can release it', async () => {
   const filePath = await tempStatePath();
-  const archived = await archiveClosedOneShot(
-    {
-      ownerSessionId: 'orch-a',
-      profileName: 'scout',
-      tabLabel: 'Scout Resume',
-      childSessionFile: '/tmp/a.jsonl',
-      childSessionId: 'sid-a',
-      cwd: '/tmp/repo',
-      layout: 'pane',
-    },
-    filePath,
-  );
+  const archived = await resumableHistory(filePath);
 
   const results = await Promise.all([
     claimClosedHistory(
@@ -842,18 +839,7 @@ test('quarantines malformed versions instead of migrating them', async () => {
 
 test('releases stale claimed history that has no live generation', async () => {
   const filePath = await tempStatePath();
-  const archived = await archiveClosedOneShot(
-    {
-      ownerSessionId: 'orch-a',
-      profileName: 'scout',
-      tabLabel: 'Scout Resume',
-      childSessionFile: '/tmp/a.jsonl',
-      childSessionId: 'sid-a',
-      cwd: '/tmp/repo',
-      layout: 'pane',
-    },
-    filePath,
-  );
+  const archived = await resumableHistory(filePath);
   const claimed = await claimClosedHistory(
     {
       ownerSessionId: 'orch-a',
@@ -877,18 +863,7 @@ test('releases stale claimed history that has no live generation', async () => {
 
 test('does not release a claimed generation that still has a live agent', async () => {
   const filePath = await tempStatePath();
-  await archiveClosedOneShot(
-    {
-      ownerSessionId: 'orch-a',
-      profileName: 'scout',
-      tabLabel: 'Scout Resume',
-      childSessionFile: '/tmp/a.jsonl',
-      childSessionId: 'sid-a',
-      cwd: '/tmp/repo',
-      layout: 'pane',
-    },
-    filePath,
-  );
+  await resumableHistory(filePath);
   const claimed = await claimClosedHistory(
     {
       ownerSessionId: 'orch-a',
