@@ -1023,6 +1023,74 @@ test('re-wait in workspace mode is a pure lookup and never creates the workspace
   });
 });
 
+for (const layout of ['tab', 'workspace'] as const) {
+  test(`preserves the logical label through renamed ${layout} question, re-wait and resume`, async () => {
+    await withHarness({ layout }, async (harness) => {
+      harness.fake.setBehavior((turn) =>
+        turn.turn === 1 ? { question: 'Which color?' } : { result: 'green' },
+      );
+      const asked = await harness.call({ agent: 'scout', task: 'Choose' });
+      const tab = harness.fake.tabs.find(
+        (item) => item.tab_id === asked.details.tabId,
+      );
+      assert.ok(tab);
+      tab.label = 'pi';
+
+      const rewaited = await harness.call({
+        agent: 'scout',
+        tabLabel: 'Scout',
+      });
+      assert.equal(rewaited.details.tabLabel, 'Scout');
+      assert.match(rewaited.content[0].text, /tabLabel "Scout"/);
+
+      const answered = await harness.call({
+        agent: 'scout',
+        tabLabel: 'Scout',
+        task: 'Use green',
+      });
+      assert.equal(answered.details.reused, true);
+      assert.equal(answered.details.tabLabel, 'Scout');
+      assert.equal(answered.details.closed, true);
+      assert.equal(
+        (await harness.readState()).closedHistory[0]?.tabLabel,
+        'Scout',
+      );
+
+      harness.fake.setBehavior(() => ({ result: 'green remembered' }));
+      const resumed = await harness.call({
+        agent: 'scout',
+        tabLabel: 'Scout',
+        task: 'Recall color',
+        resumeClosed: true,
+      });
+      assert.equal(resumed.details.resumed, true);
+      assert.equal(resumed.details.tabLabel, 'Scout');
+      assert.match(resumed.content[0].text, /green remembered/);
+    });
+  });
+
+  test(`reserves logical labels after a watcher renames ${layout} tabs`, async () => {
+    await withHarness({ layout }, async (harness) => {
+      harness.fake.setBehavior(() => ({ neverSettle: true }));
+      const first = await harness.callRaw({ agent: 'scout', task: 'First' });
+      const tab = harness.fake.tabs.find(
+        (item) => item.tab_id === first.details.tabId,
+      );
+      assert.ok(tab);
+      tab.label = 'pi';
+
+      const second = await harness.callRaw({ agent: 'scout', task: 'Second' });
+      assert.equal(second.details.tabLabel, 'Scout #2');
+      assert.deepEqual(
+        Object.values((await harness.readState()).agents)
+          .map((record) => record.tabLabel)
+          .sort(),
+        ['Scout', 'Scout #2'],
+      );
+    });
+  });
+}
+
 test('continues a closed workspace agent via resumeClosed', async () => {
   await withHarness({ layout: 'workspace' }, async (harness) => {
     const first = await harness.call({

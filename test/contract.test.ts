@@ -469,9 +469,10 @@ test("does not reprint spawn warnings on a reused agent's next turn", async () =
   );
 });
 
-test('looks the tab up by label when tab create omits the tab id', async () => {
+test('resolves a renamed tab by pane id when tab create omits the tab id', async () => {
   await withHarness({ layout: 'tab' }, async (harness) => {
     harness.fake.omitCreatedTabId();
+    harness.fake.renameCreatedTabs('pi');
 
     const result = await harness.call({ agent: 'scout', task: 'one' });
 
@@ -479,7 +480,7 @@ test('looks the tab up by label when tab create omits the tab id', async () => {
     assert.equal(result.isError, undefined);
     assert.equal(result.details.closed, true);
     assert.ok(result.details.tabId);
-    assert.ok(harness.fake.callsMatching('tab', 'list').length >= 1);
+    assert.equal(result.details.tabLabel, 'Scout');
     assert.equal(
       harness.fake.callsMatching('tab', 'close')[0]?.[2],
       result.details.tabId,

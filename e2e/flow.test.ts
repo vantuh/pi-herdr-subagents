@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+
 import { test } from 'vitest';
 
 import { exportPaneLayout } from '../src/herdr/placement.ts';
@@ -152,9 +153,9 @@ test('continues a closed one-shot via resumeClosed and keeps its context', async
   });
 });
 
-test('carries a real ask_question tool call from the child back to the Orchestrator', async () => {
+test('keeps a real question agent resumable after its workspace tab is renamed', async () => {
   await withE2e(
-    { profiles: [{ name: 'scout', tools: ['read'] }] },
+    { layout: 'workspace', profiles: [{ name: 'scout', tools: ['read'] }] },
     async (harness) => {
       harness.llm.setScript((body) => {
         if (isToolFollowUp(body)) {
@@ -189,6 +190,13 @@ test('carries a real ask_question tool call from the child back to the Orchestra
       // A successful question terminates without a redundant model request.
       assert.equal(harness.llm.requests.length, 1);
       assert.equal((await harness.snapshot()).panes.length, 2);
+      await harness.herdr(['tab', 'rename', asked.details.tabId, 'pi']);
+      const rewaited = await harness.call({
+        agent: 'scout',
+        tabLabel: 'Scout',
+      });
+      assert.equal(rewaited.details.status, 'question');
+      assert.equal(rewaited.details.tabLabel, 'Scout');
 
       const answered = await harness.call({
         agent: 'scout',
@@ -199,7 +207,25 @@ test('carries a real ask_question tool call from the child back to the Orchestra
       assert.equal(harness.llm.requests.length, 2);
       assert.equal(answered.details.reused, true);
       assert.equal(answered.details.closed, true);
+      assert.equal(answered.details.tabLabel, 'Scout');
       assert.match(answered.content[0].text, /MOCK_CHILD_OK/);
+      assert.equal(
+        (await harness.readState()).closedHistory[0]?.tabLabel,
+        'Scout',
+      );
+
+      const resumed = await harness.call({
+        agent: 'scout',
+        tabLabel: 'Scout',
+        resumeClosed: true,
+        task: 'ANSWER: verify remembered cookie session.',
+      });
+      assert.equal(resumed.details.resumed, true);
+      assert.equal(resumed.details.closed, true);
+      assert.match(
+        JSON.stringify(harness.llm.requests.at(-1)?.messages),
+        /ANSWER: cookie session\./,
+      );
       assert.deepEqual(
         (await harness.snapshot()).panes.map((pane) => pane.pane_id),
         [harness.orchestratorPaneId],

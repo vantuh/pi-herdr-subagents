@@ -128,9 +128,9 @@ export async function executeRewait(
       : undefined;
   const pane = reusableTab?.pane ?? reusablePane;
   const tabId = reusableTab?.tab.tab_id ?? reusablePane?.tab_id;
-  const label = reusableTab?.tab.label ?? baseLabel;
   const stateKey = pane ? paneStateKey(pane) : undefined;
   const record = stateKey ? state.agents[stateKey] : undefined;
+  const label = record?.tabLabel ?? baseLabel;
   const target = record?.automationName ?? pane?.pane_id;
   if (!pane || !tabId || !target) {
     return {

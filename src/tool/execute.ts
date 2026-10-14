@@ -563,7 +563,7 @@ async function reuseParkedAgent(
   if (answeringQuestion && candidatePane) {
     spawn.reused = true;
     spawn.tabId = candidateTab?.tab.tab_id ?? candidatePane.tab_id;
-    if (candidateTab) spawn.tabLabel = candidateTab.tab.label;
+    spawn.tabLabel = candidateRecord?.tabLabel ?? baseLabel;
     spawn.paneId = candidatePane.pane_id;
     spawn.agentPane = candidatePane;
     spawn.automationName = candidateRecord?.automationName;
@@ -696,7 +696,12 @@ async function createAgentTab(
   const { baseLabel } = settings;
   const { current, tabs, agentsWorkspaceId } = placement;
 
-  if (!spawn.resumeClaim) spawn.tabLabel = uniqueLabel(baseLabel, tabs);
+  if (!spawn.resumeClaim) {
+    const managedTabs = listManagedWorkspaceAgents(current, placement.state)
+      .filter((item) => tabs.some((tab) => tab.tab_id === item.tabId))
+      .map((item) => ({ tab_id: item.tabId, label: item.tabLabel }));
+    spawn.tabLabel = uniqueLabel(baseLabel, [...tabs, ...managedTabs]);
+  }
   const createOutput = await execHerdr(
     [
       'tab',
@@ -734,12 +739,8 @@ async function createAgentTab(
     typeof rootPane.tab_id === 'string' ? rootPane.tab_id : undefined;
 
   if (!spawn.tabId) {
-    const createdTabs = await listTabs(
-      agentsWorkspaceId ?? current.workspaceId,
-      signal,
-    );
-    spawn.tabId = createdTabs.find(
-      (tab) => tab.label === spawn.tabLabel,
+    spawn.tabId = (await listPanes(signal)).find(
+      (pane) => pane.pane_id === spawn.paneId,
     )?.tab_id;
   }
 }

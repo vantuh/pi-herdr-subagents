@@ -76,7 +76,7 @@ Write each plan to `docs/plans/<short-task-name>.md`. The filename names the wor
 - Workspace mode keeps every agent tab in a dedicated subagents workspace (label from `herdr-agents.json` → `workspace.label`, default `subagents`), so the Orchestrator's screen never gains splits or tabs. The workspace is re-resolved from `herdr workspace list` on every spawn and recreated if the user closed it. `/herdr-agents` lists agents across workspaces and focuses them via `tab focus` (workspace-qualified ids). A detached agent that finishes unseen also raises a native `herdr notification show`.
 - Pane mode splits the Orchestrator 60/40 on the first spawn and stacks additional agents down the right column. The placement lock is held through `agent start`, managed-state recording, and rebalancing so parallel calls cannot create competing right columns; in workspace mode the same lock serializes the subagents-workspace lookup within one Orchestrator process and is released once the agent's tab is visible to the next `listTabs` (label uniqueness is computed client-side by `uniqueLabel`). Across separate Orchestrator processes a duplicate workspace creation degrades gracefully: lookups take the first label match and managed records stay ownership-scoped. Changing `layout` in `herdr-agents.json` while agents are live orphans them (they stay visible/closable via `/herdr-agents`); close live agents before switching.
 - Historical `persistent` records stay stored but unmanaged: no reuse, detached claim, conversion, or automatic closing.
-- Parked one-shot reuse is label-based: the default label is the title-cased agent profile name unless `tabLabel` is provided. Reuse requires an exact managed-agent label match. Managed agents also receive a short unique Herdr automation name; legacy panes fall back to pane IDs.
+- Parked one-shot reuse is label-based: the default label is the title-cased agent profile name unless `tabLabel` is provided. Reuse requires an exact managed-agent label match. The logical label comes from managed state, never an externally renamed tab title; tab/workspace spawns reserve live managed labels as well as visible tab labels. Managed agents also receive a short unique Herdr automation name; legacy panes fall back to pane IDs.
 - While waiting, the extension emits `pi.events.emit("herdr:blocked", ...)` so Herdr can mark the Orchestrator pane as blocked/waiting.
 
 ## Loading
@@ -190,8 +190,9 @@ failed pane close (with `closeError`); malformed `pane split` / `tab create` /
 `api snapshot` output; refusing to act when the current pane is unidentifiable;
 the whole flow still completing when the state file is unusable; `wait: false`
 re-wait; detached one-shot delivery closing the agent; a settled detached agent
-with no artifact keeping its claim; tab labels staying unique across spawns and the `tab list`
-fallback when `tab create` omits the id; widget appear/hide/clear including the
+with no artifact keeping its claim; logical labels staying unique after tab
+renames; pane-ID lookup when `tab create` omits the tab id; widget
+appear/hide/clear including the
 poller stopping; `/run` busy, empty and completion behavior; `/herdr-agents`
 non-TUI and failure notifications; both message renderers; no layout churn for a
 lone agent; state pruning; and `0600` on the state file and artifacts.

@@ -571,6 +571,13 @@ test('finds a reusable agent tab by exact label', () => {
     tab: tabs[1],
     pane: panes[1],
   });
+
+  tabs[1]!.label = 'pi';
+  assert.equal(
+    findReusableAgentTab(context, tabs, 'Worker', state)?.pane,
+    panes[1],
+  );
+  assert.equal(findReusableAgentTab(context, tabs, 'pi', state), undefined);
 });
 
 test('does not reuse the orchestrator tab', () => {

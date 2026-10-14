@@ -415,6 +415,16 @@ Not part of the restructure; tracked here so they are not lost.
   abort, and never resubmitting a task. Other startup failures still propagate;
   exhausted retries leave the pane open for inspection. Regression checks cover
   transient busy shells, exhausted retries, and cancellation.
+- [x] Keep logical agent labels independent of tab titles. Live testing with
+  `herdr-tab-watcher.ts` reproduced a parked question agent's archive changing
+  from `ProdQuestionWorker-1757` to `pi`, breaking resume by its original label.
+  Re-wait also returned `pi` as its recovery label. Reuse and re-wait now retain
+  the managed label, visible titles cannot alias an existing managed identity,
+  uniqueness reserves live managed labels, and missing tab IDs resolve by pane
+  ID instead of title. Regression checks cover tab/workspace layouts, label
+  collisions, and create-time renaming; real-Herdr e2e covers rename, question,
+  re-wait, answer, archive, and resume with preserved context. Validation:
+  typecheck, 298 unit/integration/contract tests, 11 e2e tests, and bundle passed.
 - [ ] Truncated detached result: the Phase 3 worker was delivered as
   "Now the test file imports." (an intermediate assistant message) instead of
   its final report. Possibly a consequence of the state-file wipe above, not

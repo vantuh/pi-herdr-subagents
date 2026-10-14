@@ -205,6 +205,7 @@ export class FakeHerdr {
   private readonly heldCommands = new Set<string>();
   private readonly commandWaiters: Array<() => void> = [];
   private omitTabIdOnCreate = false;
+  private createdTabLabel?: string;
   private omitSessionMeta = false;
   private agentStartDelayMs = 0;
   /** Caps the --timeout the extension passes to `agent wait` (tests). */
@@ -300,11 +301,15 @@ export class FakeHerdr {
   }
 
   /**
-   * Create tabs for real but leave `tab_id` out of the response, which is what
-   * the extension's `tab list` lookup by label exists to recover from.
+   * Create tabs for real but omit `tab_id` from the response, exercising
+   * the extension's snapshot lookup by the created pane id.
    */
   omitCreatedTabId(): void {
     this.omitTabIdOnCreate = true;
+  }
+
+  renameCreatedTabs(label: string): void {
+    this.createdTabLabel = label;
   }
 
   /** Do not write child session.json metadata, so archive/stage cannot proceed. */
@@ -653,6 +658,7 @@ export class FakeHerdr {
       };
       this.panes.push(pane);
       this.layouts.set(tab.tab_id, { type: 'pane', pane_id: pane.pane_id });
+      if (this.createdTabLabel !== undefined) tab.label = this.createdTabLabel;
       return ok({
         root_pane: {
           ...pane,

@@ -77,6 +77,7 @@ export function findReusableAgentTab(
     const record = key ? state.agents[key] : undefined;
     if (
       !record ||
+      (record.tabLabel !== undefined && record.tabLabel !== baseLabel) ||
       !isAgentOwnedBy(
         record,
         context.currentPane.terminal_id,
