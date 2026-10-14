@@ -182,17 +182,62 @@ and trailing commas; `index.ts` is 167 lines. Full `npm test`: 291/291;
 Independent review via `oracle` found no actionable findings (the `reviewer`
 profile was blocked by HTTP 429).
 
-### [ ] Phase 7 — split execute into phases (real refactor)
+### [x] Phase 7 — split execute into phases (real refactor)
 
-The only phase that changes code shape. Scope is decided after phase 6 by
-reading `tool/execute.ts`; candidate seams: resolve profile/config/mode →
-resume-closed claim → spawn or reuse target → prompt → wait/collect/detach.
-The plan for this phase is written into this file as a revision before coding,
-and the diff gets a `reviewer` pass.
+Scope after reading the Phase 6 extraction: split `tool/execute.ts` into
+private, phase-oriented helpers. Keep the public `executeHerdrAgent` signature
+and runtime behavior unchanged. Prefer keeping helpers in the same module;
+do not add a generic pipeline, class, configuration, or barrel module.
+
+Implementation outline:
+
+1. Keep profile/mode validation and taskless `executeRewait` dispatch at the
+   entry point, then delegate the task-bearing path.
+2. Extract placement-context/workspace resolution, live-label rejection and
+   parked-question reuse, and closed-history validation/claim into coherent
+   helpers. Preserve every early error result and its exact payload.
+3. Extract tab creation and pane creation separately, retaining malformed-output
+   validation, fallback lookup, unique labels, cwd/env arguments, and ordering.
+4. Extract child startup and lifecycle recording. Retain profile rediscovery
+   after a closed-history claim, spawn warnings, best-effort ordinary recording,
+   mandatory resumed recording, and pane rebalancing.
+5. Keep one placement owner responsible for acquiring/releasing the lock and
+   partial-resume cleanup. Release workspace placement after the tab is visible
+   and known root-shell cleanup completes; retain pane placement through start,
+   lifecycle recording, and rebalancing. Every early return releases the lock.
+6. Extract prompt/wait orchestration and settled-outcome collection so each
+   function stays within approximately 150 lines. Preserve artifact clearing,
+   update callbacks, question-before-result ordering, detached results,
+   collection claims, one-shot close, interrupt handling, and blocked-label
+   cleanup in `finally`.
+
+Use explicit small parameter groups for invocation inputs and the existing
+mutable spawn/resume state only where needed across helpers. State updates must
+remain visible to the cleanup owner even if a helper throws after acquiring a
+claim or creating a target. Do not hide partial progress in a helper's successful
+return value. Avoid sprawling generic context objects and unnecessary exports.
+
+Verification: existing tests remain unchanged except necessary import paths;
+no schema, model text, `details`, argv, or error-handling behavior changes.
+Worker runs full `npm test` and the bundle check. Orchestrator reviews the diff,
+runs full `npm test` plus `npm run test:e2e`, checks function sizes, and obtains
+an independent review before committing. Follow-up defects, including live
+handoff recovery, remain deferred until this phase is complete.
 
 Done when: no function in `tool/execute.ts` exceeds ~150 lines; unit + e2e
 green; reviewer findings resolved; commit
 `refactor: split herdr_agent execute into phases`.
+
+Completed: `executeHerdrAgent` plus ten private phase helpers in `execute.ts`;
+longest function is 119 lines. The placement owner retains partial-resume
+cleanup and shared progress; no additional modules or exports were needed.
+Orchestrator validation: full `npm test` 291/291, `npm run test:e2e` 11/11,
+rolldown bundle, formatting, function-size check, and `git diff --check` passed.
+Independent `oracle` review found no blocking behavior changes; two misleading
+comments were removed and redundant private-helper JSDoc was trimmed. Tests
+were not changed. TypeScript compiler verification remains unavailable in the
+repository; two inherited oxlint warning-comment errors remain unchanged.
+All main restructure phases are complete; follow-ups below remain deferred.
 
 ## Follow-up: recover collection after a Herdr live handoff
 
