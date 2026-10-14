@@ -12,6 +12,7 @@ import {
 } from '@earendil-works/pi-tui';
 
 import { readAgentQuestion } from '../artifacts.ts';
+import { isSettledAgentStatus } from '../herdr/agent.ts';
 import { execHerdr } from '../herdr/cli.ts';
 import { closeOneShot } from '../tool/one-shot.ts';
 import type { HerdrAgentInfo } from '../types.ts';
@@ -171,8 +172,7 @@ export async function showHerdrAgentsManager(
     }
 
     const question = await readAgentQuestion(selected.agent.resultFile);
-    const settled =
-      selected.agent.status === 'idle' || selected.agent.status === 'done';
+    const settled = isSettledAgentStatus(selected.agent.status);
     if (!settled || question) {
       ctx.ui.notify(
         `Cannot close "${selected.agent.tabLabel}": it is still running or waiting on a question. Answer it or wait for it to finish so history can be saved.`,

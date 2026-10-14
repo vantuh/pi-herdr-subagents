@@ -18,17 +18,8 @@ export function titleCase(value: string): string {
     .join(' ');
 }
 
-export function normalizeTools(rawTools: unknown): string[] | undefined {
-  const tools = Array.isArray(rawTools)
-    ? rawTools.map((tool) => String(tool).trim()).filter(Boolean)
-    : typeof rawTools === 'string'
-      ? rawTools
-          .split(',')
-          .map((tool) => tool.trim())
-          .filter(Boolean)
-      : undefined;
-
-  return tools && tools.length > 0 ? tools : undefined;
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function formatAgentOutput(
@@ -51,4 +42,33 @@ export function formatSpawnWarnings(
 ): string {
   if (warnings.length === 0) return text;
   return `${text}\n\nSpawn warnings:\n${warnings.map((warning) => `- ${warning}`).join('\n')}`;
+}
+
+export function formatCollectedOutput(
+  output: string,
+  tabLabel: string,
+  closeError: string | undefined,
+  warnings: readonly string[],
+): string {
+  return formatSpawnWarnings(
+    formatAgentOutput(output, tabLabel, closeError),
+    warnings,
+  );
+}
+
+/**
+ * Lifecycle state persistence (state/store.ts) is best-effort: a failure to
+ * load/save/prune/record/delete must never abort agent execution/output or
+ * manager listing. This swallows the error and returns a fallback so callers
+ * can proceed without persisted lifecycle info.
+ */
+export async function bestEffort<T>(
+  fallback: T,
+  task: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await task();
+  } catch {
+    return fallback;
+  }
 }

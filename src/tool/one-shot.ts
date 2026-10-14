@@ -24,19 +24,7 @@ import {
   persistPrunedAgentsState,
 } from '../state/store.ts';
 import type { HerdrAgentLayout, PaneInfo } from '../types.ts';
-import { formatAgentOutput, formatSpawnWarnings } from '../utils.ts';
-
-export // Lifecycle state persistence (state/store.ts) is best-effort: a failure to
-// load/save/prune/record/delete must never abort agent execution/output or
-// manager listing. This swallows the error and returns a fallback so callers
-// can proceed without persisted lifecycle info.
-async function bestEffort<T>(fallback: T, task: () => Promise<T>): Promise<T> {
-  try {
-    return await task();
-  } catch {
-    return fallback;
-  }
-}
+import { bestEffort, errorMessage } from '../utils.ts';
 
 const RESUME_CLEANUP_TIMEOUT_MS = 8_000;
 const FINALIZE_RETRY_ATTEMPTS = 3;
@@ -45,10 +33,6 @@ export function independentCleanupSignal(
   timeoutMs = RESUME_CLEANUP_TIMEOUT_MS,
 ): AbortSignal {
   return AbortSignal.timeout(timeoutMs);
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 export async function rebalanceCurrentPaneAgents(
@@ -98,7 +82,7 @@ export async function closeOneShot(target: {
       signal: target.signal,
     });
   } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+    return errorMessage(error);
   }
 
   try {
@@ -111,7 +95,7 @@ export async function closeOneShot(target: {
       target.signal,
     );
   } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+    return errorMessage(error);
   }
 
   const finalizeOnce = async () => {
@@ -231,18 +215,6 @@ async function stageClosedOneShotIfEligible(target: {
     target.signal,
   );
   return staged.id;
-}
-
-export function formatCollectedOutput(
-  output: string,
-  tabLabel: string,
-  closeError: string | undefined,
-  warnings: readonly string[],
-): string {
-  return formatSpawnWarnings(
-    formatAgentOutput(output, tabLabel, closeError),
-    warnings,
-  );
 }
 
 export function spawnWarningDetails(warnings: readonly string[]): {

@@ -3,7 +3,11 @@ import {
   getHerdrAgentsWorkspaceLabel,
   loadHerdrAgentsConfig,
 } from '../config.ts';
-import { getAgentSnapshot, readAgent } from '../herdr/agent.ts';
+import {
+  getAgentSnapshot,
+  isSettledAgentStatus,
+  readAgent,
+} from '../herdr/agent.ts';
 import {
   findReusableAgentPane,
   findReusableAgentTab,
@@ -22,9 +26,8 @@ import {
   type HerdrAgentStateRecord,
 } from '../state/store.ts';
 import type { AgentProfile, HerdrAgentLayout, PaneInfo } from '../types.ts';
-import { isSettledAgentStatus } from '../ui/widget.ts';
-import { formatSpawnWarnings } from '../utils.ts';
-import { bestEffort, spawnWarningDetails } from './one-shot.ts';
+import { bestEffort, formatSpawnWarnings } from '../utils.ts';
+import { spawnWarningDetails } from './one-shot.ts';
 
 export function resumedDetails(resumed: boolean): { resumed?: boolean } {
   return resumed ? { resumed: true } : {};

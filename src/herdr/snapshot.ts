@@ -5,6 +5,7 @@ import type {
   TabInfo,
   WorkspaceInfo,
 } from '../types.ts';
+import { errorMessage } from '../utils.ts';
 import { execHerdr } from './cli.ts';
 
 export async function getSessionSnapshot(
@@ -69,8 +70,9 @@ export function parseWorkspaceListOutput(output: string): WorkspaceInfo[] {
   try {
     parsed = JSON.parse(output);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Malformed Herdr workspace list output: ${message}`);
+    throw new Error(
+      `Malformed Herdr workspace list output: ${errorMessage(error)}`,
+    );
   }
   const workspaces = parsed.result?.workspaces;
   if (!Array.isArray(workspaces)) {
@@ -91,9 +93,7 @@ export function parseWorkspaceListOutput(output: string): WorkspaceInfo[] {
     }));
 }
 
-async function listWorkspaces(
-  signal?: AbortSignal,
-): Promise<WorkspaceInfo[]> {
+async function listWorkspaces(signal?: AbortSignal): Promise<WorkspaceInfo[]> {
   return parseWorkspaceListOutput(
     await execHerdr(['workspace', 'list'], signal),
   );
@@ -190,4 +190,3 @@ export async function resolveAgentsWorkspace(
     `Malformed Herdr workspace create output: missing result.workspace.workspace_id. Output: ${output}`,
   );
 }
-

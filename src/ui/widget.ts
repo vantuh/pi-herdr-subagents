@@ -73,11 +73,6 @@ function elapsedLabel(agent: HerdrAgentInfo, now: number): string {
   return formatElapsed(now - started);
 }
 
-/** Idle or done: the child has finished its turn. */
-export function isSettledAgentStatus(status: string): boolean {
-  return status === 'idle' || status === 'done';
-}
-
 export function renderAgentWidgetLines(
   agents: readonly HerdrAgentInfo[],
   now: number,

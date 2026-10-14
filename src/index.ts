@@ -7,6 +7,7 @@ import { buildRunTurnInstructions, GLOBAL_INSTRUCTIONS } from './prompts.ts';
 import {
   formatRunUserMessage,
   parseRunArgs,
+  DEFAULT_AGENT_NAMES,
   type RunDelegationRequest,
 } from './run.ts';
 import { executeHerdrAgent } from './tool/execute.ts';
@@ -19,6 +20,7 @@ import {
   stopAgentsWidgetPoller,
 } from './ui/poller.ts';
 import { registerAgentMessageRenderers } from './ui/renderers.ts';
+import { errorMessage } from './utils.ts';
 
 let pendingRunDelegation: RunDelegationRequest | null = null;
 
@@ -68,7 +70,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
   pi.registerCommand('run', {
     description: 'Explicitly delegate a task to a Herdr agent',
     getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
-      const agents = ['scout', 'researcher', 'planner', 'worker', 'reviewer'];
+      const agents = DEFAULT_AGENT_NAMES;
       const [first = '', ...rest] = prefix.trimStart().split(/\s+/);
       const taskPrefix = rest.join(' ');
 
@@ -119,8 +121,10 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       try {
         await showHerdrAgentsManager(ctx);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        ctx.ui.notify(`Failed to load Herdr agents: ${message}`, 'error');
+        ctx.ui.notify(
+          `Failed to load Herdr agents: ${errorMessage(error)}`,
+          'error',
+        );
       }
     },
   });
@@ -130,9 +134,8 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       const agents = await discoverAgents(cwd);
       registerHerdrAgentTool(pi, describeAgentProfiles(agents));
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
       process.stderr.write(
-        `herdr-agents: failed to refresh agent listing: ${message}\n`,
+        `herdr-agents: failed to refresh agent listing: ${errorMessage(error)}\n`,
       );
     }
   }

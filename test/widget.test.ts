@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
+
 import { test } from 'vitest';
 
+import { isSettledAgentStatus } from '../src/herdr/agent.ts';
 import type { HerdrAgentInfo } from '../src/types.ts';
 import {
   agentStatusView,
   formatElapsed,
-  isSettledAgentStatus,
   renderAgentWidgetLines,
   truncateLabel,
   type WidgetPaint,

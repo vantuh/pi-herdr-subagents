@@ -3,7 +3,7 @@ export interface RunDelegationRequest {
   task: string;
 }
 
-const DEFAULT_AGENT_NAMES = [
+export const DEFAULT_AGENT_NAMES = [
   'scout',
   'researcher',
   'planner',

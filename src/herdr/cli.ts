@@ -14,24 +14,6 @@ export class HerdrCliError extends Error {
   }
 }
 
-export function delay(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new Error('Aborted'));
-      return;
-    }
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(new Error('Aborted'));
-    };
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    }, ms);
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
-}
-
 const SENSITIVE_AGENT_START_FLAGS = new Set([
   '--session',
   '--system-prompt',

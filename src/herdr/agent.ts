@@ -1,4 +1,7 @@
-import { delay, execHerdr, HerdrCliError } from './cli.ts';
+import { setTimeout as sleep } from 'node:timers/promises';
+
+import { errorMessage } from '../utils.ts';
+import { execHerdr, HerdrCliError } from './cli.ts';
 
 type StartedAgentSnapshot = {
   agent: string;
@@ -26,8 +29,7 @@ function parseAgentGetOutput(output: string): ParsedAgentGet {
   try {
     parsed = JSON.parse(output);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Malformed herdr agent get output: ${message}`);
+    throw new Error(`Malformed herdr agent get output: ${errorMessage(error)}`);
   }
 
   const raw = parsed.result?.agent;
@@ -56,13 +58,17 @@ export function parseStartedAgentSnapshot(
   return { agent: parsed.agent, status: parsed.status };
 }
 
+/** Idle or done: the child has finished its turn. */
+export function isSettledAgentStatus(status: string): boolean {
+  return status === 'idle' || status === 'done';
+}
+
 export function startedAgentReady(
   snapshot: StartedAgentSnapshot,
   expectedAgent: string,
 ): boolean {
   return (
-    snapshot.agent === expectedAgent &&
-    (snapshot.status === 'idle' || snapshot.status === 'done')
+    snapshot.agent === expectedAgent && isSettledAgentStatus(snapshot.status)
   );
 }
 
@@ -88,7 +94,7 @@ async function waitForStartedAgent(
         `Herdr did not settle on ${expectedAgent} in pane ${paneId} within ${timeoutMs}ms.`,
       );
     }
-    await delay(100, signal);
+    await sleep(100, undefined, { signal });
   }
 }
 
@@ -140,7 +146,7 @@ export async function startAgent(
         throw error;
       }
       // A newly created pane can exist before its shell reaches the prompt.
-      await delay(100, signal);
+      await sleep(100, undefined, { signal });
     }
   }
 }

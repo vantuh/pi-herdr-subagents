@@ -2,6 +2,8 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { errorMessage } from './utils.ts';
+
 export const RESULT_FILE_MARKER = 'HERDR_RESULT_FILE:';
 
 export const ASK_QUESTION_TOOL = 'ask_question';
@@ -195,7 +197,7 @@ export async function resumableSessionDirError(
   } catch (error) {
     const code = (error as { code?: string }).code;
     if (code === 'ENOENT') return 'Session working directory is missing.';
-    return error instanceof Error ? error.message : String(error);
+    return errorMessage(error);
   }
 }
 

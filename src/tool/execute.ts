@@ -63,7 +63,13 @@ import type {
   TabInfo,
 } from '../types.ts';
 import { ensureAgentsWidget } from '../ui/poller.ts';
-import { formatSpawnWarnings, makeHerdrAgentName, titleCase } from '../utils.ts';
+import {
+  bestEffort,
+  errorMessage,
+  formatSpawnWarnings,
+  makeHerdrAgentName,
+  titleCase,
+} from '../utils.ts';
 import {
   buildChildPiArgs,
   herdrChildEnvArgs,
@@ -71,17 +77,16 @@ import {
 } from './child-args.ts';
 import {
   acquirePanePlacementLock,
-  bestEffort,
   independentCleanupSignal,
   rebalanceCurrentPaneAgents,
   spawnWarningDetails,
 } from './one-shot.ts';
+import { buildHerdrAgentParams } from './schema.ts';
 import {
   executeAgentStatus,
   resumeClosedLiveDecision,
   resumedDetails,
 } from './status.ts';
-import { buildHerdrAgentParams } from './schema.ts';
 
 type HerdrAgentParams = Static<ReturnType<typeof buildHerdrAgentParams>>;
 
@@ -247,7 +252,7 @@ async function runAgentTask(
   // through it (within this process) so two parallel first spawns cannot
   // create it twice. The lock is released once the agent's tab is visible
   // to listTabs. Label uniqueness is computed client-side via uniqueLabel,
-  // so later `agent start` calls stay serialized only for placement.
+  // so subsequent `agent start` calls stay serialized only for placement.
   const releasePlacement =
     settings.layout === 'pane' || settings.layout === 'workspace'
       ? await acquirePanePlacementLock()
@@ -357,7 +362,7 @@ async function prepareSpawnTarget(
   // Best effort: close the known root shell tab `workspace create`
   // starts every new workspace with. Only the creating spawn does this,
   // and only by id — never by "empty pane" heuristics, which can race
-  // a sibling spawn whose agent is not started yet.
+  // a sibling spawn whose agent has not started.
   if (settings.layout === 'workspace') {
     if (
       placement.agentsWorkspaceCreated &&
@@ -563,7 +568,7 @@ async function reuseParkedAgent(
     spawn.automationName = candidateRecord?.automationName;
     spawn.resultFile = candidateRecord?.resultFile;
     // A new task on an existing pane is not the first collection:
-    // do not copy spawn-time notes onto later turns.
+    // do not copy spawn-time notes onto subsequent turns.
   }
   return undefined;
 }
@@ -721,9 +726,8 @@ async function createAgentTab(
   try {
     createResult = JSON.parse(createOutput)?.result;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `Malformed Herdr tab create output: expected JSON with result.root_pane.pane_id (${message}). Output: ${createOutput}`,
+      `Malformed Herdr tab create output: expected JSON with result.root_pane.pane_id (${errorMessage(error)}). Output: ${createOutput}`,
     );
   }
 
@@ -801,9 +805,8 @@ async function createAgentPane(
   try {
     createResult = JSON.parse(createOutput)?.result;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `Malformed Herdr pane split output: expected JSON with result.pane.pane_id (${message}). Output: ${createOutput}`,
+      `Malformed Herdr pane split output: expected JSON with result.pane.pane_id (${errorMessage(error)}). Output: ${createOutput}`,
     );
   }
   const createdPane = createResult?.pane as PaneInfo | undefined;

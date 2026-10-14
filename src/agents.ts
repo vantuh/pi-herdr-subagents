@@ -11,7 +11,6 @@ import {
 } from '@earendil-works/pi-coding-agent';
 
 import type { AgentProfile } from './types.ts';
-import { normalizeTools } from './utils.ts';
 
 function isDirectory(filePath: string): boolean {
   try {
@@ -39,6 +38,19 @@ export function resolveThinkingLevel(value: unknown): string | undefined {
   if (typeof value !== 'string' || !value) return undefined;
   const level = value.trim().toLowerCase();
   return THINKING_LEVEL_SET.has(level) ? level : undefined;
+}
+
+function normalizeTools(rawTools: unknown): string[] | undefined {
+  const tools = Array.isArray(rawTools)
+    ? rawTools.map((tool) => String(tool).trim()).filter(Boolean)
+    : typeof rawTools === 'string'
+      ? rawTools
+          .split(',')
+          .map((tool) => tool.trim())
+          .filter(Boolean)
+      : undefined;
+
+  return tools && tools.length > 0 ? tools : undefined;
 }
 
 /**

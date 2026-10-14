@@ -29,7 +29,6 @@ import {
   formatAgentOutput,
   formatSpawnWarnings,
   makeHerdrAgentName,
-  normalizeTools,
 } from '../src/utils.ts';
 
 test('generates valid unique Herdr automation names', () => {
@@ -79,32 +78,6 @@ test('rejects result markers outside managed temp directories', () => {
     findResultFileMarker('HERDR_RESULT_FILE: /tmp/result.md'),
     undefined,
   );
-});
-
-test('normalizes comma-separated tools', () => {
-  assert.deepEqual(normalizeTools('read, grep, bash'), [
-    'read',
-    'grep',
-    'bash',
-  ]);
-});
-
-test('normalizes array tools', () => {
-  assert.deepEqual(normalizeTools(['read', ' grep ', '']), ['read', 'grep']);
-});
-
-test('normalizes single tool strings', () => {
-  assert.deepEqual(normalizeTools('read'), ['read']);
-});
-
-test('returns undefined for empty tools', () => {
-  assert.equal(normalizeTools(' ,  '), undefined);
-  assert.equal(normalizeTools([]), undefined);
-});
-
-test('returns undefined for unsupported tool shapes', () => {
-  assert.equal(normalizeTools(123), undefined);
-  assert.equal(normalizeTools({ read: true }), undefined);
 });
 
 test('formats agent output text', () => {

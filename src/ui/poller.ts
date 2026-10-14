@@ -4,6 +4,7 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 
 import { readAgentQuestion, readAgentResult } from '../artifacts.ts';
+import { isSettledAgentStatus } from '../herdr/agent.ts';
 import { execHerdr } from '../herdr/cli.ts';
 import { listManagedWorkspaceAgents } from '../herdr/placement.ts';
 import { getCurrentContext } from '../herdr/snapshot.ts';
@@ -14,14 +15,16 @@ import {
   persistPrunedAgentsState,
 } from '../state/store.ts';
 import {
-  bestEffort,
   closeOneShot,
   dropCollectedSpawnWarnings,
-  formatCollectedOutput,
   spawnWarningDetails,
 } from '../tool/one-shot.ts';
 import type { HerdrAgentInfo } from '../types.ts';
-import { formatSpawnWarnings } from '../utils.ts';
+import {
+  bestEffort,
+  formatCollectedOutput,
+  formatSpawnWarnings,
+} from '../utils.ts';
 import {
   AGENT_QUESTION_MESSAGE_TYPE,
   AGENT_RESULT_MESSAGE_TYPE,
@@ -29,7 +32,6 @@ import {
 import {
   AGENTS_WIDGET_ID,
   AGENTS_WIDGET_TICK_MS,
-  isSettledAgentStatus,
   renderAgentWidgetLines,
   type StatusTone,
   type WidgetPaint,
@@ -159,7 +161,7 @@ export function buildAgentFinishedNotificationArgs(
  * the last message. Triggering on the first instead starts a turn that the rest
  * must queue behind as `steer`, and `steer` lands only after that turn's tool
  * calls finish — observed with two agents asking in parallel, where the second
- * question surfaced a whole turn later. Batching makes them arrive together.
+ * question surfaced one whole turn after. Batching makes them arrive together.
  */
 export async function deliverDetachedOutcomes(
   pi: ExtensionAPI,
@@ -298,7 +300,7 @@ export async function deliverDetachedOutcomes(
   // A durable claim commits delivery; cancellation stops new claims, not this batch.
   // Only the final message triggers a turn. Triggering on the first would start
   // a turn the rest then have to queue behind as `steer`, which is what pushed a
-  // second parallel question a whole turn later.
+  // second parallel question one whole turn after.
   const deliverAs = ctx.isIdle?.() === false ? 'steer' : undefined;
   pending.forEach((message, index) => {
     const last = index === pending.length - 1;
