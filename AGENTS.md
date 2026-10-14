@@ -23,7 +23,7 @@ The intended model behavior:
 
 ## Delegation policy
 
-Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Role matrix, continuation examples, and negative policy live in `docs/README.md`. Orchestrator mechanics are in `constants.ts` (`GLOBAL_INSTRUCTIONS`).
+Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Role matrix, continuation examples, and negative policy live in `README.md`. Orchestrator mechanics are in `constants.ts` (`GLOBAL_INSTRUCTIONS`).
 
 | Situation | `agent` | Delegate? |
 |---|---|:---:|

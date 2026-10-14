@@ -2,7 +2,7 @@
 
 > **RETIRED 2026-09-04 — not loaded, not maintained.** Migrated to
 > [pi-subagents](https://github.com/nicobailon/pi-subagents) (+ pi-intercom).
-> Kept in `home/dot_pi/agent/archive/` for design reference. See `../README.md`.
+> Kept for design reference.
 
 `herdr-agents` is a Pi extension that turns Herdr into a one-shot delegation layer.
 
@@ -142,7 +142,7 @@ The extension uses:
 - `model` to select the child model;
 - body as the child system prompt addition.
 
-See [`agent-profiles.md`](./agent-profiles.md) for the full field reference.
+See [`agent-profiles.md`](./docs/agent-profiles.md) for the full field reference.
 
 ## Runtime files
 
@@ -277,9 +277,9 @@ Typical per-model tool call:
 
 See also:
 
-- [`herdr-0.7-agent-api-migration.md`](./herdr-0.7-agent-api-migration.md) — migration to Herdr's named-agent automation API, compatibility findings, and verification results.
-- [`plan-interactive-agents.md`](./plan-interactive-agents.md) — phased plan for the parallel-agent limit, status widget, bidirectional `ask_question` channel, and async result delivery. All shipped; the loadout snapshot phase was deliberately dropped, with reasons recorded there. Also records the measurement mistakes made along the way and the provider ceilings found.
-- [`plan-upstream-parity.md`](./plan-upstream-parity.md) — second wave of upstream comparison: remaining feature gaps against `pi-interactive-subagents`, phased with gates, plus what is deliberately not ported.
-- [`flow.md`](./flow.md) — detailed lifecycle.
-- [`session-findings.md`](./session-findings.md) — development findings and bug history.
-- [`composer-cursor-sdk-compatibility.md`](./composer-cursor-sdk-compatibility.md) — Composer tool-name adaptation and tool/skill boundary tuning.
+- [`herdr-0.7-agent-api-migration.md`](./docs/herdr-0.7-agent-api-migration.md) — migration to Herdr's named-agent automation API, compatibility findings, and verification results.
+- [`plan-interactive-agents.md`](./docs/plan-interactive-agents.md) — phased plan for the parallel-agent limit, status widget, bidirectional `ask_question` channel, and async result delivery. All shipped; the loadout snapshot phase was deliberately dropped, with reasons recorded there. Also records the measurement mistakes made along the way and the provider ceilings found.
+- [`plan-upstream-parity.md`](./docs/plan-upstream-parity.md) — second wave of upstream comparison: remaining feature gaps against `pi-interactive-subagents`, phased with gates, plus what is deliberately not ported.
+- [`flow.md`](./docs/flow.md) — detailed lifecycle.
+- [`session-findings.md`](./docs/session-findings.md) — development findings and bug history.
+- [`composer-cursor-sdk-compatibility.md`](./docs/composer-cursor-sdk-compatibility.md) — Composer tool-name adaptation and tool/skill boundary tuning.
