@@ -167,7 +167,7 @@ Done when: `index.ts` holds only wiring, `pendingRunDelegation`, and
 `registerHerdrAgentTool` with its inline `execute`; unit + e2e green; commit
 `refactor: move tool helpers out of index`.
 
-### [ ] Phase 6 — execute out of index
+### [x] Phase 6 — execute out of index
 
 - Move the `execute` body verbatim into `tool/execute.ts` as
   `executeHerdrAgent(pi, params, signal, onUpdate, ctx)`; `registerHerdrAgentTool`
@@ -175,6 +175,12 @@ Done when: `index.ts` holds only wiring, `pendingRunDelegation`, and
 
 Done when: `index.ts` is wiring only (target < 300 lines); unit + e2e green;
 commit `refactor: move herdr_agent execute into tool module`.
+
+Validation: Orchestrator verified the execute body matches HEAD modulo whitespace
+and trailing commas; `index.ts` is 167 lines. Full `npm test`: 291/291;
+`npm run test:e2e`: 11/11; rolldown bundle and `git diff --check`: passed.
+Independent review via `oracle` found no actionable findings (the `reviewer`
+profile was blocked by HTTP 429).
 
 ### [ ] Phase 7 — split execute into phases (real refactor)
 

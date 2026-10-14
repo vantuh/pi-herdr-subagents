@@ -1,6 +1,6 @@
 # `herdr_agent` tool reference
 
-This document describes the `herdr_agent` tool as the Orchestrator model sees it. Sources: `src/index.ts` (`registerHerdrAgentTool`, `execute`), `src/tool/schema.ts`, `src/prompts.ts`.
+This document describes the `herdr_agent` tool as the Orchestrator model sees it. Sources: `src/index.ts` (`registerHerdrAgentTool`), `src/tool/execute.ts` (`executeHerdrAgent`), `src/tool/schema.ts`, `src/prompts.ts`.
 
 The document has two parts:
 

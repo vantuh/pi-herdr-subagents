@@ -33,7 +33,7 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 
 ## Files
 
-- `src/index.ts` — Pi extension entrypoint and `herdr_agent` tool registration.
+- `src/index.ts` — Pi extension wiring: `pi.on`, `registerCommand`, `registerTool`.
 - `src/agents.ts` — loads agent profiles from user/project Pi agent directories.
 - `src/config.ts` — layout config loading.
 - `src/run.ts` — `/run` arg parsing and injected user messages.
@@ -42,6 +42,7 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 - `src/herdr/placement.ts` — label uniqueness, reusable-tab/pane lookup, managed-agent listing, and split-ratio layout helpers.
 - `src/herdr/agent.ts` — named-agent start, prompt, wait, and read wrappers with their snapshot parsers.
 - `src/tool/schema.ts` — TypeBox schema for tool parameters.
+- `src/tool/execute.ts` — the `herdr_agent` execute body: profile resolution, spawn/reuse, prompt, wait, collect.
 - `src/prompts.ts` — injected Orchestrator instructions and child-agent protocol.
 - `src/tool/one-shot.ts` — one-shot close/staging, pane-placement lock, collected-output formatting, and best-effort state cleanup helpers.
 - `src/tool/rewait.ts` — re-wait on a running agent and the resume-closed live-agent decision.

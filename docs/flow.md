@@ -7,8 +7,9 @@ Current runtime: Pi `1.2.0`, Herdr client/server `0.9.4`, official Pi integratio
 
 Pi loads `src/index.ts` through the package manifest or an explicit
 `pi -e ./src/index.ts`. The main session registers `herdr_agent`, commands,
-renderers, and orchestration guidance. `HERDR_AGENT_CHILD=1` registers only the
-child result/session writer and model-only `ask_question`.
+renderers, and orchestration guidance; the tool body itself is
+`src/tool/execute.ts` (`executeHerdrAgent`). `HERDR_AGENT_CHILD=1` registers
+only the child result/session writer and model-only `ask_question`.
 Orchestration guidance uses the named `herdr_agents` system-prompt section for
 both user and custom-message runs, preserving Pi's other prompt sections.
 
