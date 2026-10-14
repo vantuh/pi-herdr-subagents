@@ -32,7 +32,6 @@ and closes the target.
   `herdr integration install pi`. It supplies authoritative lifecycle and
   session reporting. Install it yourself; tests use an isolated agent directory.
 - The orchestrating Pi session must run inside a Herdr pane.
-- [Bun](https://bun.sh) to run the tests.
 
 ## Loading
 
@@ -133,11 +132,9 @@ live:** they become orphaned. They stay visible and closable through
 
 ```bash
 npm ci --ignore-scripts   # install locked development dependencies
-bun run test              # unit + integration, no real Herdr
-bun run test:unit         # pure helpers
-bun run test:integration  # herdr_agent flow against a fake Herdr
-bun run test:e2e          # real Herdr server and real Pi children
-bun run test:all          # everything
+npm test                  # unit project: helpers, integration, contract; no real Herdr
+npm run test:e2e          # e2e project: real Herdr server and real Pi children
+npm run test:all          # both projects
 ```
 
 Tests use local dependencies from `package-lock.json`. E2E also requires `pi`

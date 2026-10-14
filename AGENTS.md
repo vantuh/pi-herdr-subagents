@@ -81,11 +81,9 @@ A global `/parallel-review` Pi prompt historically used this extension's
 
 ```bash
 npm ci --ignore-scripts
-bun run test              # unit + integration (fast, no real Herdr)
-bun run test:unit         # pure helpers only, no subprocesses
-bun run test:integration  # full herdr_agent flow against a fake Herdr
-bun run test:e2e          # real Herdr server + real Pi children (~50s)
-bun run test:all          # everything
+npm test                  # unit project: helpers, integration, contract (no real Herdr)
+npm run test:e2e          # e2e project: real Herdr server + real Pi children (~50s)
+npm run test:all          # both projects
 ```
 
 Run `npm ci --ignore-scripts` once to install local development dependencies
@@ -93,7 +91,7 @@ from `package-lock.json`. Pi supplies the host peers when loading the extension;
 unit and integration tests use the local packages. E2E additionally requires
 `pi` and `herdr` on `PATH`.
 
-Three layers:
+The unit project runs the helper, integration, and contract files together. E2E is the other project:
 
 - **Unit** (`test/*.test.ts`) — pure helpers: arg builders,
   snapshot parsing, layout ratios, state records, widget rendering, profile
