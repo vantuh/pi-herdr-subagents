@@ -1,5 +1,8 @@
 # Composer and pi-cursor-sdk compatibility
 
+> Historical compatibility notes. See [README.md](../../README.md) and
+> [tool.md](../tool.md) for the supported tool contract and current behavior.
+
 This document records the prompt and skill tuning needed for Composer models provided by `pi-cursor-sdk` to use the `herdr_agent` delegation tool reliably.
 
 ## Problem: provider-specific tool name
