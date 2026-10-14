@@ -36,7 +36,7 @@ All keys are lowercase, exactly as written. Unknown keys are ignored.
 | `name` | yes | string | Profile name; matched exactly against the `agent` parameter. |
 | `description` | yes | string | Not used when spawning; only required for the profile to load. |
 | `tools` | no | comma-separated string or YAML list | Omitted/empty: no `--tools` flag, child keeps Pi's default tools. Otherwise a strict allowlist (see [Tools](#tools)). |
-| `model` | no | string | Passed as `--model`. Omitted: Pi's default. A non-string value is ignored. The `model` tool parameter overrides it for a fresh spawn. |
+| `model` | no | string | Passed as `--model`. Omitted: Pi's default. A non-string value is ignored. |
 | `thinking` | no | string | One of `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` (trimmed, case-insensitive); passed as `--thinking`. Omitted/empty: no flag. Other strings: flag omitted and the spawn result carries the warning `Unknown thinking level "<value>" ignored.`; the spawn still proceeds. |
 | `skills` | no | comma-separated string or YAML list | Omitted (or empty string): child keeps Pi's normal skill discovery. `none`, `[]` or an empty YAML list: no skills (`--no-skills`). A non-empty list: `--no-skills` plus `--skill <file>` for each name found. Names matching no skill produce the warning `Skills not found: ...`; the spawn still proceeds. |
 | `system-prompt` | no | `append` or `replace` (trimmed, case-insensitive) | Default `append` (`--append-system-prompt`). `replace` uses `--system-prompt`. Any other value falls back to `append`. |

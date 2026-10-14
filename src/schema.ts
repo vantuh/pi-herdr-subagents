@@ -46,12 +46,6 @@ export function buildHerdrAgentParams(
           'Herdr agent label. Defaults to the agent role, e.g. Researcher. Required when task is omitted, to identify which existing agent to re-wait on.',
       }),
     ),
-    model: Type.Optional(
-      Type.String({
-        description:
-          "Override the agent profile's model for this spawn (e.g. ask the same profile to several different models). Only applies to a fresh spawn.",
-      }),
-    ),
     wait: Type.Optional(
       Type.Boolean({
         description:

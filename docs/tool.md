@@ -32,7 +32,6 @@ Only `agent` is required by the schema. Some modes require more fields at runtim
 | `agent` | string | yes | — | Profile name from `~/.pi/agent/agents/*.md` (project profiles in `.pi/agents/` override same-named user profiles). Schema description: `Agent profile name from ~/.pi/agent/agents/*.md, e.g. researcher, scout, reviewer, planner, worker.` plus the dynamic `Available:` list. |
 | `task` | string | no | — | Self-contained task for the agent. Omit it only to re-wait on a running agent. |
 | `tabLabel` | string | no* | Title-cased profile name, e.g. `Researcher` | Agent label. Identifies the agent for re-wait, parked-question answers and `resumeClosed`. *Required when `task` is omitted, and when `resumeClosed` is `true`. |
-| `model` | string | no | profile `model` | Overrides the profile's model for a new child. Ignored when re-waiting or answering a parked question. |
 | `wait` | boolean | no | `false` in UI sessions, `true` in headless sessions | `true` blocks until the agent finishes and returns its result. `false` returns once the prompt is accepted. |
 | `resumeClosed` | boolean | no | `false` | Continue a closed one-shot with its prior context. Requires a non-empty `task` and an explicit `tabLabel`. |
 
@@ -67,14 +66,6 @@ The label is made unique if needed (for example `Researcher #2`) when no `tabLab
 ```json
 { "agent": "reviewer", "tabLabel": "Diff review", "task": "Review the current diff for regressions. Read-only.", "wait": true }
 ```
-
-With a different model for this child:
-
-```json
-{ "agent": "researcher", "tabLabel": "Research A", "model": "provider/model-id", "task": "Compare the two retry strategies. Return a short recommendation.", "wait": true }
-```
-
-`model` replaces the profile model in the child's `--model` argument. It applies whenever a new child starts, including `resumeClosed`. It has no effect on a running agent.
 
 #### Re-wait
 

@@ -352,7 +352,6 @@ async function buildChildPiArgs(options: {
   systemFile: string;
   cwd: string;
   sessionFile?: string;
-  modelOverride?: string;
 }): Promise<{ piArgs: string[]; spawnWarnings: string[] }> {
   const spawnWarnings: string[] = [];
   const piArgs: string[] = [];
@@ -361,8 +360,7 @@ async function buildChildPiArgs(options: {
   } else {
     piArgs.push('--session', options.sessionFile);
   }
-  const model = options.modelOverride ?? options.agent.model;
-  if (model) piArgs.push('--model', model);
+  if (options.agent.model) piArgs.push('--model', options.agent.model);
   if (options.agent.thinking) {
     const level = resolveThinkingLevel(options.agent.thinking);
     if (level) {
@@ -1847,9 +1845,6 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
               tabLabel,
               systemFile: systemFile!,
               cwd: resumeClaim?.cwd ?? ctx.cwd,
-              ...(params.model?.trim()
-                ? { modelOverride: params.model.trim() }
-                : {}),
               ...(resumeClaim
                 ? { sessionFile: resumeClaim.childSessionFile }
                 : {}),

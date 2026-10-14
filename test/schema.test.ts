@@ -13,7 +13,6 @@ const HerdrAgentParams = buildHerdrAgentParams();
 test('exposes exactly the documented parameters', () => {
   assert.deepEqual(Object.keys(HerdrAgentParams.properties).sort(), [
     'agent',
-    'model',
     'resumeClosed',
     'tabLabel',
     'task',
@@ -38,7 +37,6 @@ test('declares parameter types the provider can validate', () => {
     { type?: string }
   >;
   assert.equal(properties.agent?.type, 'string');
-  assert.equal(properties.model?.type, 'string');
   assert.equal(properties.task?.type, 'string');
   assert.equal(properties.tabLabel?.type, 'string');
   assert.equal(properties.wait?.type, 'boolean');

@@ -160,7 +160,7 @@ test('passes profile model and tool allowlist to the child and closes the one-sh
   );
 });
 
-test('model override replaces the profile model for a fresh spawn', async () => {
+test('a caller model field does not replace the profile model', async () => {
   await withHarness(
     {
       profiles: [
@@ -182,7 +182,7 @@ test('model override replaces the profile model for a fresh spawn', async () => 
 
       const start = harness.fake.callsMatching('agent', 'start')[0];
       assert.ok(start);
-      assert.equal(flagValue(start, '--model'), 'opus-5');
+      assert.equal(flagValue(start, '--model'), 'sonnet');
       // Other profile settings are untouched.
       const systemFile = flagValue(start, '--append-system-prompt');
       assert.ok(systemFile);

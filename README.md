@@ -20,7 +20,6 @@ and closes the target.
 - Async delivery: in TUI mode, results (or questions) are delivered by a widget
   poller once the agent settles. RPC, JSON, and print sessions wait for the outcome.
 - Result artifacts, so large outputs do not depend on terminal scrollback.
-- Per-spawn `model` override, for asking the same profile to several models.
 - Commands: `/run`, `/herdr-agents`.
 - Layouts: a dedicated subagents workspace (default), split panes, or tabs.
 
@@ -79,7 +78,6 @@ Fields of the `herdr_agent` tool:
 | `tabLabel` | Agent label; defaults to the title-cased profile name. Identifies the agent for re-wait, answers and resume. |
 | `wait` | `true` blocks for the result. Default `false` in TUI mode: the poller delivers the outcome later. RPC, JSON, and print sessions default to `true` and reject explicit `false`, including taskless re-waits. |
 | `resumeClosed` | Continue a closed one-shot, matched by exact `tabLabel`, with its prior context. Requires `task`. |
-| `model` | Overrides the profile model for a fresh spawn only. |
 
 ```json
 { "agent": "reviewer", "tabLabel": "Diff review", "task": "Review the current diff for regressions.", "wait": true }
