@@ -4,12 +4,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type {
   HerdrAgentLayout,
-  HerdrAgentLifecycle,
   PaneInfo,
 } from "./types.ts";
 
 export interface HerdrAgentStateRecord {
-  lifecycle: HerdrAgentLifecycle;
+  lifecycle: "oneshot" | "persistent";
   tabLabel?: string;
   agent?: string;
   automationName?: string;
@@ -256,7 +255,7 @@ export function emptyHerdrAgentsState(): HerdrAgentsState {
   return { version: 2, agents: {}, closedHistory: [] };
 }
 
-function isLifecycle(value: unknown): value is HerdrAgentLifecycle {
+function isLifecycle(value: unknown): value is HerdrAgentStateRecord["lifecycle"] {
   return value === "oneshot" || value === "persistent";
 }
 
@@ -473,20 +472,17 @@ export async function persistPrunedAgentsState(
 /**
  * Whether this Orchestrator should list, reuse, or collect the record.
  *
- * Stamped records match `ownerTerminalId` to this pane's terminal. Legacy
- * records without an owner stay visible in pane layout only when they live
- * in the current tab; tab-layout leftovers stay visible until restamped so
- * persistent agents keep working across `/reload`. Workspace layout has no
- * pre-stamping era, so an unstamped record cannot be a legacy leftover and
- * is NOT treated as owned — otherwise it would be visible, closable, and
- * label-stealable from every Orchestrator.
+ * Historical persistent records stay stored but are not actionable.
+ * Stamped records require the owner's terminal. Ownerless pane records
+ * stay local to the current tab; workspace records require a stamped owner.
  */
 export function isAgentOwnedBy(
   record: HerdrAgentStateRecord,
   ownerTerminalId: string | undefined,
   paneTabId: string,
   currentTab: string,
-): boolean {
+): record is HerdrAgentStateRecord & { lifecycle: "oneshot" } {
+  if (record.lifecycle !== "oneshot") return false;
   if (record.ownerTerminalId) {
     return !!ownerTerminalId && record.ownerTerminalId === ownerTerminalId;
   }
@@ -496,7 +492,6 @@ export function isAgentOwnedBy(
 
 export async function recordAgentLifecycle(
   pane: PaneInfo,
-  lifecycle: HerdrAgentLifecycle,
   metadata: {
     tabLabel?: string;
     agent?: string;
@@ -520,8 +515,9 @@ export async function recordAgentLifecycle(
     throwIfInjectedMutation("lifecycle");
     const state = await loadHerdrAgentsState(filePath);
     const existing = state.agents[key];
+    if (existing && existing.lifecycle !== "oneshot") return;
     state.agents[key] = {
-      lifecycle,
+      lifecycle: "oneshot",
       ...metadata,
       ...(!metadata.ownerTerminalId && existing?.ownerTerminalId
         ? { ownerTerminalId: existing.ownerTerminalId }
@@ -605,7 +601,7 @@ export async function claimDetachedAgent(
     throwIfInjectedMutation("detached");
     const state = await loadHerdrAgentsState(filePath);
     const record = state.agents[key];
-    if (!record?.detached) return false;
+    if (record?.lifecycle !== "oneshot" || !record.detached) return false;
     delete record.detached;
     await saveHerdrAgentsState(state, filePath);
     return true;

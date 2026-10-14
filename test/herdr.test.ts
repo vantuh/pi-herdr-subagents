@@ -258,6 +258,35 @@ test("prompt acceptance requires newer activity or an actual completion", () => 
   }
 });
 
+test("does not list or reuse historical persistent panes in any layout", () => {
+  for (const layout of ["pane", "tab", "workspace"] as const) {
+    const currentPane: PaneInfo = {
+      pane_id: "orch", terminal_id: "orch-terminal",
+      workspace_id: "workspace", tab_id: "orch-tab", agent: "pi",
+    };
+    const legacyPane: PaneInfo = {
+      pane_id: "legacy", terminal_id: "legacy-terminal",
+      workspace_id: layout === "workspace" ? "agents-workspace" : "workspace",
+      tab_id: layout === "pane" ? "orch-tab" : "legacy-tab", agent: "pi",
+    };
+    const context: HerdrContext = {
+      currentPane, panes: [currentPane, legacyPane],
+      workspaceId: "workspace", currentTab: "orch-tab",
+    };
+    const state = emptyHerdrAgentsState();
+    state.agents["terminal:legacy-terminal"] = {
+      lifecycle: "persistent", layout, tabLabel: "Legacy",
+      ownerTerminalId: "orch-terminal", detached: true,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const before = structuredClone(state);
+    assert.equal(findReusableAgentPane(context, state, "Legacy"), undefined);
+    assert.equal(findReusableAgentTab(context, [], "Legacy", state), undefined);
+    assert.deepEqual(listManagedWorkspaceAgents(context, state), []);
+    assert.deepEqual(state, before);
+  }
+});
+
 test("finds a reusable managed pane by exact label in the orchestrator tab", () => {
   const panes: PaneInfo[] = [
     {
@@ -284,7 +313,7 @@ test("finds a reusable managed pane by exact label in the orchestrator tab", () 
   };
   const state = emptyHerdrAgentsState();
   state.agents["terminal:term-worker"] = {
-    lifecycle: "persistent",
+    lifecycle: "oneshot",
     layout: "pane",
     tabLabel: "Worker",
     agent: "worker",
@@ -301,7 +330,7 @@ test("finds a reusable managed pane by exact label in the orchestrator tab", () 
       agent: "worker",
       automationName: "worker_ab12cd34",
       status: "idle",
-      lifecycle: "persistent",
+      lifecycle: "oneshot",
       layout: "pane",
       cwd: undefined,
       updatedAt: "2026-01-01T00:00:00.000Z",
@@ -372,7 +401,7 @@ test("reuses a legacy same-tab pane record without a layout field", () => {
   };
   const state = emptyHerdrAgentsState();
   state.agents["terminal:term-worker"] = {
-    lifecycle: "persistent",
+    lifecycle: "oneshot",
     tabLabel: "Worker",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
@@ -412,7 +441,7 @@ test("does not reuse an unmanaged or cross-tab pane", () => {
   };
   const state = emptyHerdrAgentsState();
   state.agents["terminal:term-other"] = {
-    lifecycle: "persistent",
+    lifecycle: "oneshot",
     layout: "pane",
     tabLabel: "Worker",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -513,7 +542,7 @@ test("finds a reusable agent tab by exact label", () => {
   };
   const state = emptyHerdrAgentsState();
   state.agents["terminal:term-worker"] = {
-    lifecycle: "persistent",
+    lifecycle: "oneshot",
     layout: "tab",
     tabLabel: "Worker",
     ownerTerminalId: "term-orchestrator",
@@ -617,7 +646,7 @@ test("reusable tab lookup prefers a pi pane in a multi-pane tab", () => {
   };
   const state = emptyHerdrAgentsState();
   state.agents["terminal:term-pi"] = {
-    lifecycle: "persistent",
+    lifecycle: "oneshot",
     layout: "tab",
     tabLabel: "Worker",
     ownerTerminalId: "term-orchestrator",
@@ -667,14 +696,14 @@ test("reusable tab lookup matches exact base label, not numbered labels", () => 
   };
   const state = emptyHerdrAgentsState();
   state.agents["terminal:term-worker"] = {
-    lifecycle: "persistent",
+    lifecycle: "oneshot",
     layout: "tab",
     tabLabel: "Worker",
     ownerTerminalId: "term-orchestrator",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
   state.agents["terminal:term-worker-2"] = {
-    lifecycle: "persistent",
+    lifecycle: "oneshot",
     layout: "tab",
     tabLabel: "Worker #2",
     ownerTerminalId: "term-orchestrator",
@@ -736,7 +765,7 @@ test("does not list or reuse another orchestrator's agents", () => {
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
   state.agents["terminal:term-scout-b"] = {
-    lifecycle: "persistent",
+    lifecycle: "oneshot",
     layout: "tab",
     tabLabel: "Scout",
     agent: "scout",
@@ -880,7 +909,7 @@ test("record-driven reuse synthesizes the tab when it is not in the listed tabs"
   };
   const state = emptyHerdrAgentsState();
   state.agents["terminal:term-scout"] = {
-    lifecycle: "persistent",
+    lifecycle: "oneshot",
     layout: "workspace",
     tabLabel: "Scout",
     agent: "scout",

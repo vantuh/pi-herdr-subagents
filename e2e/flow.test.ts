@@ -56,6 +56,29 @@ test("spawns a real Pi child in a real pane, collects its result and closes the 
   });
 });
 
+test("current Herdr starts Pi with one CLI call during cold-shell initialization", async () => {
+  await withE2e({ coldShell: true }, async (harness) => {
+    for (let index = 0; index < 3; index++) {
+      const created = JSON.parse(await harness.herdr([
+        "pane", "split", harness.orchestratorPaneId,
+        "--direction", "right", "--cwd", harness.cwd,
+        "--env", "HERDR_AGENT_CHILD=1",
+        "--env", "PROCESS_LAUNCHED_BY_Q=1",
+        "--no-focus",
+      ])).result.pane.pane_id;
+      await harness.herdr([
+        "agent", "start", `cold_${index}`, "--kind", "pi",
+        "--pane", created, "--timeout", "30000", "--",
+        "--model", "mock/mock-model", "--thinking", "off",
+      ]);
+      const agent = JSON.parse(await harness.herdr(["agent", "get", created])).result.agent;
+      assert.equal(agent.agent, "pi");
+      assert.ok(["idle", "done"].includes(agent.agent_status));
+      await harness.herdr(["pane", "close", created]);
+    }
+  });
+});
+
 test("collects a real fast completion without a duplicate Enter", async () => {
   await withE2e({}, async (harness) => {
     harness.llm.setScript(() => ({ text: DEFAULT_RESULT_TEXT, delayMs: 0 }));

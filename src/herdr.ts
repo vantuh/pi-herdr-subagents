@@ -866,38 +866,19 @@ export async function startAgent(
     "--",
     ...piArgs,
   ];
-  const shellReadyDeadline = Date.now() + 5000;
-
-  while (true) {
+  try {
+    await execHerdr(args, signal);
+  } catch (error) {
+    if (!(error instanceof HerdrCliError) || error.code !== "agent_kind_mismatch") {
+      throw error;
+    }
+    // A Pi ACP provider can briefly own the foreground; the launch already happened.
     try {
-      await execHerdr(args, signal);
-      return;
-    } catch (error) {
-      if (
-        error instanceof HerdrCliError &&
-        error.code === "agent_kind_mismatch"
-      ) {
-        // Pi using a Kiro ACP model can briefly expose its provider child as
-        // the foreground agent before Pi's lifecycle hook claims the pane.
-        // The launch already happened, so wait for Pi instead of starting it twice.
-        try {
-          await waitForStartedAgent(paneId, "pi", 30_000, signal);
-          // The failed start does not assign its requested automation name.
-          await execHerdr(buildAgentRenameArgs(paneId, name), signal);
-          return;
-        } catch (settleError) {
-          if (signal?.aborted) throw settleError;
-          throw error;
-        }
-      }
-      if (
-        !(error instanceof HerdrCliError) ||
-        error.code !== "agent_pane_busy" ||
-        Date.now() >= shellReadyDeadline
-      ) {
-        throw error;
-      }
-      await delay(100, signal);
+      await waitForStartedAgent(paneId, "pi", 30_000, signal);
+      await execHerdr(buildAgentRenameArgs(paneId, name), signal);
+    } catch (settleError) {
+      if (signal?.aborted) throw settleError;
+      throw error;
     }
   }
 }
@@ -995,11 +976,11 @@ async function waitForPromptAcceptance(
   }
 }
 
-/** Remap Herdr 0.8.2 `agent_blocked` into an actionable Orchestrator error. */
+/** Report blocked dialogs without exposing the submitted prompt. */
 export function mapPromptError(error: unknown, target: string): never {
   if (error instanceof HerdrCliError && error.code === "agent_blocked") {
     throw new HerdrCliError(
-      `persistent agent "${target}" is waiting at an approval/question dialog; attach with \`herdr agent attach ${target}\` and resolve it before re-prompting`,
+      `Herdr agent "${target}" is waiting at an approval/question dialog; attach with \`herdr agent attach ${target}\` and resolve it before re-prompting`,
       "agent_blocked",
       ["agent", "prompt", target, "<prompt>"],
     );

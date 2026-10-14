@@ -62,7 +62,7 @@ export function truncateLabel(label: string, max = MAX_LABEL_WIDTH): string {
 
 /**
  * Elapsed time is measured from the state record's `updatedAt`, which the tool
- * rewrites on every spawn *and* every persistent reuse. That makes it "time in
+ * rewrites on every spawn *and* every question continuation. That makes it "time in
  * the current task" rather than "pane age", which is what matters while
  * waiting.
  */

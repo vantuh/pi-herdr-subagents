@@ -363,17 +363,6 @@ test("keeps a single right column when a third agent joins two live ones", async
   });
 });
 
-test("retries agent start while the child shell is still busy", async () => {
-  await withHarness({}, async (harness) => {
-    harness.fake.queueStartFailures("agent_pane_busy", "agent_pane_busy");
-
-    const result = await harness.call({ agent: "scout", task: "Find it" });
-
-    assert.equal(result.isError, undefined);
-    assert.equal(harness.fake.callsMatching("agent", "start").length, 3);
-  });
-});
-
 test("recovers from a transient agent kind mismatch by waiting and renaming", async () => {
   await withHarness({}, async (harness) => {
     harness.fake.queueStartFailures("agent_kind_mismatch");
@@ -1288,8 +1277,7 @@ test("delivers two detached outcomes as one batch with a single turn trigger", a
   });
 });
 
-test("gives up on a pane that never frees up, without closing anything", async () => {
-  // §12: the agent_pane_busy retry is bounded to five seconds.
+test("leaves a failed startup pane open without retrying the CLI", async () => {
   await withHarness({}, async (harness) => {
     harness.fake.failEveryStart("agent_pane_busy");
 
@@ -1301,8 +1289,8 @@ test("gives up on a pane that never frees up, without closing anything", async (
       },
     );
 
-    // It retried rather than failing on the first attempt.
-    assert.ok(harness.fake.callsMatching("agent", "start").length > 5);
+    assert.equal(harness.fake.callsMatching("agent", "start").length, 1);
+    assert.equal(harness.fake.callsMatching("pane", "close").length, 0);
     // The split pane is left for inspection, and no agent was recorded.
     assert.deepEqual((await harness.readState()).agents, {});
   });

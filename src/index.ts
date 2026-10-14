@@ -1558,9 +1558,8 @@ function registerHerdrAgentTool(
               readAgentQuestion(candidateRecord.resultFile),
             )) !== undefined;
 
-          // A task explicitly addressed by label to a live agent (including
-          // a legacy persistent one left running from before the one-shot-only
-          // change) is almost certainly a failed reuse: silently spawning a
+          // A task explicitly addressed by label to a live agent is almost
+          // certainly a failed reuse: silently spawning a
           // duplicate ("... #2") would orphan the live pane. Default labels
           // fall through — parallel spawns of one profile get suffixed labels
           // via uniqueLabel. Fail loudly with the alternatives instead.
@@ -1939,7 +1938,7 @@ function registerHerdrAgentTool(
 
         if (agentPane) {
           const writeLifecycle = () =>
-            recordAgentLifecycle(agentPane!, "oneshot", {
+            recordAgentLifecycle(agentPane!, {
               tabLabel,
               agent: agent.name,
               automationName,
@@ -2119,7 +2118,6 @@ function registerHerdrAgentTool(
         }
 
         // Every spawned agent is a one-shot now, including reused parked ones;
-        // closeOneShot itself skips legacy persistent records.
         const closeError = await closeOneShot({
           layout,
           tabId,

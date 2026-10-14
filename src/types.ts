@@ -35,7 +35,6 @@ export interface TabInfo {
   agent_status?: string;
 }
 
-export type HerdrAgentLifecycle = "oneshot" | "persistent";
 /** "workspace" keeps every agent tab in a dedicated Agents workspace. */
 export type HerdrAgentLayout = "pane" | "tab" | "workspace";
 
@@ -53,7 +52,7 @@ export interface HerdrAgentInfo {
   automationName?: string;
   resultFile?: string;
   status: string;
-  lifecycle?: HerdrAgentLifecycle;
+  lifecycle?: "oneshot";
   layout?: HerdrAgentLayout;
   cwd?: string;
   /** State-record timestamp: when this agent last received a task. */

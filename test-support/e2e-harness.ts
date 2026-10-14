@@ -44,6 +44,7 @@ export interface E2eOptions {
    * default to "pane"; "workspace" exercises the extension's real default.
    */
   layout?: "pane" | "workspace";
+  coldShell?: boolean;
   /** Seconds to wait for the Herdr server socket. */
   serverTimeoutMs?: number;
 }
@@ -107,6 +108,7 @@ export async function createE2eHarness(
   const serverLog = path.join(root, "herdr-server.log");
 
   await fs.mkdir(home, { recursive: true });
+  if (options.coldShell) await fs.writeFile(path.join(home, ".zshenv"), "sleep 0.5\n");
   await fs.mkdir(tmp, { recursive: true });
   await fs.mkdir(path.join(agentDir, "agents"), { recursive: true });
   await fs.mkdir(path.join(agentDir, "extensions"), { recursive: true });
@@ -186,6 +188,7 @@ export async function createE2eHarness(
     TERM: "xterm-256color",
     LANG: process.env.LANG ?? "en_US.UTF-8",
     HOME: home,
+    ...(options.coldShell ? { SHELL: "/bin/zsh", ZDOTDIR: home } : {}),
     TMPDIR: tmp,
     PI_CODING_AGENT_DIR: agentDir,
     PI_SKIP_VERSION_CHECK: "1",

@@ -69,7 +69,6 @@ test("records and loads agent lifecycle state", async () => {
 
   await recordAgentLifecycle(
     pane(),
-    "persistent",
     {
       tabLabel: "Researcher",
       agent: "researcher",
@@ -84,7 +83,7 @@ test("records and loads agent lifecycle state", async () => {
 
   const state = await loadHerdrAgentsState(filePath);
   assert.deepEqual(state.agents["terminal:term-1"], {
-    lifecycle: "persistent",
+    lifecycle: "oneshot",
     tabLabel: "Researcher",
     agent: "researcher",
     automationName: "researcher_ab12cd34",
@@ -96,19 +95,33 @@ test("records and loads agent lifecycle state", async () => {
   });
 });
 
+test("preserves inert persistent records without restamping or claiming them", async () => {
+  const filePath = await tempStatePath();
+  const record = {
+    lifecycle: "persistent", detached: true, tabLabel: "Legacy",
+    ownerTerminalId: "term-orch", updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  const before = JSON.stringify({
+    version: 2, agents: { "terminal:term-1": record }, closedHistory: [],
+  });
+  await fs.writeFile(filePath, before);
+  await recordAgentLifecycle(pane(), { tabLabel: "Replacement" }, filePath);
+  assert.equal(await claimDetachedAgent(pane(), filePath), false);
+  assert.deepEqual((await loadHerdrAgentsState(filePath)).agents["terminal:term-1"], record);
+  assert.equal(await fs.readFile(filePath, "utf8"), before);
+});
+
 test("preserves owner when a later record omits it", async () => {
   const filePath = await tempStatePath();
   const agentPane = pane();
 
   await recordAgentLifecycle(
     agentPane,
-    "persistent",
     { tabLabel: "Scout", ownerTerminalId: "term-orch" },
     filePath,
   );
   await recordAgentLifecycle(
     agentPane,
-    "persistent",
     { tabLabel: "Scout", detached: true },
     filePath,
   );
@@ -122,7 +135,7 @@ test("preserves owner when a later record omits it", async () => {
 
 test("treats a stamped record as owned only by that orchestrator", () => {
   const record = {
-    lifecycle: "persistent" as const,
+    lifecycle: "oneshot" as const,
     ownerTerminalId: "term-a",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
@@ -143,7 +156,7 @@ test("legacy pane records without owner stay in the current tab only", () => {
 
 test("legacy tab records without owner stay visible until restamped", () => {
   const record = {
-    lifecycle: "persistent" as const,
+    lifecycle: "oneshot" as const,
     layout: "tab" as const,
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
@@ -155,7 +168,7 @@ test("workspace records without owner are never treated as owned", () => {
   // be a leftover from an older version — it must stay invisible (and
   // unstealable) to every Orchestrator.
   const record = {
-    lifecycle: "persistent" as const,
+    lifecycle: "oneshot" as const,
     layout: "workspace" as const,
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
@@ -170,7 +183,6 @@ test("clears spawn warnings after a successful collect", async () => {
 
   await recordAgentLifecycle(
     agentPane,
-    "persistent",
     { spawnWarnings: ["Skill missing."] },
     filePath,
   );
@@ -196,7 +208,7 @@ test("ignores corrupted state files", async () => {
 test("prunes state for terminals no longer reported by Herdr", () => {
   const state = emptyHerdrAgentsState();
   state.agents["terminal:term-1"] = {
-    lifecycle: "persistent",
+    lifecycle: "oneshot",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
   state.agents["terminal:gone"] = {
@@ -214,7 +226,6 @@ test("recordAgentLifecycle is a no-op when terminal_id is missing", async () => 
 
   await recordAgentLifecycle(
     pane({ terminal_id: undefined }),
-    "oneshot",
     {},
     filePath,
   );
@@ -224,7 +235,7 @@ test("recordAgentLifecycle is a no-op when terminal_id is missing", async () => 
 
 test("deleteAgentLifecycle is a no-op when terminal_id is missing", async () => {
   const filePath = await tempStatePath();
-  await recordAgentLifecycle(pane(), "oneshot", {}, filePath);
+  await recordAgentLifecycle(pane(), {}, filePath);
 
   await deleteAgentLifecycle(pane({ terminal_id: undefined }), filePath);
 
@@ -241,7 +252,7 @@ test("concurrent recordAgentLifecycle calls in the same process don't lose entri
 
   await Promise.all(
     panes.map((p, i) =>
-      recordAgentLifecycle(p, "persistent", { agent: `agent-${i}` }, filePath),
+      recordAgentLifecycle(p, { agent: `agent-${i}` }, filePath),
     ),
   );
 
@@ -257,10 +268,10 @@ test("concurrent record and delete calls for the same terminal don't corrupt sta
   const survivor = pane({ terminal_id: "term-survivor" });
 
   await Promise.all([
-    recordAgentLifecycle(pane(), "oneshot", { agent: "a" }, filePath),
-    recordAgentLifecycle(survivor, "persistent", { agent: "b" }, filePath),
+    recordAgentLifecycle(pane(), { agent: "a" }, filePath),
+    recordAgentLifecycle(survivor, { agent: "b" }, filePath),
     deleteAgentLifecycle(pane(), filePath),
-    recordAgentLifecycle(survivor, "persistent", { agent: "c" }, filePath),
+    recordAgentLifecycle(survivor, { agent: "c" }, filePath),
   ]);
 
   const state = await loadHerdrAgentsState(filePath);
@@ -274,7 +285,6 @@ test("claims a detached agent exactly once", async () => {
 
   await recordAgentLifecycle(
     target,
-    "persistent",
     { tabLabel: "Async", detached: true },
     filePath,
   );
@@ -292,7 +302,7 @@ test("does not claim an agent that was never detached", async () => {
   const filePath = await tempStatePath();
   const target = pane({ terminal_id: "term-sync" });
 
-  await recordAgentLifecycle(target, "oneshot", { tabLabel: "Sync" }, filePath);
+  await recordAgentLifecycle(target, { tabLabel: "Sync" }, filePath);
 
   assert.equal(await claimDetachedAgent(target, filePath), false);
 });
@@ -315,7 +325,6 @@ test("serializes concurrent claims so only one wins", async () => {
 
   await recordAgentLifecycle(
     target,
-    "persistent",
     { tabLabel: "Race", detached: true },
     filePath,
   );
@@ -335,7 +344,6 @@ test("persists the detached flag across a reload of the state file", async () =>
 
   await recordAgentLifecycle(
     target,
-    "persistent",
     { tabLabel: "Reload", detached: true },
     filePath,
   );
@@ -757,7 +765,6 @@ test("does not release a claimed generation that still has a live agent", async 
   if (!claimed.ok) return;
   await recordAgentLifecycle(
     pane(),
-    "oneshot",
     {
       tabLabel: "Scout Resume",
       closedHistoryId: claimed.record.id,
@@ -804,7 +811,6 @@ test("stages continuation metadata and finalizes it atomically", async () => {
   const filePath = await tempStatePath();
   await recordAgentLifecycle(
     pane(),
-    "oneshot",
     { tabLabel: "Scout Resume", agent: "scout", ownerSessionId: "orch-a" },
     filePath,
   );
@@ -840,7 +846,6 @@ test("stage write failure leaves live state and no resumable history", async () 
   const filePath = await tempStatePath();
   await recordAgentLifecycle(
     pane(),
-    "oneshot",
     { tabLabel: "Scout Resume", agent: "scout", ownerSessionId: "orch-a" },
     filePath,
   );
@@ -1016,7 +1021,6 @@ test("persistPrunedAgentsState finalizes staged history when the live terminal i
   const filePath = await tempStatePath();
   await recordAgentLifecycle(
     pane(),
-    "oneshot",
     { tabLabel: "Scout Resume", agent: "scout", ownerSessionId: "orch-a" },
     filePath,
   );
