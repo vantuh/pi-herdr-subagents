@@ -20,7 +20,7 @@ The intended model behavior:
 
 ## Delegation policy
 
-Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Role matrix, continuation examples, and negative policy live in `README.md`. Orchestrator mechanics are in `constants.ts` (`GLOBAL_INSTRUCTIONS`).
+Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Role matrix, continuation examples, and negative policy live in `README.md`. Orchestrator mechanics are in `prompts.ts` (`GLOBAL_INSTRUCTIONS`).
 
 | Situation | `agent` | Delegate? |
 |---|---|:---:|
@@ -39,8 +39,9 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 - `src/run.ts` — `/run` arg parsing and injected user messages.
 - `src/herdr.ts` — Herdr CLI/API wrappers, snapshot discovery, layout helpers, and named-agent lifecycle commands.
 - `src/schema.ts` — TypeBox schema for tool parameters.
-- `src/constants.ts` — injected Orchestrator instructions and child-agent protocol.
-- `src/utils.ts` — agent-name generation, title casing, result artifacts, and temp prompt files.
+- `src/prompts.ts` — injected Orchestrator instructions and child-agent protocol.
+- `src/artifacts.ts` — result/question/session-meta file IO and child protocol constants.
+- `src/utils.ts` — agent-name generation, title casing, tool allowlist, and formatting helpers.
 - `src/types.ts` — shared TypeScript interfaces.
 - `src/state.ts` — managed-agent lifecycle records.
 - `src/widget.ts` — agents widget rendering.

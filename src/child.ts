@@ -4,7 +4,6 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
-import { getCurrentContext } from './herdr.ts';
 import {
   ASK_QUESTION_TOOL,
   assistantText,
@@ -13,7 +12,8 @@ import {
   writeAgentQuestion,
   writeAgentResult,
   writeAgentSessionMeta,
-} from './utils.ts';
+} from './artifacts.ts';
+import { getCurrentContext } from './herdr.ts';
 
 export async function captureChildSessionMeta(
   ctx: ExtensionContext,

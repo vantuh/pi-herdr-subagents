@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+
 import { test } from 'vitest';
 
+import { RESULT_FILE_MARKER, SESSION_META_ENV } from '../src/artifacts.ts';
 import herdrAgentsExtension from '../src/index.ts';
-import { RESULT_FILE_MARKER, SESSION_META_ENV } from '../src/utils.ts';
 import { applyEnv, createMockHost } from '../test-support/mock-extension.ts';
 
 /**

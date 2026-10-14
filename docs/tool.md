@@ -1,6 +1,6 @@
 # `herdr_agent` tool reference
 
-This document describes the `herdr_agent` tool as the Orchestrator model sees it. Sources: `src/index.ts` (`registerHerdrAgentTool`, `execute`), `src/schema.ts`, `src/constants.ts`.
+This document describes the `herdr_agent` tool as the Orchestrator model sees it. Sources: `src/index.ts` (`registerHerdrAgentTool`, `execute`), `src/schema.ts`, `src/prompts.ts`.
 
 The document has two parts:
 
@@ -193,7 +193,7 @@ Herdr CLI failures and malformed Herdr output are thrown as tool errors with the
 
 ## 2. Injected instructions (not part of the tool schema)
 
-On every Orchestrator turn the extension appends `GLOBAL_INSTRUCTIONS` (`src/constants.ts`) to the system prompt through `before_agent_start`. It repeats the usage rules above and adds policy that is not enforced by the schema:
+On every Orchestrator turn the extension appends `GLOBAL_INSTRUCTIONS` (`src/prompts.ts`) to the system prompt through `before_agent_start`. It repeats the usage rules above and adds policy that is not enforced by the schema:
 
 - Use `herdr_agent` for delegation instead of raw Herdr CLI commands.
 - Pick the smallest suitable profile: `scout`, `researcher`, `planner`, `worker`, `reviewer`.

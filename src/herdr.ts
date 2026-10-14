@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { createConnection } from 'node:net';
 
+import { isManagedHerdrTempPath, SESSION_META_ENV } from './artifacts.ts';
 import {
   isAgentOwnedBy,
   paneStateKey,
@@ -15,7 +16,6 @@ import type {
   TabInfo,
   WorkspaceInfo,
 } from './types.ts';
-import { isManagedHerdrTempPath, SESSION_META_ENV } from './utils.ts';
 
 export class HerdrCliError extends Error {
   constructor(

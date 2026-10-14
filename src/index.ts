@@ -23,18 +23,26 @@ import {
   resolveThinkingLevel,
   resolveProfileSkills,
 } from './agents.ts';
+import {
+  assertResumableSessionDir,
+  clearAgentQuestion,
+  clearAgentResult,
+  createAgentTempFiles,
+  createResultFile,
+  readAgentQuestion,
+  readAgentResult,
+  readAgentSessionMeta,
+  removeAgentTempFiles,
+  RESULT_FILE_MARKER,
+  SESSION_META_ENV,
+  validateResumableSessionFile,
+} from './artifacts.ts';
 import { registerChildMode } from './child.ts';
 import {
   getHerdrAgentsLayout,
   getHerdrAgentsWorkspaceLabel,
   loadHerdrAgentsConfig,
 } from './config.ts';
-import {
-  buildRunTurnInstructions,
-  CHILD_PROTOCOL,
-  formatAgentQuestion,
-  GLOBAL_INSTRUCTIONS,
-} from './constants.ts';
 import {
   buildEqualAgentSplitRatios,
   buildAgentFinishedNotificationArgs,
@@ -56,6 +64,12 @@ import {
   uniqueLabel,
   waitForAgent,
 } from './herdr.ts';
+import {
+  buildRunTurnInstructions,
+  CHILD_PROTOCOL,
+  formatAgentQuestion,
+  GLOBAL_INSTRUCTIONS,
+} from './prompts.ts';
 import {
   formatRunUserMessage,
   parseRunArgs,
@@ -88,24 +102,12 @@ import type {
 } from './types.ts';
 import {
   buildChildToolArgs,
-  clearAgentQuestion,
-  clearAgentResult,
-  createAgentTempFiles,
-  createResultFile,
   formatAgentOutput,
   formatSpawnWarnings,
   formatWaitInterrupted,
   isRecoverableWaitInterrupt,
   makeHerdrAgentName,
-  readAgentQuestion,
-  readAgentResult,
-  readAgentSessionMeta,
-  removeAgentTempFiles,
-  RESULT_FILE_MARKER,
-  SESSION_META_ENV,
-  assertResumableSessionDir,
   titleCase,
-  validateResumableSessionFile,
   waitInterruptReason,
 } from './utils.ts';
 import {

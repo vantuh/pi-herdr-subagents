@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
+
 import { describe, it } from 'vitest';
 
 import {
   buildRunTurnInstructions,
   CHILD_PROTOCOL,
   GLOBAL_INSTRUCTIONS,
-} from '../src/constants.ts';
+} from '../src/prompts.ts';
 
-describe('constants', () => {
+describe('prompts', () => {
   it('CHILD_PROTOCOL prohibits recursive delegation', () => {
     assert.ok(
       CHILD_PROTOCOL.includes(
