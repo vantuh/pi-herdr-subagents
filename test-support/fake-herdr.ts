@@ -202,7 +202,6 @@ export class FakeHerdr {
   private agentStartDelayMs = 0;
   /** Caps the --timeout the extension passes to `agent wait` (tests). */
   waitTimeoutCapMs = Number.POSITIVE_INFINITY;
-  /** Prompts whose Enter never fired, keyed by agent name. */
   private behavior: ChildBehavior = defaultBehavior;
   private cliServer?: Server;
   private apiServer?: Server;
