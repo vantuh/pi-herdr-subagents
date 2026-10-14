@@ -375,6 +375,8 @@ spawns, ownership remains enforced, and results/questions are collected once.
 
 ### Follow-up implementation and investigation evidence
 
+Commit: `01d18d1`.
+
 Isolated reproduction on installed Herdr 0.9.5, protocol 22, official Pi integration v9:
 
 - Discovered `server.live_handoff` and `ServerLiveHandoffParams` from `herdr api schema --json`. Called this API only on the harness socket with its isolated HOME, Pi directory, state file and artifacts. No update, live-server restart, external configuration edit or production archive repair was performed.
@@ -409,7 +411,7 @@ close) and to label lookup (re-wait reports no running agent).
 - [x] Record `serverSocketPath` from `HERDR_SOCKET_PATH` on new lifecycle records; parse it on reload. Socket path identifies a server endpoint, not a server process generation, so handoff at the same socket retains scope.
 - [x] Prune only stamped records belonging to the inspected socket. Legacy records without a stamp retain snapshot-based pruning until restamped; no historical production repair or state-version bump. When socket identity is unavailable, stamped records are preserved. Ownership checks reject foreign stamped records as well.
 - [x] Regression: two simulated server snapshots sharing one state file preserve each other's records, then independently prune their own missing children. The test failed before the fix (server A deleted child B). Additional checks cover legacy pruning and foreign ownership.
-- Validation: `npm run typecheck` passed; `npm test` passed 300/300 tests across 16 files. Bundle and diff checks recorded below before commit.
+- Commit: `a6a7ec9`. Validation: `npm run typecheck` passed; `npm test` passed 300/300 tests across 16 files; rolldown bundle and `git diff --check` passed.
 
 ## Follow-up: issues found during the restructure
 
@@ -429,7 +431,7 @@ Not part of the restructure; tracked here so they are not lost.
   The same aborted signal covers the poller-restart case: a `herdr_agent` call
   still running at shutdown can call `ensureAgentsWidget` and start a new
   interval after shutdown; `ensureAgentsWidget` refuses once aborted.
-  Implementation: each extension API instance owns a poller/controller/tick; shutdown aborts before awaiting the actual tick, without a timeout race. Herdr reads, notifications, closing, staging/finalization, warning cleanup, pruning, and both state-lock queues accept cancellation. A cancelled queued mutation never runs after its predecessor releases. File writes already started are awaited, not abandoned. A durable detached claim commits delivery: shutdown cancels new claims and closes, but the tick flushes its already-claimed batch before resolving to avoid losing results.
+  Commit: `2830897`. Implementation: each extension API instance owns a poller/controller/tick; shutdown aborts before awaiting the actual tick, without a timeout race. Herdr reads, notifications, closing, staging/finalization, warning cleanup, pruning, and both state-lock queues accept cancellation. A cancelled queued mutation never runs after its predecessor releases. File writes already started are awaited, not abandoned. A durable detached claim commits delivery: shutdown cancels new claims and closes, but the tick flushes its already-claimed batch before resolving to avoid losing results.
   Evidence: the held-snapshot regression failed before the fix; after cancellation shutdown finishes while the server response remains held, without pruning, delivery, or restart from a subsequent ensure call. Added exclusive-lock and in-process-queue cancellation regressions. `npm run typecheck` passed; full `npm test` passed 302/302. E2E batching fixture now models a fresh extension reload rather than restarting a shut-down instance.
   `npm run test:e2e`: 10/11 passed; the unchanged direct-CLI cold-shell scenario fails with `agent_pane_busy` on installed Herdr 0.9.5. It bypasses extension startup recovery entirely. This external-server prerequisite blocks a fully green e2e gate; no skip/retry or test weakening was added. All extension-driven e2e scenarios passed. Bundle/diff checks passed before commit.
 - [x] Restore `agent_pane_busy` recovery removed in `773a80d`. A new pane may
@@ -448,10 +450,19 @@ Not part of the restructure; tracked here so they are not lost.
   collisions, and create-time renaming; real-Herdr e2e covers rename, question,
   re-wait, answer, archive, and resume with preserved context. Validation:
   typecheck, 298 unit/integration/contract tests, 11 e2e tests, and bundle passed.
-- [ ] Truncated detached result: the Phase 3 worker was delivered as
-  "Now the test file imports." (an intermediate assistant message) instead of
-  its final report. Possibly a consequence of the state-file wipe above, not
-  verified. Reproduce before fixing.
+- [ ] Truncated detached result remains unconfirmed: the historical Phase 3 worker was delivered as "Now the test file imports." instead of its final report. Investigation completed without reproducing that delivery; no production fix is claimed.
+
+### Truncated-result investigation
+
+Added an isolated real-Herdr/Pi scenario using the exact intermediate text, a real `bash` tool call (`printf INTERMEDIATE_TOOL_DONE`), and a held second model response. The child itself wrote `result.md` containing "Now the test file imports." before its final assistant response. This confirms that the message-end writer persists intermediate assistant text with tool calls; artifact presence alone is not a finality signal.
+
+The first probe incorrectly asserted the server must already report `working` at that moment. It failed with `idle`, while the model's second request was active. A captured snapshot had `state_change_seq: 1` and no `completion_seq`. Inspection of the official integration v9 from the isolated HOME showed asynchronously queued state reports, with `agent_start` publishing working and `agent_settled` publishing idle only when `ctx.isIdle()` is true. The snapshot therefore does not establish that the Pi turn had ended.
+
+Two follow-up probes held the real turn for 2.2 seconds (more than two widget ticks). Neither delivered the intermediate artifact or closed the child. Both retained its detached record, then delivered exactly one `FINAL_TOOL_TURN_REPORT` after releasing the second response and closed the real child pane. The permanent scenario guards this observed behavior. No production code was changed for this concern, because premature delivery itself was not reproduced.
+
+Confirmed: intermediate artifacts exist; an early Herdr snapshot can still report idle during an active tool turn; normal isolated detached collection withheld the intermediate and delivered the final report. Unresolved: whether the historical delivery used a stale settled snapshot, delayed state-report transport, a state-lock delay, the tab watcher, or another condition. Cross-server pruning and outliving ticks explain lost ownership/delivery but do not, by themselves, prove why intermediate text was delivered. The previous fixes cannot be credited with resolving truncation from this evidence. The isolated scenario does not include the user's external tab watcher or historical worker session, and no production archive was repaired.
+
+Final investigation validation: `npm run typecheck` passed; `npm test` passed 312/312 across 16 files. `npm run test:e2e` passed 12/13: all extension-driven scenarios, including handoff and intermediate-message collection, passed. The unchanged direct-CLI cold-shell test again failed, this time on `cold_1`, with `agent_pane_busy`; it does not use the extension's preserved bounded startup retry. The full e2e gate therefore remains intermittently blocked by this external startup behavior despite earlier 12/12 runs. It was not rerun merely to obtain green output, and no retry, skip, cast, suppression, or relaxed assertion was added. Rolldown bundle and `git diff --check` passed before the investigation commit.
 
 ## Out of scope
 

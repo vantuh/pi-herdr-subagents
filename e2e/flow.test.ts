@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import { test } from 'vitest';
 
-import { readAgentSessionMeta } from '../src/artifacts.ts';
+import { readAgentResult, readAgentSessionMeta } from '../src/artifacts.ts';
 import { execHerdrApi } from '../src/herdr/cli.ts';
 import { exportPaneLayout } from '../src/herdr/placement.ts';
 import { loadCurrentAgents } from '../src/ui/poller.ts';
@@ -385,6 +385,83 @@ test("delivers a detached real child's result and closes its pane on its own", a
       15000,
     );
     assert.deepEqual((await harness.readState()).agents, {});
+  });
+});
+
+test('does not deliver a real intermediate assistant artifact while a detached tool turn remains active', async () => {
+  await withE2e({}, async (harness) => {
+    const finalReply = Promise.withResolvers<void>();
+    harness.llm.setScript(async (body) => {
+      if (isToolFollowUp(body)) {
+        await finalReply.promise;
+        return { text: 'FINAL_TOOL_TURN_REPORT', delayMs: 0 };
+      }
+      return {
+        text: 'Now the test file imports.',
+        toolCall: {
+          name: 'bash',
+          args: { command: 'printf INTERMEDIATE_TOOL_DONE' },
+        },
+        delayMs: 0,
+      };
+    });
+    try {
+      await harness.call({
+        agent: 'scout',
+        task: 'Investigate intermediate delivery',
+        tabLabel: 'Intermediate Child',
+        wait: false,
+      });
+      await harness.waitFor(
+        () => harness.llm.requests.length >= 2 || harness.messages.length > 0,
+        'intermediate tool follow-up',
+      );
+      assert.equal(
+        harness.messages.length,
+        0,
+        'delivered an intermediate assistant message',
+      );
+      assert.equal(harness.llm.requests.length, 2);
+      const record = Object.values((await harness.readState()).agents)[0];
+      assert.ok(record);
+      assert.equal(
+        await readAgentResult(record.resultFile),
+        'Now the test file imports.',
+      );
+      const child = (await harness.snapshot()).panes.find(
+        (pane) => pane.pane_id === record.paneId,
+      );
+      assert.ok(child);
+      await new Promise((resolve) => setTimeout(resolve, 2200));
+      assert.equal(
+        harness.messages.length,
+        0,
+        'poller delivered intermediate artifact before the final response',
+      );
+      assert.equal((await harness.snapshot()).panes.length, 2);
+      assert.equal(
+        Object.values((await harness.readState()).agents)[0]?.detached,
+        true,
+      );
+      finalReply.resolve();
+      await harness.waitFor(
+        () => harness.messages.length === 1,
+        'final tool-turn delivery',
+        60000,
+      );
+      assert.match(
+        harness.messages[0]?.content ?? '',
+        /FINAL_TOOL_TURN_REPORT/,
+      );
+      assert.doesNotMatch(
+        harness.messages[0]?.content ?? '',
+        /Now the test file imports/,
+      );
+      assert.equal((await harness.snapshot()).panes.length, 1);
+      assert.equal(harness.llm.requests.length, 2);
+    } finally {
+      finalReply.resolve();
+    }
   });
 });
 
