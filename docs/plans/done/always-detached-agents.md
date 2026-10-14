@@ -1,3 +1,5 @@
+Status: done. Landed in `e4fe500`. Do not implement. Do not open this file unless the user names it.
+
 # Always-detached `herdr_agent`
 
 ## Context
@@ -68,7 +70,7 @@ from the blocking path is removed together with its unit tests.
 | `test-support/harness.ts` | `call()` no longer injects `wait: true`; remove `callRaw` or make it an alias; add `collect(label?)` that waits for the next `herdr_agent_result`/`herdr_agent_question` message in `host.messages`. |
 | `test-support/fake-herdr.ts` | Drop `agent wait` handling only if no test still needs it. |
 | Tests | `test/integration.test.ts`, `test/contract.test.ts`, `test/schema.test.ts`, `test/ui-boundary.test.ts`, `test/prompts.test.ts`, `test/herdr.test.ts`, `test/utils.test.ts`, `e2e/flow.test.ts`. |
-| Docs | `README.md`, `AGENTS.md`, `docs/tool.md`, `docs/flow.md`. `docs/plans/session-findings.md` stays as history. |
+| Docs | `README.md`, `AGENTS.md`, `docs/tool.md`, `docs/flow.md`. `docs/plans/done/session-findings.md` stays as history. |
 
 ### New `GLOBAL_INSTRUCTIONS` content (paragraphs 4–6 replaced)
 
@@ -92,19 +94,19 @@ from the blocking path is removed together with its unit tests.
 
 ## Steps
 
-- [ ] 1. Schema + prompts: drop `wait`, rewrite descriptions and `GLOBAL_INSTRUCTIONS`; update `test/schema.test.ts` (delete the wait-description assertion, add "no `wait` property") and `test/prompts.test.ts`.
-- [ ] 2. `execute.ts`: TUI guard, remove mode selection/blocking branch/`collectSettledTurn`, always `detached: true`, drop `waited`.
-- [ ] 3. Status check: `rewait.ts` → `status.ts`, read-only status + recent output; wire from `execute.ts`.
-- [ ] 4. Dead code sweep: `herdr/agent.ts`, `one-shot.ts`, `store.ts` (`claimAgentCollection`), `utils.ts`, `poller.ts`, `widget.ts`; delete their unit tests in `test/herdr.test.ts`, `test/utils.test.ts`. Confirm with `grep` + `npm run typecheck`.
-- [ ] 5. Harness: drop `wait: true` injection, add `collect()`.
-- [ ] 6. Integration/contract tests:
+- [x] 1. Schema + prompts: drop `wait`, rewrite descriptions and `GLOBAL_INSTRUCTIONS`; update `test/schema.test.ts` (delete the wait-description assertion, add "no `wait` property") and `test/prompts.test.ts`.
+- [x] 2. `execute.ts`: TUI guard, remove mode selection/blocking branch/`collectSettledTurn`, always `detached: true`, drop `waited`.
+- [x] 3. Status check: `rewait.ts` → `status.ts`, read-only status + recent output; wire from `execute.ts`.
+- [x] 4. Dead code sweep: `herdr/agent.ts`, `one-shot.ts`, `store.ts` (`claimAgentCollection`), `utils.ts`, `poller.ts`, `widget.ts`; delete their unit tests in `test/herdr.test.ts`, `test/utils.test.ts`. Confirm with `grep` + `npm run typecheck`.
+- [x] 5. Harness: drop `wait: true` injection, add `collect()`.
+- [x] 6. Integration/contract tests:
   - Convert sync flows to `call` + `collect` (spawn/collect/close, scrollback fallback → status check shows scrollback, question round trip, fast completion, contract details/close-failure/malformed/unusable-state).
   - Delete: blocking-in-headless default, `wait:false` non-TUI rejection, soft re-wait on timeout/abort, EmptyResponse wait recovery, RPC wait/reconnect tests, `herdr:blocked` assertion, "re-wait with wait: false" contract.
   - Add: non-TUI rejection (rpc/print) in `test/ui-boundary.test.ts`; status check returns status + recent output and does not claim/close/prompt (assert no `agent prompt`/`agent wait`/`pane close` argv, record still `detached`); status check on unknown label errors; status on a parked question reports the question.
   - Remove explicit `wait: false` from all remaining calls.
-- [ ] 7. E2E: convert sync scenarios in `e2e/flow.test.ts` to await widget delivery; drop `wait: false` from detached ones.
-- [ ] 8. Docs: README, AGENTS.md (Purpose bullets, "Important behavior", test coverage lists), `docs/tool.md`, `docs/flow.md`.
-- [ ] 9. Commit per concern (e.g. `feat!: make herdr_agent always detached`, `test: ...`, `docs: ...`).
+- [x] 7. E2E: convert sync scenarios in `e2e/flow.test.ts` to await widget delivery; drop `wait: false` from detached ones.
+- [x] 8. Docs: README, AGENTS.md (Purpose bullets, "Important behavior", test coverage lists), `docs/tool.md`, `docs/flow.md`.
+- [x] 9. Commit per concern (e.g. `feat!: make herdr_agent always detached`, `test: ...`, `docs: ...`).
 
 ## Verification
 

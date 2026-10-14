@@ -1,7 +1,7 @@
 # Herdr 0.7 agent automation API migration
 
-> Historical implementation notes. See [README.md](../../README.md) and
-> [flow.md](../flow.md) for the supported runtime and current behavior.
+> Historical implementation notes. See [README.md](../../../README.md) and
+> [flow.md](../../flow.md) for the supported runtime and current behavior.
 
 This document records the migration of the Pi `herdr_agent` extension from raw pane control and client-side status polling to the agent automation API available in Herdr 0.7.5.
 

@@ -1,6 +1,6 @@
 # Development session findings
 
-This file records the important findings from creating and debugging `herdr-agents`. It is a historical companion to the current runtime description in [`flow.md`](../flow.md) and the Herdr 0.7 migration record in [`herdr-0.7-agent-api-migration.md`](herdr-0.7-agent-api-migration.md).
+This file records the important findings from creating and debugging `herdr-agents`. It is a historical companion to the current runtime description in [`flow.md`](../../flow.md) and the Herdr 0.7 migration record in [`herdr-0.7-agent-api-migration.md`](herdr-0.7-agent-api-migration.md).
 
 ## 1. Delegation belongs behind a tool
 

@@ -65,6 +65,8 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 
 Write each plan to `docs/plans/<short-task-name>.md`. The filename names the work, as in `herdr-0.7-agent-api-migration.md`. Do not use `PLAN.md` or any other generic name: a later plan would overwrite it. Revisions of one plan stay in that same file so Plan Diff keeps the history.
 
+When a plan is finished, move that file to `docs/plans/done/`. Do not open `docs/plans/done/` and do not implement anything there unless the user names the file. Active work is only the files directly in `docs/plans/`.
+
 ## Important behavior
 
 - Child panes start with `HERDR_AGENT_CHILD=1` and `PROCESS_LAUNCHED_BY_Q=1`: delegation tools stay disabled, final responses are persisted, zsh selects `HISTFILE=/dev/null` from the child marker, and Kiro's terminal wrapper cannot hide the real shell from `herdr agent start`.
@@ -164,7 +166,7 @@ detached result and question delivery through the widget poller
 instructions, and closed one-shot archive/resume (`resumeClosed`, session
 JSONL, ownership, concurrent claim, question after resurrection).
 
-Regressions from `docs/plans/session-findings.md` that used to be checked by hand and
+Regressions from `docs/plans/done/session-findings.md` that used to be checked by hand and
 now have tests, with the finding they came from:
 
 | Behavior | Finding |

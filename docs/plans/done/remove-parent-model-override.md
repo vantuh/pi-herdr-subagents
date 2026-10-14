@@ -22,7 +22,7 @@ Council-only code is that surface plus `modelOverride`. Nothing else branches on
 - `pendingRunDelegation` and `before_agent_start` exist for `/run` only. Council never set that flag; it only called `sendUserMessage`. Leave the `/run` path.
 - The integration assertion that the system prompt does not contain `/council round table` has no matching producer. Deleting the council tests removes it.
 
-Do not edit historical plans (`docs/plans/plan-upstream-parity.md` and the rest). They record past decisions.
+Do not edit historical plans (`docs/plans/done/plan-upstream-parity.md` and the rest). They record past decisions.
 
 ## Files to modify
 

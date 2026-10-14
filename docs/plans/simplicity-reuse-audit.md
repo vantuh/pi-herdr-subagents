@@ -12,21 +12,18 @@ Hard constraint: no observable behavior change. The contract layer
 argv, error texts, and state-file degradation, so it must stay green without
 edits. Unit tests that import a helper we delete or rename need updating.
 
-Two pending plans overlap:
+`docs/plans/done/always-detached-agents.md` is done (`e4fe500`). Do not open it.
+It already deleted the blocking collection path. One pending plan still overlaps:
 
 - `docs/plans/typebox-json-parsing.md` covers every `JSON.parse` + `typeof`
   chain (`copyAgentRecords`, `parseClosedHistory`, `parseAgentGetOutput`,
   `parseWorkspaceListOutput`, `readAgentSessionMeta`, the `tab create` /
   `pane split` parsing). This plan does **not** touch those parsers.
-- `docs/plans/always-detached-agents.md` deletes the blocking collection
-  path (`collectSettledTurn`, the wait branch of `executeRewait`,
-  `herdr:blocked`, interrupt formatting).
 
-**Decided order:** `always-detached-agents` lands first, then this audit
-(full list), then TypeBox. Line numbers and copy counts below describe the
-code before always-detached. Before each step, re-check its findings against
-the current tree and drop the ones that no longer exist. Items marked
-**[post-detached]** are expected to shrink or vanish.
+**Decided order:** this audit (full list), then TypeBox. Line numbers and copy
+counts below describe the code before always-detached. Before each step,
+re-check its findings against the current tree and drop the ones that no
+longer exist. Items marked **[post-detached]** are expected to shrink or vanish.
 
 Findings are ranked by lines saved and risk. Line numbers are approximate.
 

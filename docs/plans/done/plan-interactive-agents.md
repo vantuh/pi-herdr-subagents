@@ -1,7 +1,7 @@
 # Plan: interactive agents
 
-> Historical implementation notes. See [README.md](../../README.md) and
-> [flow.md](../flow.md) for the supported runtime and current behavior.
+> Historical implementation notes. See [README.md](../../../README.md) and
+> [flow.md](../../flow.md) for the supported runtime and current behavior.
 
 Porting ideas from [pi-interactive-subagents](https://github.com/amosblomqvist/pi-interactive-subagents)
 (HazAT's fork) into `herdr-agents`. The source is an asynchronous tmux plugin; we stay on

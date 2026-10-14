@@ -1,7 +1,7 @@
 # Plan: second wave of porting from pi-interactive-subagents
 
-> Historical implementation notes. See [README.md](../../README.md) and
-> [flow.md](../flow.md) for the supported runtime and current behavior.
+> Historical implementation notes. See [README.md](../../../README.md) and
+> [flow.md](../../flow.md) for the supported runtime and current behavior.
 
 A continuation of [`plan-interactive-agents.md`](./plan-interactive-agents.md), where the
 parallel agent limit, the widget, `ask_question` and asynchronous delivery were

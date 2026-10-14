@@ -29,7 +29,7 @@ Keep `node:assert/strict`. Swap the runner import only:
 
 `pool: 'forks'` on the unit project. `state.test.ts` mutates `process.env` and spawns child processes; forks match the current process-per-file isolation.
 
-Do not rewrite assertions, do not move test files, do not change `bun build` smoke checks. Historical notes in `docs/plans/` stay as written.
+Do not rewrite assertions, do not move test files, do not change `bun build` smoke checks. Historical notes in `docs/plans/done/` stay as written.
 
 `test/config.test.ts` keeps the lazy temp-dir helpers. Top-level await before `test()` still skips registration. Update the two comments so they no longer name Bun.
 
