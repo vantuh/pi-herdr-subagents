@@ -52,16 +52,13 @@ test('a successful one-shot reports the full details contract', async () => {
 
     assert.deepEqual(Object.keys(result.details).sort(), [
       'agent',
-      'closeError',
-      'closed',
       'paneId',
       'reused',
       'tabId',
       'tabLabel',
-      'waited',
     ]);
     assert.equal(result.details.tabLabel, 'Scout');
-    assert.equal(result.details.closeError, undefined);
+    assert.match(result.content[0].text, /started/);
     // The agent profile travels back whole, not just by name.
     assert.equal(result.details.agent.name, 'scout');
     assert.equal(result.details.agent.source, 'project');
@@ -74,8 +71,11 @@ test('reads the pane with the documented scrollback window when no artifact exis
   await withHarness({}, async (harness) => {
     harness.fake.setBehavior(() => ({ transcript: 'scrollback only' }));
 
-    await harness.call({ agent: 'scout', task: 'Find it' });
+    await harness.call({ agent: 'scout', task: 'Find it', tabLabel: 'Scout' });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const status = await harness.call({ agent: 'scout', tabLabel: 'Scout' });
 
+    assert.match(status.content[0].text, /scrollback only/);
     const read = harness.fake.callsMatching('agent', 'read')[0];
     assert.ok(read);
     assert.equal(flagValue(read, '--source'), 'recent-unwrapped');
@@ -90,13 +90,12 @@ test("keeps the child's output when closing its pane fails", async () => {
     harness.fake.setBehavior(() => ({ result: 'PRECIOUS RESULT' }));
     harness.fake.failCommand('pane close', 'pane_close_failed');
 
-    const result = await harness.call({ agent: 'scout', task: 'Find it' });
+    const started = await harness.call({ agent: 'scout', task: 'Find it' });
+    assert.equal(started.isError, undefined);
+    const delivered = await harness.collect('Scout');
 
-    assert.match(result.content[0].text, /PRECIOUS RESULT/);
-    assert.match(result.content[0].text, /Warning: failed to close one-shot/);
-    assert.equal(result.details.closed, false);
-    assert.match(String(result.details.closeError), /pane_close_failed/);
-    assert.equal(result.isError, undefined);
+    assert.match(delivered.content, /PRECIOUS RESULT/);
+    assert.match(delivered.content, /Warning: failed to close one-shot/);
     // The pane is still there, so it stays visible to the user and the widget.
     assert.equal(harness.fake.panes.length, 2);
   });
@@ -170,24 +169,36 @@ test('refuses to work when it cannot identify its own pane', async () => {
 });
 
 test('runs the whole flow even when the state file is unusable', async () => {
-  // State is bookkeeping: docs call it best-effort, and it must never abort
-  // execution or swallow the child's result.
+  // State is bookkeeping: a failed save must not abort the spawn. The poller
+  // can only deliver an agent it recorded, so the result stays in the artifact.
   await withHarness({}, async (harness) => {
     await fs.mkdir(harness.statePath, { recursive: true });
 
     const result = await harness.call({ agent: 'scout', task: 'Find it' });
 
     assert.equal(result.isError, undefined);
-    assert.match(result.content[0].text, /Result from scout_/);
-    assert.equal(result.details.closed, true);
+    assert.match(result.content[0].text, /started/);
+    const prompt =
+      harness.fake.callsMatching('agent', 'prompt').at(-1)?.[3] ?? '';
+    const resultFile = /^HERDR_RESULT_FILE:\s*(.+)$/m.exec(prompt)?.[1]?.trim();
+    assert.ok(resultFile);
+    await harness.waitFor(async () => {
+      try {
+        return /Result from scout_/.test(await fs.readFile(resultFile, 'utf8'));
+      } catch {
+        return false;
+      }
+    }, 'child result artifact');
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    assert.equal(harness.messages.length, 0);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Re-wait mode
+// Status check
 // ---------------------------------------------------------------------------
 
-test('re-wait with wait: false only reports that the agent is still running', async () => {
+test('a status check reports status and does not prompt, wait, or close', async () => {
   await withHarness({}, async (harness) => {
     harness.fake.setBehavior(() => ({ neverSettle: true }));
     await harness.callRaw({
@@ -195,18 +206,17 @@ test('re-wait with wait: false only reports that the agent is still running', as
       task: 'long',
       tabLabel: 'Scout RW',
     });
+    await new Promise((resolve) => setTimeout(resolve, 300));
     const before = harness.fake.calls.length;
 
     const result = await harness.call({
       agent: 'scout',
       tabLabel: 'Scout RW',
-      wait: false,
     });
 
     assert.equal(result.isError, undefined);
-    assert.match(result.content[0].text, /is still running/);
-    assert.equal(result.details.waited, false);
-    // No prompt, no wait, no close: it only looked the agent up.
+    assert.equal(result.details.status, 'working');
+    assert.match(result.content[0].text, /status: working/);
     const after = harness.fake.calls.slice(before);
     assert.deepEqual(
       after.filter((argv) =>
@@ -214,6 +224,8 @@ test('re-wait with wait: false only reports that the agent is still running', as
       ),
       [],
     );
+    const record = Object.values((await harness.readState()).agents)[0];
+    assert.equal(record?.detached, true);
   });
 });
 
@@ -245,13 +257,14 @@ test('resumeClosed without tabLabel is rejected', async () => {
   });
 });
 
-test('omitting task still re-waits and does not resume a closed agent', async () => {
+test('omitting task checks status and does not resume a closed agent', async () => {
   await withHarness({}, async (harness) => {
     await harness.call({
       agent: 'scout',
       task: 'one',
       tabLabel: 'Scout Closed',
     });
+    await harness.collect('Scout Closed');
     const starts = harness.fake.callsMatching('agent', 'start').length;
 
     const result = await harness.call({
@@ -310,7 +323,6 @@ test('keeps spawn warnings visible through detached delivery', async () => {
       const started = await harness.call({
         agent: 'worker',
         task: 'background',
-        wait: false,
       });
       assert.match(started.content[0].text, /Spawn warnings:/);
 
@@ -345,7 +357,6 @@ test('keeps spawn warnings out of a detached question body', async () => {
       await harness.call({
         agent: 'worker',
         task: 'background',
-        wait: false,
       });
 
       await harness.waitFor(
@@ -366,14 +377,13 @@ test('keeps spawn warnings out of a detached question body', async () => {
 
 test('keeps the claim when a detached agent settles with nothing to deliver', async () => {
   // Without an artifact there is no usable result, so the flag stays set and an
-  // explicit re-wait can still read the scrollback.
+  // A status check can still read the scrollback.
   await withHarness({}, async (harness) => {
     harness.fake.setBehavior(() => ({ transcript: 'only scrollback' }));
 
     await harness.call({
       agent: 'scout',
       task: 'background',
-      wait: false,
       tabLabel: 'Scout Silent',
     });
 
@@ -457,6 +467,7 @@ test("does not reprint spawn warnings on a reused agent's next turn", async () =
       });
       assert.equal(first.details.reused, false);
       assert.match(first.content[0].text, /Skills not found: ghost-skill/);
+      await harness.collect('Worker');
 
       const reused = await harness.call({
         agent: 'worker',
@@ -476,11 +487,11 @@ test('resolves a renamed tab by pane id when tab create omits the tab id', async
 
     const result = await harness.call({ agent: 'scout', task: 'one' });
 
-    // Recovered silently: the flow completed and the tab was closed by id.
+    // Recovered silently: the start completed and the poller closed the tab by id.
     assert.equal(result.isError, undefined);
-    assert.equal(result.details.closed, true);
     assert.ok(result.details.tabId);
     assert.equal(result.details.tabLabel, 'Scout');
+    await harness.collect('Scout');
     assert.equal(
       harness.fake.callsMatching('tab', 'close')[0]?.[2],
       result.details.tabId,
@@ -524,30 +535,20 @@ test('shows live agents in the widget and clears it once none remain', async () 
   });
 });
 
-test('hides an agent from the widget while the Orchestrator blocks on it', async () => {
+test('shows a live agent in the widget while its task is still running', async () => {
   await withHarness({}, async (harness) => {
-    // Slow enough that a poller tick lands while the tool is still waiting.
-    harness.fake.setBehavior(() => ({ result: 'late', delayMs: 2500 }));
-
-    const pending = harness.call({
+    harness.fake.setBehavior(() => ({ neverSettle: true }));
+    await harness.call({
       agent: 'scout',
       task: 'slow',
       tabLabel: 'Scout Awaited',
     });
     await harness.waitFor(
-      () => harness.fake.callsMatching('agent', 'wait').length > 0,
-      'the wait to start',
+      () => harness.widgets.has(AGENTS_WIDGET_ID),
+      'widget to appear',
     );
-    await harness.fire('session_start');
-    assert.equal(harness.widgets.has(AGENTS_WIDGET_ID), false);
-
-    await pending;
-    // The one-shot closed on collection, so the widget clears instead of
-    // reappearing: there is no live agent left to show.
-    await harness.waitFor(
-      () => !harness.widgets.has(AGENTS_WIDGET_ID),
-      'widget to clear after the one-shot closed',
-    );
+    const lines = harness.widgets.get(AGENTS_WIDGET_ID) as string[];
+    assert.ok(lines.join('\n').includes('Scout Awaited'));
   });
 });
 

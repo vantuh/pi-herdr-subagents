@@ -61,11 +61,13 @@ export interface E2eHarness {
     params: Record<string, unknown>,
     options?: { signal?: AbortSignal },
   ): Promise<any>;
-  /** Same as call, but without the wait:true injection — pins the real defaults. */
+  /** Alias of `call`. */
   callRaw(
     params: Record<string, unknown>,
     options?: { signal?: AbortSignal },
   ): Promise<any>;
+  /** Wait for the next poller-delivered result or question. */
+  collect(label?: string, timeoutMs?: number): Promise<SentMessage>;
   fire(event: string, payload?: Record<string, unknown>): Promise<unknown>;
   reload(): Promise<void>;
   /** Live snapshot from the real Herdr server. */
@@ -78,6 +80,17 @@ export interface E2eHarness {
     timeoutMs?: number,
   ): Promise<void>;
   dispose(): Promise<void>;
+}
+
+function isAgentOutcome(message: SentMessage, label?: string): boolean {
+  if (
+    message.customType !== 'herdr_agent_result' &&
+    message.customType !== 'herdr_agent_question'
+  ) {
+    return false;
+  }
+  if (!label) return true;
+  return message.details.tabLabel === label;
 }
 
 function run(
@@ -292,12 +305,10 @@ export async function createE2eHarness(
     orchestratorPaneId,
     messages: host.messages,
     events: host.events,
-    // Legacy tests pin the blocking path explicitly; the detached default
-    // is pinned separately through callRaw, which passes params untouched.
     call: (params, callOptions) =>
       tool.execute(
         `call-${Math.random().toString(36).slice(2)}`,
-        { wait: true, ...params },
+        params,
         callOptions?.signal,
         undefined,
         host.ctx,
@@ -310,6 +321,23 @@ export async function createE2eHarness(
         undefined,
         host.ctx,
       ),
+    collect: (label, timeoutMs) => {
+      const start = host.messages.length;
+      return waitFor(
+        () =>
+          host.messages
+            .slice(start)
+            .some((message) => isAgentOutcome(message, label)),
+        label ? `outcome for ${label}` : 'herdr agent outcome',
+        timeoutMs ?? 20_000,
+      ).then(() => {
+        const message = host.messages
+          .slice(start)
+          .find((item) => isAgentOutcome(item, label));
+        if (!message) throw new Error('missing herdr agent outcome');
+        return message;
+      });
+    },
     fire: host.fire,
     reload: async () => {
       await host.fire('session_shutdown');

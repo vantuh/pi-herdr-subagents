@@ -1,11 +1,8 @@
 import {
-  readAgentQuestion,
-  readAgentResult,
   readAgentSessionMeta,
   removeAgentTempFiles,
   validateResumableSessionFile,
 } from '../artifacts.ts';
-import { readAgent } from '../herdr/agent.ts';
 import { execHerdr } from '../herdr/cli.ts';
 import {
   buildEqualAgentSplitRatios,
@@ -246,32 +243,6 @@ export function formatCollectedOutput(
     formatAgentOutput(output, tabLabel, closeError),
     warnings,
   );
-}
-
-export async function refreshAgentLifecyclePane(
-  pane: PaneInfo,
-  signal?: AbortSignal,
-): Promise<PaneInfo> {
-  const current = await getCurrentContext(signal);
-  await persistPrunedAgentsState(
-    current.panes,
-    undefined,
-    undefined,
-    signal,
-    current.agents,
-  );
-  return current.panes.find((item) => item.pane_id === pane.pane_id) ?? pane;
-}
-
-export async function readSettledAgentOutput(
-  resultFile: string | undefined,
-  target: string,
-  signal?: AbortSignal,
-): Promise<{ question: string } | { output: string }> {
-  const question = await readAgentQuestion(resultFile);
-  if (question) return { question };
-  const artifact = await readAgentResult(resultFile);
-  return { output: artifact ?? (await readAgent(target, signal)) };
 }
 
 export function spawnWarningDetails(warnings: readonly string[]): {

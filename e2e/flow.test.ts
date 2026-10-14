@@ -46,8 +46,9 @@ test('spawns a real Pi child in a real pane, collects its result and closes the 
     });
 
     assert.equal(result.isError, undefined);
-    assert.match(result.content[0].text, /MOCK_CHILD_OK/);
-    assert.equal(result.details.closed, true);
+    assert.match(result.content[0].text, /started/);
+    const delivered = await harness.collect('Scout', 60000);
+    assert.match(delivered.content, /MOCK_CHILD_OK/);
 
     // The child really was a Pi process talking to the model.
     assert.ok(harness.llm.requests.length >= 1);
@@ -123,12 +124,13 @@ test('collects a working child across an isolated live server handoff without lo
         sessionBefore,
       );
       replies.resolve();
-      const collected = await outcome;
-      if ('error' in collected) throw collected.error;
-      assert.match(collected.result.content[0].text, /HANDOFF_FINAL/);
-      assert.equal(collected.result.details.closed, true);
+      const started = await outcome;
+      if ('error' in started) throw started.error;
+      assert.match(started.result.content[0].text, /started/);
+      const delivered = await harness.collect('Handoff Child', 60000);
+      assert.match(delivered.content, /HANDOFF_FINAL/);
       assert.equal(harness.llm.requests.length, 1);
-      assert.equal(harness.messages.length, 0);
+      assert.equal(harness.messages.length, 1);
       assert.deepEqual((await harness.readState()).agents, {});
     } finally {
       replies.resolve();
@@ -186,8 +188,9 @@ test('collects a real fast completion without a duplicate Enter', async () => {
     harness.llm.setScript(() => ({ text: DEFAULT_RESULT_TEXT, delayMs: 0 }));
     const result = await harness.call({ agent: 'scout', task: 'Fast result.' });
     assert.equal(result.isError, undefined);
-    assert.equal(result.details.closed, true);
-    assert.match(result.content[0].text, /MOCK_CHILD_OK/);
+    assert.match(result.content[0].text, /started/);
+    const delivered = await harness.collect('Scout', 60000);
+    assert.match(delivered.content, /MOCK_CHILD_OK/);
     assert.equal(harness.llm.requests.length, 1);
   });
 });
@@ -199,8 +202,9 @@ test('continues a closed one-shot via resumeClosed and keeps its context', async
       task: 'First slice: count the routers.',
       tabLabel: 'Scout E2E',
     });
-    assert.match(first.content[0].text, /MOCK_CHILD_OK/);
-    assert.equal(first.details.closed, true);
+    assert.match(first.content[0].text, /started/);
+    const firstDelivery = await harness.collect('Scout E2E', 60000);
+    assert.match(firstDelivery.content, /MOCK_CHILD_OK/);
 
     const second = await harness.call({
       agent: 'scout',
@@ -209,6 +213,7 @@ test('continues a closed one-shot via resumeClosed and keeps its context', async
       resumeClosed: true,
     });
     assert.equal(second.details.resumed, true);
+    await harness.collect('Scout E2E', 60000);
 
     // The resumed child runs with the archived session, so the second
     // request carries the first turn's history.
@@ -253,9 +258,9 @@ test('keeps a real question agent resumable after its workspace tab is renamed',
         task: 'Find the auth flow.',
       });
 
-      assert.equal(asked.details.status, 'question');
-      assert.equal(asked.details.closed, false);
-      assert.match(asked.content[0].text, /Cookie session or JWT\?/);
+      const question = await harness.collect('Scout', 60000);
+      assert.equal(question.customType, 'herdr_agent_question');
+      assert.match(question.content, /Cookie session or JWT\?/);
 
       // The restricted profile still got the question channel.
       assert.ok(
@@ -280,11 +285,11 @@ test('keeps a real question agent resumable after its workspace tab is renamed',
         tabLabel: 'Scout',
       });
 
-      assert.equal(harness.llm.requests.length, 2);
       assert.equal(answered.details.reused, true);
-      assert.equal(answered.details.closed, true);
       assert.equal(answered.details.tabLabel, 'Scout');
-      assert.match(answered.content[0].text, /MOCK_CHILD_OK/);
+      const answeredDelivery = await harness.collect('Scout', 60000);
+      assert.match(answeredDelivery.content, /MOCK_CHILD_OK/);
+      assert.equal(harness.llm.requests.length, 2);
       assert.equal(
         (await harness.readState()).closedHistory[0]?.tabLabel,
         'Scout',
@@ -297,7 +302,7 @@ test('keeps a real question agent resumable after its workspace tab is renamed',
         task: 'ANSWER: verify remembered cookie session.',
       });
       assert.equal(resumed.details.resumed, true);
-      assert.equal(resumed.details.closed, true);
+      await harness.collect('Scout', 60000);
       assert.match(
         JSON.stringify(harness.llm.requests.at(-1)?.messages),
         /ANSWER: cookie session\./,
@@ -363,9 +368,7 @@ test("delivers a detached real child's result and closes its pane on its own", a
     const started = await harness.call({
       agent: 'scout',
       task: 'Report the magic word.',
-      wait: false,
     });
-    assert.equal(started.details.waited, false);
     assert.equal((await harness.snapshot()).panes.length, 2);
 
     await harness.waitFor(
@@ -410,7 +413,6 @@ test('does not deliver a real intermediate assistant artifact while a detached t
         agent: 'scout',
         task: 'Investigate intermediate delivery',
         tabLabel: 'Intermediate Child',
-        wait: false,
       });
       await harness.waitFor(
         () => harness.llm.requests.length >= 2 || harness.messages.length > 0,
@@ -547,7 +549,8 @@ test('resumes a closed real one-shot with prior conversation context', async () 
       tabLabel: 'Scout Resume E2E',
     });
     assert.equal(first.isError, undefined);
-    assert.equal(first.details.closed, true);
+    const firstDelivery = await harness.collect('Scout Resume E2E', 60000);
+    assert.match(firstDelivery.content, /MOCK_CHILD_OK/);
     const history = (await harness.readState()).closedHistory ?? [];
     assert.equal(history.length, 1);
     assert.ok(history[0]?.childSessionFile);
@@ -560,7 +563,7 @@ test('resumes a closed real one-shot with prior conversation context', async () 
     });
     assert.equal(resumed.isError, undefined);
     assert.equal(resumed.details.resumed, true);
-    assert.equal(resumed.details.closed, true);
+    await harness.collect('Scout Resume E2E', 60000);
 
     const secondRequest = harness.llm.requestsMentioning(
       'What token did I ask you to remember?',
@@ -582,8 +585,9 @@ test("spawns a real child into the Agents workspace and never touches the Orches
     });
 
     assert.equal(result.isError, undefined);
-    assert.match(result.content[0].text, /MOCK_CHILD_OK/);
-    assert.equal(result.details.closed, true);
+    assert.match(result.content[0].text, /started/);
+    const delivered = await harness.collect('Scout', 60000);
+    assert.match(delivered.content, /MOCK_CHILD_OK/);
 
     // The child ran in the dedicated Agents workspace, not beside the
     // Orchestrator. The spawn drops the empty root tab, and collection closes
@@ -622,9 +626,7 @@ test('delivers an unseen real child that finishes in the background', async () =
     const started = await harness.call({
       agent: 'scout',
       task: 'Report the magic word.',
-      wait: false,
     });
-    assert.equal(started.details.waited, false);
 
     // Server-side witness: resolves only if the unseen child really reached
     // Herdr's `done` state while its tab was still open. If the poller closes

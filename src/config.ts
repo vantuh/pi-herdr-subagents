@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
-import type { HerdrAgentLayout } from './types.ts';
+import { isHerdrAgentLayout, type HerdrAgentLayout } from './types.ts';
 
 export const DEFAULT_HERDR_AGENTS_LAYOUT: HerdrAgentLayout = 'workspace';
 export const DEFAULT_AGENTS_WORKSPACE_LABEL = 'subagents';
@@ -37,9 +37,7 @@ export function herdrAgentsConfigPath(
 
 function normalizeLayout(value: unknown): HerdrAgentLayout | undefined {
   const trimmed = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  return trimmed === 'tab' || trimmed === 'pane' || trimmed === 'workspace'
-    ? trimmed
-    : undefined;
+  return isHerdrAgentLayout(trimmed) ? trimmed : undefined;
 }
 
 /** Reads herdr-agents.json; `{}` when missing or invalid. */
@@ -73,7 +71,7 @@ export async function loadHerdrAgentsConfig(
 export function getHerdrAgentsLayout(
   config: HerdrAgentsConfig = {},
 ): HerdrAgentLayout {
-  return normalizeLayout(config.layout) ?? DEFAULT_HERDR_AGENTS_LAYOUT;
+  return config.layout ?? DEFAULT_HERDR_AGENTS_LAYOUT;
 }
 
 export function getHerdrAgentsWorkspaceLabel(

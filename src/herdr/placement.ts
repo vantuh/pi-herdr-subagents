@@ -43,7 +43,7 @@ export function uniqueLabel(baseLabel: string, tabs: TabInfo[]): string {
   }
 }
 
-export function choosePaneForTab(
+function choosePaneForTab(
   panes: PaneInfo[],
   tabId: string,
 ): PaneInfo | undefined {
@@ -213,7 +213,7 @@ export function listManagedWorkspaceAgents(
   return agents.sort((a, b) => a.tabLabel.localeCompare(b.tabLabel));
 }
 
-export type PortableLayoutNode =
+type PortableLayoutNode =
   | { type: 'pane'; pane_id?: string }
   | {
       type: 'split';
@@ -223,7 +223,7 @@ export type PortableLayoutNode =
       second: PortableLayoutNode;
     };
 
-export interface SplitRatioUpdate {
+interface SplitRatioUpdate {
   path: boolean[];
   ratio: number;
 }

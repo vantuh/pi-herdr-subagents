@@ -348,7 +348,7 @@ export class FakeHerdr {
 
   /**
    * Finish an agent that was left `working` (`neverSettle`), as a real child
-   * would once it recovers. Used to test the re-wait path after a timeout.
+   * would once it recovers. Used to settle an agent the poller has not delivered.
    */
   async completeAgent(target: string, result: string): Promise<void> {
     const agent = this.resolveAgent(target);

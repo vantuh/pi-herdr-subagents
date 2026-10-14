@@ -56,10 +56,6 @@ export function parseStartedAgentSnapshot(
   return { agent: parsed.agent, status: parsed.status };
 }
 
-export function buildAgentRenameArgs(target: string, name: string): string[] {
-  return ['agent', 'rename', target, name];
-}
-
 export function startedAgentReady(
   snapshot: StartedAgentSnapshot,
   expectedAgent: string,
@@ -129,7 +125,7 @@ export async function startAgent(
         // The launch already happened; wait for Pi instead of starting it twice.
         try {
           await waitForStartedAgent(paneId, 'pi', 30_000, signal);
-          await execHerdr(buildAgentRenameArgs(paneId, name), signal);
+          await execHerdr(['agent', 'rename', paneId, name], signal);
           return;
         } catch (settleError) {
           if (signal?.aborted) throw settleError;
@@ -149,32 +145,11 @@ export async function startAgent(
   }
 }
 
-/** Herdr hardcodes a 5s lifecycle gate on `agent prompt --wait`. */
-const PROMPT_ACCEPT_TIMEOUT_MS = 30_000;
-const PROMPT_ACCEPT_POLL_MS = 100;
-
-export type HerdrAgentSnapshot = {
+type HerdrAgentSnapshot = {
   status: string;
   stateChangeSeq: number;
   completionSeq?: number;
 };
-
-export function buildAgentPromptArgs(target: string, prompt: string): string[] {
-  return ['agent', 'prompt', target, prompt];
-}
-
-export function buildAgentWaitArgs(
-  target: string,
-  timeoutMs: number,
-  until: readonly string[],
-): string[] {
-  const args = ['agent', 'wait', target];
-  for (const status of until) {
-    args.push('--until', status);
-  }
-  args.push('--timeout', String(timeoutMs));
-  return args;
-}
 
 export function parseAgentSnapshot(output: string): HerdrAgentSnapshot {
   const parsed = parseAgentGetOutput(output);
@@ -193,56 +168,11 @@ export function parseAgentSnapshot(output: string): HerdrAgentSnapshot {
   };
 }
 
-/** True when a post-submit snapshot proves the prompt was accepted. */
-export function promptAcceptanceObserved(
-  before: HerdrAgentSnapshot,
-  current: HerdrAgentSnapshot,
-): 'working' | 'settled' | null {
-  if (
-    current.stateChangeSeq > before.stateChangeSeq &&
-    (current.status === 'working' || current.status === 'blocked')
-  ) {
-    return 'working';
-  }
-  if (
-    (current.status === 'idle' || current.status === 'done') &&
-    current.completionSeq !== undefined &&
-    current.completionSeq > (before.completionSeq ?? 0)
-  ) {
-    return 'settled';
-  }
-  return null;
-}
-
 export async function getAgentSnapshot(
   target: string,
   signal?: AbortSignal,
 ): Promise<HerdrAgentSnapshot> {
   return parseAgentSnapshot(await execHerdr(['agent', 'get', target], signal));
-}
-
-async function waitForPromptAcceptance(
-  target: string,
-  before: HerdrAgentSnapshot,
-  signal?: AbortSignal,
-): Promise<'working' | 'settled'> {
-  const deadline = Date.now() + PROMPT_ACCEPT_TIMEOUT_MS;
-
-  while (true) {
-    const current = await getAgentSnapshot(target, signal);
-    const observed = promptAcceptanceObserved(before, current);
-    if (observed) return observed;
-
-    if (Date.now() >= deadline) {
-      throw new HerdrCliError(
-        `herdr agent prompt ${target} <prompt> failed [agent_prompt_stalled]: no lifecycle change within ${PROMPT_ACCEPT_TIMEOUT_MS}ms after submit`,
-        'agent_prompt_stalled',
-        ['agent', 'prompt', target, '<prompt>'],
-      );
-    }
-
-    await delay(PROMPT_ACCEPT_POLL_MS, signal);
-  }
 }
 
 /** Report blocked dialogs without exposing the submitted prompt. */
@@ -260,77 +190,14 @@ export function mapPromptError(error: unknown, target: string): never {
 export async function promptAgent(
   target: string,
   prompt: string,
-  options: { wait: boolean; timeoutMs: number },
   signal?: AbortSignal,
 ): Promise<void> {
   // Avoid `agent prompt --wait`: Herdr's hardcoded 5s post-submit lifecycle
-  // gate returns agent_prompt_stalled when Pi is slow to leave idle, which
-  // looks like "text pasted, Enter never pressed". Submit atomically, then
-  // wait for newer activity or a real completion before collecting.
-  const before = await getAgentSnapshot(target, signal);
+  // gate returns agent_prompt_stalled when Pi is slow to leave idle.
   try {
-    await execHerdr(buildAgentPromptArgs(target, prompt), signal);
+    await execHerdr(['agent', 'prompt', target, prompt], signal);
   } catch (error) {
     mapPromptError(error, target);
-  }
-
-  if (!options.wait) return;
-
-  const acceptance = await waitForPromptAcceptance(target, before, signal);
-  if (acceptance === 'settled') return;
-
-  await waitForAgent(target, options.timeoutMs, signal);
-}
-
-export async function waitForAgent(
-  target: string,
-  timeoutMs: number,
-  signal?: AbortSignal,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  const budget = AbortSignal.timeout(timeoutMs);
-  const waitSignal = signal ? AbortSignal.any([signal, budget]) : budget;
-  for (let attempt = 0; ; attempt++) {
-    try {
-      if (attempt > 0) {
-        await delay(
-          Math.min(100, Math.max(0, deadline - Date.now())),
-          waitSignal,
-        );
-        await getAgentSnapshot(target, waitSignal);
-      }
-      // Only read/wait is retried. A result artifact cannot establish completion.
-      await execHerdr(
-        buildAgentWaitArgs(
-          target,
-          attempt === 0 ? timeoutMs : Math.max(1, deadline - Date.now()),
-          ['idle', 'done'],
-        ),
-        waitSignal,
-      );
-      return;
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      if (budget.aborted) {
-        throw new HerdrCliError(
-          `Herdr wait for ${target} timed out`,
-          'timeout',
-          ['agent', 'wait', target],
-        );
-      }
-      if (
-        !(error instanceof HerdrCliError) ||
-        !error.message.includes('error: EmptyResponse')
-      )
-        throw error;
-      if (attempt >= 3) {
-        throw new HerdrCliError(
-          `Herdr wait transport failed for ${target}; child retained`,
-          'wait_transport_interrupted',
-          ['agent', 'wait', target],
-        );
-      }
-    }
   }
 }
 

@@ -9,16 +9,16 @@ export const ASK_QUESTION_TOOL = 'ask_question';
 /** Child-only: absolute path to the private session metadata artifact. */
 export const SESSION_META_ENV = 'HERDR_AGENT_SESSION_META';
 
-export const SESSION_META_FILE_NAME = 'session.json';
+const SESSION_META_FILE_NAME = 'session.json';
 
-export interface ChildSessionMeta {
+interface ChildSessionMeta {
   sessionId: string;
   sessionFile?: string;
   cwd: string;
   updatedAt: string;
 }
 
-export interface PiSessionHeader {
+interface PiSessionHeader {
   id: string;
   cwd: string;
 }
@@ -62,7 +62,7 @@ function isManagedAgentFile(filePath: string, fileName: string): boolean {
   );
 }
 
-export function isManagedResultFile(filePath: string): boolean {
+function isManagedResultFile(filePath: string): boolean {
   return isManagedAgentFile(filePath, 'result.md');
 }
 
@@ -78,7 +78,7 @@ export function questionFileFor(
   return path.join(path.dirname(path.resolve(resultFile)), 'question.md');
 }
 
-export function isManagedSessionMetaFile(filePath: string): boolean {
+function isManagedSessionMetaFile(filePath: string): boolean {
   return isManagedAgentFile(filePath, SESSION_META_FILE_NAME);
 }
 
@@ -184,7 +184,7 @@ export async function validateResumableSessionFile(
   return header;
 }
 
-export async function assertResumableSessionDir(
+export async function resumableSessionDirError(
   cwd: string,
 ): Promise<string | undefined> {
   try {

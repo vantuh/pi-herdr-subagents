@@ -16,12 +16,11 @@ test('exposes exactly the documented parameters', () => {
     'resumeClosed',
     'tabLabel',
     'task',
-    'wait',
   ]);
 });
 
 test('requires only the agent profile', () => {
-  // task is optional on purpose: omitting it is re-wait mode.
+  // task is optional on purpose: omitting it checks a live agent's status.
   assert.deepEqual(HerdrAgentParams.required, ['agent']);
 });
 
@@ -39,17 +38,20 @@ test('declares parameter types the provider can validate', () => {
   assert.equal(properties.agent?.type, 'string');
   assert.equal(properties.task?.type, 'string');
   assert.equal(properties.tabLabel?.type, 'string');
-  assert.equal(properties.wait?.type, 'boolean');
   assert.equal(properties.resumeClosed?.type, 'boolean');
 });
 
-test('wait description matches the detached-by-default contract', () => {
-  const wait = HerdrAgentParams.properties.wait as { description?: string };
-  assert.match(wait.description ?? '', /Default: false in TUI mode/);
-  assert.match(
-    wait.description ?? '',
-    /Non-TUI sessions default to wait: true; an explicit false is rejected/,
+test('has no wait property', () => {
+  assert.equal(
+    (HerdrAgentParams.properties as Record<string, unknown>).wait,
+    undefined,
   );
+});
+
+test('task description says omitting it checks status', () => {
+  const task = HerdrAgentParams.properties.task as { description?: string };
+  assert.match(task.description ?? '', /Omit to check a live agent/);
+  assert.match(task.description ?? '', /does not send a new prompt/);
 });
 
 test('resumeClosed description names the continuation contract', () => {

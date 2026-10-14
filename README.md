@@ -6,8 +6,8 @@ running in [Herdr](https://herdr.dev) panes or tabs.
 
 It registers a `herdr_agent` tool. The orchestrating Pi session calls it with an
 agent profile and a self-contained task. The extension starts a child Pi process
-through Herdr's agent automation API, waits for (or later collects) the result,
-and closes the target.
+through Herdr's agent automation API, returns once the prompt is submitted,
+and the poller delivers the result and closes the target.
 
 ## Capabilities
 
@@ -17,8 +17,8 @@ and closes the target.
   prior context through `resumeClosed`.
 - A question channel: a child can call `ask_question` and the orchestrator
   answers it with a normal follow-up task.
-- Async delivery: in TUI mode, results (or questions) are delivered by a widget
-  poller once the agent settles. RPC, JSON, and print sessions wait for the outcome.
+- Async delivery: results and questions are delivered by the TUI widget
+  poller once the agent settles. RPC, JSON, and print sessions are rejected.
 - Result artifacts, so large outputs do not depend on terminal scrollback.
 - Commands: `/run`, `/herdr-agents`.
 - Layouts: a dedicated subagents workspace (default), split panes, or tabs.
@@ -74,25 +74,28 @@ Fields of the `herdr_agent` tool:
 | Field | Description |
 |---|---|
 | `agent` | Profile name. |
-| `task` | Self-contained task. Omit it to re-wait on a running agent by `tabLabel`. |
-| `tabLabel` | Agent label; defaults to the title-cased profile name. Identifies the agent for re-wait, answers and resume. |
-| `wait` | `true` blocks for the result. Default `false` in TUI mode: the poller delivers the outcome later. RPC, JSON, and print sessions default to `true` and reject explicit `false`, including taskless re-waits. |
+| `task` | Self-contained task. Omit it to check a live agent's status by `tabLabel`. |
+| `tabLabel` | Agent label; defaults to the title-cased profile name. Identifies the agent for status checks, answers and resume. |
 | `resumeClosed` | Continue a closed one-shot, matched by exact `tabLabel`, with its prior context. Requires `task`. |
 
 ```json
-{ "agent": "reviewer", "tabLabel": "Diff review", "task": "Review the current diff for regressions.", "wait": true }
+{ "agent": "reviewer", "tabLabel": "Diff review", "task": "Review the current diff for regressions." }
 ```
 
 Lifecycle:
 
-- Every agent is a one-shot. The target closes after a successful result; on
-  timeout, error or abort it stays open for debugging. The fixed wait timeout
-  is 600 s, after which the tool returns a re-wait hint.
-- A child that calls `ask_question` stays open. Answer with a normal `task` and
-  the same `tabLabel`.
+- Every agent is a one-shot. The call returns when the prompt is submitted.
+  The widget poller delivers the result and then closes the target. A child
+  that settles without a result artifact stays open; a status check shows its
+  scrollback, and `/herdr-agents` can close it.
+- `herdr_agent` requires TUI mode. RPC, JSON, and print sessions are rejected
+  before any Herdr call.
+- A child that calls `ask_question` stays open. The question arrives as a
+  message. Answer with a normal `task` and the same `tabLabel`.
 - A task sent by `tabLabel` to a live agent is rejected rather than spawning a
-  duplicate. Re-wait, answer the question, or use `resumeClosed` after it closes.
-- Detached results and questions are delivered exactly once.
+  duplicate. Check its status, answer the question, or use `resumeClosed` after
+  it closes.
+- Results and questions are delivered exactly once.
 
 ### Commands
 
@@ -121,7 +124,7 @@ invalid file falls back to the defaults:
 
 The file is read on every spawn. **Do not change `layout` while agents are
 live:** they become orphaned. They stay visible and closable through
-`/herdr-agents`, but re-wait only finds agents of the configured layout.
+`/herdr-agents`, but status checks and reuse only find agents of the configured layout.
 
 ## Development
 

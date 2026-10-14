@@ -4,7 +4,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-import type { HerdrAgentLayout, HerdrNamedAgent, PaneInfo } from '../types.ts';
+import {
+  isHerdrAgentLayout,
+  type HerdrAgentLayout,
+  type HerdrNamedAgent,
+  type PaneInfo,
+} from '../types.ts';
 
 export interface HerdrAgentStateRecord {
   lifecycle: 'oneshot' | 'persistent';
@@ -16,11 +21,11 @@ export interface HerdrAgentStateRecord {
   automationName?: string;
   resultFile?: string;
   layout?: HerdrAgentLayout;
-  /** Spawn-time profile values Pi ignored; retained for detached/re-wait output. */
+  /** Spawn-time profile values Pi ignored; retained until the outcome is delivered. */
   spawnWarnings?: string[];
   /**
-   * Spawned with `wait: false` and not yet collected. Lives in the state file
-   * rather than memory so a pending delivery survives `/reload`.
+   * Not yet collected. Lives in the state file rather than memory so a
+   * pending delivery survives `/reload`.
    */
   detached?: boolean;
   /** A committed outcome claim; a new task's lifecycle record clears it. */
@@ -40,7 +45,7 @@ export interface HerdrAgentStateRecord {
   updatedAt: string;
 }
 
-export type ClosedHistoryStatus =
+type ClosedHistoryStatus =
   | 'resumable'
   | 'claimed'
   | 'invalid'
@@ -73,14 +78,14 @@ export interface HerdrAgentsState {
 export const CLOSED_HISTORY_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 export const CLOSED_HISTORY_MAX_PER_OWNER = 32;
 export const CLOSED_HISTORY_MAX_GLOBAL = 256;
-export const DEFAULT_STATE_LOCK_WAIT_MS = 60_000;
-export const DEFAULT_CLOSED_CLAIM_LEASE_MS = 60_000;
+const DEFAULT_STATE_LOCK_WAIT_MS = 60_000;
+const DEFAULT_CLOSED_CLAIM_LEASE_MS = 60_000;
 
 const STATE_PATH_ENV = 'HERDR_AGENTS_STATE_PATH';
 const STATE_LOCK_WAIT_MS_ENV = 'HERDR_AGENTS_LOCK_WAIT_MS';
 const CLAIM_LEASE_MS_ENV = 'HERDR_AGENTS_CLAIM_LEASE_MS';
 
-export type StateMutationKind = 'lifecycle' | 'stage' | 'finalize' | 'detached';
+type StateMutationKind = 'lifecycle' | 'stage' | 'finalize' | 'detached';
 
 let failNextStateSaves = 0;
 const failNextMutations: Record<StateMutationKind, number> = {
@@ -115,11 +120,11 @@ export function throwIfInjectedMutation(kind: StateMutationKind): void {
   throw new Error(`injected ${kind} state save failure`);
 }
 
-export function getStateLockWaitMs(): number {
+function getStateLockWaitMs(): number {
   return envMs(STATE_LOCK_WAIT_MS_ENV, DEFAULT_STATE_LOCK_WAIT_MS);
 }
 
-export function getClosedClaimLeaseMs(): number {
+function getClosedClaimLeaseMs(): number {
   return envMs(CLAIM_LEASE_MS_ENV, DEFAULT_CLOSED_CLAIM_LEASE_MS);
 }
 
@@ -215,13 +220,6 @@ async function acquireExclusiveLock(
   }
 }
 
-export function withHerdrAgentsStateLock<T>(
-  filePath: string,
-  fn: () => Promise<T>,
-): Promise<T> {
-  return withStateFileLock(filePath, fn);
-}
-
 export async function withStateFileLock<T>(
   filePath: string,
   fn: () => Promise<T>,
@@ -246,23 +244,15 @@ export async function withStateFileLock<T>(
       if (signal?.aborted) onAbort();
     });
     signal?.throwIfAborted();
-    return await runWithExclusiveLock(filePath, fn, signal);
+    const release = await acquireExclusiveLock(`${filePath}.lock`, signal);
+    try {
+      signal?.throwIfAborted();
+      return await fn();
+    } finally {
+      await release();
+    }
   } finally {
     releaseQueue();
-  }
-}
-
-async function runWithExclusiveLock<T>(
-  filePath: string,
-  fn: () => Promise<T>,
-  signal?: AbortSignal,
-): Promise<T> {
-  const release = await acquireExclusiveLock(`${filePath}.lock`, signal);
-  try {
-    signal?.throwIfAborted();
-    return await fn();
-  } finally {
-    await release();
   }
 }
 
@@ -281,10 +271,6 @@ function isLifecycle(
   value: unknown,
 ): value is HerdrAgentStateRecord['lifecycle'] {
   return value === 'oneshot' || value === 'persistent';
-}
-
-function isLayout(value: unknown): value is HerdrAgentLayout {
-  return value === 'pane' || value === 'tab' || value === 'workspace';
 }
 
 // Terminal identity survives pane moves; live handoff rekeys it from verified
@@ -388,7 +374,7 @@ function copyAgentRecords(state: HerdrAgentsState, agents: unknown): void {
       ...(typeof record.resultFile === 'string'
         ? { resultFile: record.resultFile }
         : {}),
-      ...(isLayout(record.layout) ? { layout: record.layout } : {}),
+      ...(isHerdrAgentLayout(record.layout) ? { layout: record.layout } : {}),
       ...(Array.isArray(record.spawnWarnings)
         ? {
             spawnWarnings: record.spawnWarnings.filter(
@@ -637,9 +623,9 @@ export async function recordAgentLifecycle(
 }
 
 /**
- * Spawn warnings belong on the first collection only. Later re-waits and
- * reused tasks rewrite the record without them; this drops them after a
- * successful collect so they are not reprinted.
+ * Spawn warnings belong on the first delivery only. A reused task rewrites
+ * the record without them; this drops them after a successful delivery so
+ * they are not reprinted.
  */
 export async function clearAgentSpawnWarnings(
   pane: Pick<PaneInfo, 'terminal_id'>,
@@ -695,28 +681,18 @@ export async function deleteAgentLifecycle(
  * also holds across `/reload`.
  *
  * Claiming before delivering means a failed delivery drops the notification
- * rather than risking a duplicate — the result artifact still exists and stays
- * reachable by an explicit re-wait.
+ * rather than risking a duplicate — the result artifact still exists.
  */
 export function claimDetachedAgent(
   pane: Pick<PaneInfo, 'terminal_id'>,
   filePath = getHerdrAgentsStatePath(),
   signal?: AbortSignal,
 ): Promise<boolean> {
-  return claimCollection(pane, true, filePath, signal);
-}
-
-export function claimAgentCollection(
-  pane: Pick<PaneInfo, 'terminal_id'>,
-  filePath = getHerdrAgentsStatePath(),
-  signal?: AbortSignal,
-): Promise<boolean> {
-  return claimCollection(pane, false, filePath, signal);
+  return claimCollection(pane, filePath, signal);
 }
 
 async function claimCollection(
   pane: Pick<PaneInfo, 'terminal_id'>,
-  detachedOnly: boolean,
   filePath = getHerdrAgentsStatePath(),
   signal?: AbortSignal,
 ): Promise<boolean> {
@@ -733,7 +709,7 @@ async function claimCollection(
       if (
         record?.lifecycle !== 'oneshot' ||
         record.collected ||
-        (detachedOnly && !record.detached)
+        !record.detached
       )
         return false;
       if (
@@ -777,7 +753,7 @@ function parseClosedHistory(raw: unknown): ClosedAgentHistoryRecord[] {
       continue;
     }
     if (typeof record.cwd !== 'string' || !record.cwd) continue;
-    if (!isLayout(record.layout)) continue;
+    if (!isHerdrAgentLayout(record.layout)) continue;
     if (record.lifecycle !== 'oneshot') continue;
     if (!isClosedHistoryStatus(record.status)) continue;
     const claimGeneration =

@@ -8,7 +8,7 @@ import type { Static } from 'typebox';
 
 import { discoverAgents } from '../agents.ts';
 import {
-  assertResumableSessionDir,
+  resumableSessionDirError,
   clearAgentQuestion,
   clearAgentResult,
   createAgentTempFiles,
@@ -40,7 +40,7 @@ import {
   listTabs,
   resolveAgentsWorkspace,
 } from '../herdr/snapshot.ts';
-import { CHILD_PROTOCOL, formatAgentQuestion } from '../prompts.ts';
+import { CHILD_PROTOCOL } from '../prompts.ts';
 import {
   claimClosedHistory,
   findOwnedClosedHistory,
@@ -48,7 +48,6 @@ import {
   releaseClosedHistory,
 } from '../state/closed-history.ts';
 import {
-  claimAgentCollection,
   emptyHerdrAgentsState,
   paneStateKey,
   persistPrunedAgentsState,
@@ -63,19 +62,8 @@ import type {
   PaneInfo,
   TabInfo,
 } from '../types.ts';
-import {
-  beginAwaitingAgent,
-  endAwaitingAgent,
-  ensureAgentsWidget,
-} from '../ui/poller.ts';
-import {
-  formatSpawnWarnings,
-  formatWaitInterrupted,
-  isRecoverableWaitInterrupt,
-  makeHerdrAgentName,
-  titleCase,
-  waitInterruptReason,
-} from '../utils.ts';
+import { ensureAgentsWidget } from '../ui/poller.ts';
+import { formatSpawnWarnings, makeHerdrAgentName, titleCase } from '../utils.ts';
 import {
   buildChildPiArgs,
   herdrChildEnvArgs,
@@ -84,26 +72,18 @@ import {
 import {
   acquirePanePlacementLock,
   bestEffort,
-  closeOneShot,
-  dropCollectedSpawnWarnings,
-  formatCollectedOutput,
   independentCleanupSignal,
-  readSettledAgentOutput,
-  refreshAgentLifecyclePane,
   rebalanceCurrentPaneAgents,
   spawnWarningDetails,
 } from './one-shot.ts';
 import {
-  executeRewait,
+  executeAgentStatus,
   resumeClosedLiveDecision,
   resumedDetails,
-} from './rewait.ts';
+} from './status.ts';
 import { buildHerdrAgentParams } from './schema.ts';
 
 type HerdrAgentParams = Static<ReturnType<typeof buildHerdrAgentParams>>;
-
-/** Fixed wait timeout; tuning lives in code, not in the model-facing schema. */
-const DEFAULT_WAIT_TIMEOUT_MS = 600_000;
 
 interface TaskInvocation {
   pi: ExtensionAPI;
@@ -118,8 +98,6 @@ interface SpawnSettings {
   agent: AgentProfile;
   config: HerdrAgentsConfig;
   layout: HerdrAgentLayout;
-  wait: boolean;
-  timeoutMs: number;
   baseLabel: string;
   resumeClosed: boolean;
   owner: ReturnType<typeof orchestratorIdentity>;
@@ -185,11 +163,21 @@ export async function executeHerdrAgent(
     };
   }
 
-  // Only TUI sessions have a detached collector.
-  const wait = params.wait ?? ctx.mode !== 'tui';
+  if (ctx.mode !== 'tui') {
+    return {
+      content: [
+        {
+          type: 'text',
+          text: 'herdr_agent requires TUI mode. Non-TUI sessions have no widget poller to deliver the result.',
+        },
+      ],
+      details: {},
+      isError: true,
+    };
+  }
+
   const config = await loadHerdrAgentsConfig();
   const layout = getHerdrAgentsLayout(config);
-  const timeoutMs = DEFAULT_WAIT_TIMEOUT_MS;
   const baseLabel = params.tabLabel?.trim() || titleCase(agent.name);
   const resumeClosed = params.resumeClosed === true;
   const owner = orchestratorIdentity(ctx);
@@ -200,10 +188,10 @@ export async function executeHerdrAgent(
         content: [
           {
             type: 'text',
-            text: 'resumeClosed requires a non-empty task. Omit resumeClosed and task to re-wait on a still-running agent.',
+            text: 'resumeClosed requires a non-empty task. Omit resumeClosed and task to check the status of a still-running agent.',
           },
         ],
-        details: { resumeClosed: true, waited: false },
+        details: { resumeClosed: true },
         isError: true,
       };
     }
@@ -215,49 +203,30 @@ export async function executeHerdrAgent(
             text: 'resumeClosed requires an explicit non-empty tabLabel.',
           },
         ],
-        details: { resumeClosed: true, waited: false },
+        details: { resumeClosed: true },
         isError: true,
       };
     }
   }
 
-  // Detached collection needs the TUI widget poller.
-  if (!wait && ctx.mode !== 'tui') {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: 'wait: false requires TUI mode with the agents widget poller. Non-TUI sessions require wait: true because no background collector exists.',
-        },
-      ],
-      details: { waited: false },
-      isError: true,
-    };
-  }
-
-  if (params.task === undefined) {
-    // Re-wait mode: no new task, just reconnect to an existing tab that is
-    // (expected to be) still running — e.g. after a previous call to this
-    // tool timed out while the agent kept working. It only invokes the
-    // server-owned agent wait, so no prompt is re-sent into a busy pane.
+  if (!params.task?.trim()) {
+    // Status check: no new task. Looks up the live agent and returns its
+    // status plus recent output. It never prompts, claims, collects, or closes.
     // Omitting task never resurrects a closed agent.
-    return await executeRewait(pi, {
+    return await executeAgentStatus({
       agent,
       tabLabel: params.tabLabel,
       baseLabel,
       layout,
-      wait,
-      timeoutMs,
       ownerSessionId: owner.sessionId,
       signal,
-      onUpdate,
     });
   }
 
   const task = params.task;
   return await runAgentTask(
     { pi, params, task, signal, onUpdate, ctx },
-    { agent, config, layout, wait, timeoutMs, baseLabel, resumeClosed, owner },
+    { agent, config, layout, baseLabel, resumeClosed, owner },
   );
 }
 
@@ -278,7 +247,7 @@ async function runAgentTask(
   // through it (within this process) so two parallel first spawns cannot
   // create it twice. The lock is released once the agent's tab is visible
   // to listTabs. Label uniqueness is computed client-side via uniqueLabel,
-  // so `agent start` and the wait stay parallel.
+  // so later `agent start` calls stay serialized only for placement.
   const releasePlacement =
     settings.layout === 'pane' || settings.layout === 'workspace'
       ? await acquirePanePlacementLock()
@@ -337,7 +306,7 @@ async function runAgentTask(
     );
   }
 
-  return await runAgentTurn(invocation, settings, spawn, { tabId, paneId });
+  return await runAgentTurn(invocation, spawn, { tabId, paneId });
 }
 
 async function prepareSpawnTarget(
@@ -461,7 +430,6 @@ async function resolveAgentPlacement(
           ],
           details: {
             workspaceId: agentsWorkspaceId,
-            waited: false,
           },
           isError: true,
         },
@@ -518,7 +486,7 @@ async function reuseParkedAgent(
           text: `Owned Herdr target ${unresolved.automationName} is still live, but its legacy owner/pane identity cannot be reconciled safely. Inspect that target; do not resend the task or spawn a replacement.`,
         },
       ],
-      details: { tabLabel: baseLabel, waited: false },
+      details: { tabLabel: baseLabel },
       isError: true,
     };
   }
@@ -552,14 +520,13 @@ async function reuseParkedAgent(
       content: [
         {
           type: 'text',
-          text: `A live Herdr agent named "${baseLabel}" already exists and cannot receive a new task. If it is still working, call herdr_agent again with the same tabLabel and no task to re-wait. If it already settled detached, wait for the result to be delivered, then use resumeClosed: true with the same tabLabel to continue it with its context. If you want a fresh agent, pass a different tabLabel.`,
+          text: `A live Herdr agent named "${baseLabel}" already exists and cannot receive a new task. If it is still working, call herdr_agent again with the same tabLabel and no task to check its status. If it already settled, wait for the result to be delivered, then use resumeClosed: true with the same tabLabel to continue it with its context. If you want a fresh agent, pass a different tabLabel.`,
         },
       ],
       details: {
         tabLabel: baseLabel,
         paneId: candidatePane.pane_id,
         existingLifecycle: candidateRecord?.lifecycle,
-        waited: false,
       },
       isError: true,
     };
@@ -579,7 +546,6 @@ async function reuseParkedAgent(
           resumeClosed: true,
           tabLabel: baseLabel,
           paneId: candidatePane.pane_id,
-          waited: false,
           liveStatus: candidatePane.agent_status,
           detached: candidateRecord?.detached === true,
         },
@@ -620,7 +586,7 @@ async function claimClosedHistoryForResume(
           text: 'Cannot resume a closed agent: this Orchestrator session has no session id.',
         },
       ],
-      details: { resumeClosed: true, waited: false },
+      details: { resumeClosed: true },
       isError: true,
     };
   }
@@ -646,7 +612,7 @@ async function claimClosedHistoryForResume(
           text: `No closed one-shot Herdr agent named "${params.tabLabel!.trim()}" is owned by this Orchestrator session.`,
         },
       ],
-      details: { resumeClosed: true, waited: false },
+      details: { resumeClosed: true },
       isError: true,
     };
   }
@@ -658,7 +624,7 @@ async function claimClosedHistoryForResume(
           text: `Closed Herdr agent "${existing.tabLabel}" is already being resumed.`,
         },
       ],
-      details: { resumeClosed: true, waited: false },
+      details: { resumeClosed: true },
       isError: true,
     };
   }
@@ -670,11 +636,11 @@ async function claimClosedHistoryForResume(
           text: `Closed Herdr agent "${existing.tabLabel}" was a ${existing.profileName} agent, not ${spawn.agent.name}.`,
         },
       ],
-      details: { resumeClosed: true, waited: false },
+      details: { resumeClosed: true },
       isError: true,
     };
   }
-  const cwdError = await assertResumableSessionDir(existing.cwd);
+  const cwdError = await resumableSessionDirError(existing.cwd);
   const header = cwdError
     ? undefined
     : await validateResumableSessionFile(existing.childSessionFile, {
@@ -694,7 +660,7 @@ async function claimClosedHistoryForResume(
             : `Cannot resume "${existing.tabLabel}": child session file is missing, corrupt, or does not match the stored session id/cwd.`,
         },
       ],
-      details: { resumeClosed: true, waited: false },
+      details: { resumeClosed: true },
       isError: true,
     };
   }
@@ -706,7 +672,7 @@ async function claimClosedHistoryForResume(
   if (!claimed.ok) {
     return {
       content: [{ type: 'text', text: claimed.error }],
-      details: { resumeClosed: true, waited: false },
+      details: { resumeClosed: true },
       isError: true,
     };
   }
@@ -859,7 +825,7 @@ async function startAndRecordAgent(
   placement: AgentPlacement,
 ): Promise<void> {
   const { ctx, signal, onUpdate } = invocation;
-  const { layout, wait } = settings;
+  const { layout } = settings;
 
   if (!spawn.reused) {
     spawn.automationName = makeHerdrAgentName(spawn.agent.name);
@@ -915,7 +881,7 @@ async function startAndRecordAgent(
         ...(spawn.spawnWarnings.length > 0
           ? { spawnWarnings: spawn.spawnWarnings }
           : {}),
-        detached: !wait,
+        detached: true,
         ownerPaneId: placement.current.currentPane.pane_id,
         ...(placement.current.currentPane.terminal_id
           ? { ownerTerminalId: placement.current.currentPane.terminal_id }
@@ -953,12 +919,10 @@ async function startAndRecordAgent(
 
 async function runAgentTurn(
   invocation: TaskInvocation,
-  settings: SpawnSettings,
   spawn: SpawnState,
   target: { tabId: string; paneId: string },
 ): Promise<AgentToolResult<Record<string, unknown>>> {
-  const { pi, task, signal, onUpdate } = invocation;
-  const { wait, timeoutMs } = settings;
+  const { task, signal, onUpdate } = invocation;
   const { tabId, paneId } = target;
   const tabLabel = spawn.tabLabel;
 
@@ -982,7 +946,7 @@ async function runAgentTurn(
     content: [
       {
         type: 'text',
-        text: `${spawn.reused ? 'Sending task to' : 'Waiting for'} Herdr agent ${tabLabel} (${paneId})...`,
+        text: `Sending task to Herdr agent ${tabLabel} (${paneId})...`,
       },
     ],
     details: {
@@ -994,187 +958,26 @@ async function runAgentTurn(
     },
   });
 
-  const blockedLabel = `waiting for ${tabLabel}`;
-  if (wait) {
-    pi.events.emit('herdr:blocked', {
-      active: true,
-      label: blockedLabel,
-    });
-    beginAwaitingAgent(tabLabel);
-  }
-  try {
-    await promptAgent(promptTarget, taskPrompt, { wait, timeoutMs }, signal);
-
-    if (!wait) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: formatSpawnWarnings(
-              `Herdr agent ${tabLabel} started (${paneId}).`,
-              spawn.spawnWarnings,
-            ),
-          },
-        ],
-        details: {
-          tabId,
-          paneId,
-          tabLabel,
-
-          reused: spawn.reused,
-          ...resumedDetails(spawn.resumed),
-          agent: spawn.agent,
-          waited: false,
-          ...spawnWarningDetails(spawn.spawnWarnings),
-        },
-      };
-    }
-
-    return await collectSettledTurn(invocation, settings, spawn, target);
-  } catch (error) {
-    if (wait && isRecoverableWaitInterrupt(error)) {
-      const reason = waitInterruptReason(error);
-      return {
-        content: [
-          {
-            type: 'text',
-            text: formatSpawnWarnings(
-              formatWaitInterrupted(tabLabel, reason),
-              spawn.spawnWarnings,
-            ),
-          },
-        ],
-        details: {
-          tabId,
-          paneId,
-          tabLabel,
-
-          reused: spawn.reused,
-          ...resumedDetails(spawn.resumed),
-          agent: spawn.agent,
-          waited: false,
-          interrupted: true,
-          interruptReason: reason,
-          ...spawnWarningDetails(spawn.spawnWarnings),
-        },
-      };
-    }
-    throw error;
-  } finally {
-    if (wait) {
-      endAwaitingAgent(tabLabel);
-      pi.events.emit('herdr:blocked', {
-        active: false,
-        label: blockedLabel,
-      });
-    }
-  }
-}
-
-// A parked question also settles the turn, but must not close the one-shot.
-async function collectSettledTurn(
-  invocation: TaskInvocation,
-  settings: SpawnSettings,
-  spawn: SpawnState,
-  target: { tabId: string; paneId: string },
-): Promise<AgentToolResult<Record<string, unknown>>> {
-  const { signal } = invocation;
-  const { layout } = settings;
-  const { tabId, paneId } = target;
-  const tabLabel = spawn.tabLabel;
-
-  if (spawn.agentPane) {
-    const pane = spawn.agentPane;
-    spawn.agentPane = await bestEffort(pane, () =>
-      refreshAgentLifecyclePane(pane, signal),
-    );
-  }
-  const settled = await readSettledAgentOutput(
-    spawn.resultFile,
-    spawn.automationName ?? paneId,
-    signal,
-  );
-  if (
-    spawn.lifecycleRecorded &&
-    spawn.agentPane &&
-    !(await claimAgentCollection(spawn.agentPane, undefined, signal))
-  ) {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Another collector already claimed Herdr agent ${tabLabel}. Do not resend the task.`,
-        },
-      ],
-      details: { tabId, paneId, tabLabel, waited: false },
-    };
-  }
-  if ('question' in settled) {
-    await dropCollectedSpawnWarnings(spawn.agentPane);
-    return {
-      content: [
-        {
-          type: 'text',
-          text: formatSpawnWarnings(
-            formatAgentQuestion(tabLabel, spawn.agent.name, settled.question),
-            spawn.spawnWarnings,
-          ),
-        },
-      ],
-      details: {
-        tabId,
-        paneId,
-        tabLabel,
-
-        reused: spawn.reused,
-        ...resumedDetails(spawn.resumed),
-        closed: false,
-        agent: spawn.agent,
-        waited: true,
-        status: 'question',
-        ...spawnWarningDetails(spawn.spawnWarnings),
-      },
-    };
-  }
-
-  // Every spawned agent is a one-shot now, including reused parked ones;
-  const closeError = await closeOneShot({
-    layout,
-    tabId,
-    paneId,
-    resultFile: spawn.resultFile,
-    lifecyclePane: spawn.agentPane,
-    signal,
-  });
-  const closed = closeError === undefined;
-
-  const text = formatCollectedOutput(
-    settled.output,
-    tabLabel,
-    closeError,
-    spawn.spawnWarnings,
-  );
-  await dropCollectedSpawnWarnings(spawn.agentPane);
+  await promptAgent(promptTarget, taskPrompt, signal);
 
   return {
     content: [
       {
         type: 'text',
-        text,
+        text: formatSpawnWarnings(
+          `Herdr agent ${tabLabel} started (${paneId}).`,
+          spawn.spawnWarnings,
+        ),
       },
     ],
     details: {
       tabId,
       paneId,
       tabLabel,
-
       reused: spawn.reused,
       ...resumedDetails(spawn.resumed),
-      closed,
-      closeError,
-      ...spawnWarningDetails(spawn.spawnWarnings),
       agent: spawn.agent,
-      waited: true,
+      ...spawnWarningDetails(spawn.spawnWarnings),
     },
   };
 }

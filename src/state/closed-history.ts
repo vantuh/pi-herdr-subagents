@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
-import type { HerdrAgentLayout, PaneInfo } from '../types.ts';
+import type { PaneInfo } from '../types.ts';
 import {
   getHerdrAgentsStatePath,
   historyRecency,
@@ -20,17 +20,17 @@ function newHistoryId(): string {
   return `ch_${randomBytes(8).toString('hex')}`;
 }
 
-export interface ArchiveClosedOneShotInput {
-  id?: string;
-  ownerSessionId: string;
-  ownerSessionFile?: string;
-  profileName: string;
-  tabLabel: string;
-  childSessionFile: string;
-  childSessionId: string;
-  cwd: string;
-  layout: HerdrAgentLayout;
-}
+type ArchiveClosedOneShotInput = Pick<
+  ClosedAgentHistoryRecord,
+  | 'ownerSessionId'
+  | 'ownerSessionFile'
+  | 'profileName'
+  | 'tabLabel'
+  | 'childSessionFile'
+  | 'childSessionId'
+  | 'cwd'
+  | 'layout'
+> & { id?: string };
 
 export async function archiveClosedOneShot(
   input: ArchiveClosedOneShotInput,
@@ -179,7 +179,7 @@ export async function finalizeStagedClosedOneShot(
   );
 }
 
-export type ClaimClosedHistoryResult =
+type ClaimClosedHistoryResult =
   | { ok: true; record: ClosedAgentHistoryRecord }
   | { ok: false; error: string };
 

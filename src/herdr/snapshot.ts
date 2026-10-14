@@ -85,14 +85,13 @@ export function parseWorkspaceListOutput(output: string): WorkspaceInfo[] {
         typeof item === 'object' &&
         typeof (item as WorkspaceInfo).workspace_id === 'string',
     )
-    .map(({ workspace_id, label, focused }) => ({
+    .map(({ workspace_id, label }) => ({
       workspace_id,
       ...(typeof label === 'string' ? { label } : {}),
-      ...(focused === true ? { focused: true } : {}),
     }));
 }
 
-export async function listWorkspaces(
+async function listWorkspaces(
   signal?: AbortSignal,
 ): Promise<WorkspaceInfo[]> {
   return parseWorkspaceListOutput(
@@ -101,8 +100,8 @@ export async function listWorkspaces(
 }
 
 /**
- * Read-only workspace lookup: never creates. Re-wait is a pure search, so a
- * missing Agents workspace simply means "no agents to find".
+ * Read-only workspace lookup: never creates. A status check is a pure search,
+ * so a missing Agents workspace simply means "no agents to find".
  */
 export async function findAgentsWorkspaceId(
   label: string,
@@ -192,19 +191,3 @@ export async function resolveAgentsWorkspace(
   );
 }
 
-export function buildAgentFinishedNotificationArgs(
-  tabLabel: string,
-  agent: string,
-  resultExcerpt: string,
-): string[] {
-  const trimmed = resultExcerpt.trim();
-  const body =
-    trimmed.length > 400 ? `${trimmed.slice(0, 400).trimEnd()}…` : trimmed;
-  return [
-    'notification',
-    'show',
-    `Pi · ${tabLabel} finished`,
-    '--body',
-    body || `${agent} finished with an empty result.`,
-  ];
-}

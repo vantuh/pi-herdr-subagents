@@ -1,5 +1,3 @@
-export type SystemPromptMode = 'append' | 'replace';
-
 export interface AgentProfile {
   name: string;
   description: string;
@@ -8,7 +6,7 @@ export interface AgentProfile {
   thinking?: string;
   /** `[]` (frontmatter `skills: none`) means "no skills"; undefined keeps full discovery. */
   skills?: string[];
-  systemPromptMode?: SystemPromptMode;
+  systemPromptMode?: 'append' | 'replace';
   disableModelInvocation?: boolean;
   systemPrompt: string;
   source: 'user' | 'project';
@@ -31,17 +29,18 @@ export interface PaneInfo {
 export interface TabInfo {
   tab_id: string;
   label: string;
-  focused?: boolean;
-  agent_status?: string;
 }
 
 /** "workspace" keeps every agent tab in a dedicated Agents workspace. */
 export type HerdrAgentLayout = 'pane' | 'tab' | 'workspace';
 
+export function isHerdrAgentLayout(value: unknown): value is HerdrAgentLayout {
+  return value === 'pane' || value === 'tab' || value === 'workspace';
+}
+
 export interface WorkspaceInfo {
   workspace_id: string;
   label?: string;
-  focused?: boolean;
 }
 
 export interface HerdrAgentInfo {
@@ -59,7 +58,7 @@ export interface HerdrAgentInfo {
   updatedAt?: string;
   /** Spawn-time profile values Pi ignored; surfaced in every collection path. */
   spawnWarnings?: string[];
-  /** Spawned with `wait: false` and not yet collected. */
+  /** Not yet collected by the widget poller. */
   detached?: boolean;
   /** Pane terminal id — the state-record key. */
   terminalId?: string;
@@ -83,10 +82,6 @@ export interface HerdrSessionSnapshot {
   agents?: HerdrNamedAgent[];
   tabs: TabInfo[];
   focused_pane_id?: string;
-  focused_tab_id?: string;
-  focused_workspace_id?: string;
-  protocol?: number;
-  version?: string;
 }
 
 export interface HerdrContext {

@@ -54,30 +54,22 @@ Herdr owns cold-shell startup retries and terminal-identity checks. It returns
 only when Pi is detected and ready for input. A current ACP provider may briefly
 own the foreground; kind-mismatch recovery waits for Pi without launching twice.
 
-## Prompt submission and waiting
+## Prompt submission
 
 Every task uses atomic `herdr agent prompt` without `--wait`. The upstream
 `--wait` path has a five-second activity gate, which is too short for some
-Pi transitions. For blocking calls, the longer acceptance wait requires newer working/blocked
-activity or a newer actual `completion_seq` while idle/done. An arbitrary idle
-state change does not count. The extension never sends an extra Enter. After
-acceptance it uses:
+Pi transitions. The extension does not poll for prompt acceptance and does not
+call `herdr agent wait`. The tool returns as soon as the prompt is submitted.
+The per-second widget poller is the only collector: it delivers a settled
+result or question and closes a finished one-shot. The extension never sends
+an extra Enter.
 
-```bash
-herdr agent wait <target> --until idle --until done --timeout 600000
-```
+`herdr_agent` requires TUI mode. RPC, JSON, and print sessions are rejected
+before any Herdr call, because they have no widget poller.
 
-`blocked` is not completion: it may be an approval dialog. `herdr:blocked`
-marks the waiting orchestrator through the official Pi integration.
-
-In TUI sessions, task submission detaches by default. The per-second widget
-poller collects settled agents and delivers custom result/question messages.
-Explicit `wait: true` blocks. Non-TUI submission must wait because it has no
-background collector. Explicit `wait: false` is rejected outside TUI mode,
-including taskless re-waits. RPC's `hasUI` does not provide a widget collector.
-
-Timeout or abort leaves the child running. Re-wait with the same `tabLabel`
-and no `task`; this never resubmits the prompt or resurrects a closed agent.
+A taskless call (`tabLabel`, no `task`) is a status check. It reads
+`herdr agent get` and recent scrollback. It never prompts, waits, claims,
+closes, or resurrects a closed agent.
 
 ## Questions and result collection
 
@@ -92,13 +84,14 @@ question delivery does not terminate the turn. The parent
 returns/delivers the question and leaves the one-shot open. Answer by sending
 a normal `task` with the same `tabLabel`.
 
-If no result artifact exists, the explicit collection path can read terminal
-output through `agent read --source recent-unwrapped --lines 180`. Artifacts
+If no result artifact exists, a status check can read terminal output through
+`agent read --source recent-unwrapped --lines 180`. The poller does not deliver
+that case; the agent stays open so the scrollback can still be read. Artifacts
 remain the primary channel because scrollback cannot guarantee complete output.
 
-Detached claims use the shared state lock so synchronous and background
-collection do not deliver the same outcome twice. Outcomes found in one poller
-tick are batched; only the final custom message triggers a turn.
+Detached claims use the shared state lock so background collection does not
+deliver the same outcome twice. Outcomes found in one poller tick are batched;
+only the final custom message triggers a turn.
 
 ## Close and resume
 
@@ -115,9 +108,11 @@ claims the matching owner-session history slot. Pi starts with `--session`
 pointing at that file, using the current profile policy from the archived cwd.
 It closes again after the next successful result.
 
-A live label takes precedence: answer a parked question, re-wait active work,
-or collect a detached outcome first. Resume never spawns a closed copy over
-live work. Concurrent resumes have one claim winner.
+A live label takes precedence: answer a parked question, check the status of
+active work, or wait for a detached outcome to be delivered. Resume never
+spawns a closed copy over live work. Concurrent resumes have one claim winner.
+
+A failed state save does not abort the spawn. The child still writes its artifact, and the poller cannot deliver or close that agent because it has no record.
 
 State updates use the existing exclusive directory lock with owner sentinels.
 There is no automatic stale-lock takeover. Native Pi session files are not

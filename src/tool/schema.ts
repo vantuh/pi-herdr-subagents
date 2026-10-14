@@ -37,25 +37,19 @@ export function buildHerdrAgentParams(
     task: Type.Optional(
       Type.String({
         description:
-          'Self-contained task to give the Herdr agent. Omit only to re-wait on an existing agent (matched by tabLabel) that is still running, e.g. after a previous call timed out — this reconnects without sending a new prompt.',
+          'Self-contained task to give the Herdr agent. Omit to check a live agent matched by tabLabel: the call returns its status and recent output and does not send a new prompt. A blank task is treated the same way.',
       }),
     ),
     tabLabel: Type.Optional(
       Type.String({
         description:
-          'Herdr agent label. Defaults to the agent role, e.g. Researcher. Required when task is omitted, to identify which existing agent to re-wait on.',
-      }),
-    ),
-    wait: Type.Optional(
-      Type.Boolean({
-        description:
-          'Wait for the Herdr agent to finish and read its result. Default: false in TUI mode — the tool returns as soon as the prompt is accepted and the result is delivered to you on its own once the agent finishes. Pass true only when you need the answer before continuing this turn. Non-TUI sessions default to wait: true; an explicit false is rejected.',
+          'Herdr agent label. Defaults to the agent role, e.g. Researcher. Required when task is omitted, to identify which live agent to check.',
       }),
     ),
     resumeClosed: Type.Optional(
       Type.Boolean({
         description:
-          'Continue a closed one-shot agent owned by this Orchestrator session with its accumulated context, matched by exact tabLabel. Requires a non-empty task and tabLabel. This is the way to give a follow-up task to a previous agent. Never resumes over a live agent: parked questions are answered in place, working agents must be re-waited, settled detached results must be collected. Omit task to re-wait on a still-running agent — that never resurrects a closed one.',
+          'Continue a closed one-shot agent owned by this Orchestrator session with its accumulated context, matched by exact tabLabel. Requires a non-empty task and tabLabel. This is the way to give a follow-up task to a previous agent. Never resumes over a live agent: parked questions are answered in place, working agents are checked with the same tabLabel and no task, and settled results arrive as messages. Omitting task checks status and never resurrects a closed agent.',
       }),
     ),
   });

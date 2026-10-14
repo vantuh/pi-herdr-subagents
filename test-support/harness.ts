@@ -29,6 +29,17 @@ import {
  * session, the real state file or a real Herdr server.
  */
 
+function isAgentOutcome(message: SentMessage, label?: string): boolean {
+  if (
+    message.customType !== 'herdr_agent_result' &&
+    message.customType !== 'herdr_agent_question'
+  ) {
+    return false;
+  }
+  if (!label) return true;
+  return message.details.tabLabel === label;
+}
+
 const SHIM_PATH = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
   'herdr-shim.mjs',
@@ -64,16 +75,18 @@ export interface Harness {
   widgets: Map<string, unknown>;
   commands: Map<string, { handler: (args: string, ctx: unknown) => unknown }>;
   renderers: Map<string, unknown>;
-  /** Call the registered `herdr_agent` tool. */
+  /** Call the registered `herdr_agent` tool. Returns once the prompt is submitted. */
   call(
     params: Record<string, unknown>,
     options?: { signal?: AbortSignal },
   ): Promise<any>;
-  /** Same as call, but without the wait:true injection — pins the real defaults. */
+  /** Alias of `call`. */
   callRaw(
     params: Record<string, unknown>,
     options?: { signal?: AbortSignal },
   ): Promise<any>;
+  /** Wait for the next poller-delivered result or question. */
+  collect(label?: string, timeoutMs?: number): Promise<SentMessage>;
   /** Fire an extension lifecycle event (e.g. `session_start`). */
   fire(event: string, payload?: Record<string, unknown>): Promise<unknown>;
   /** The currently registered tool — re-registration replaces it by name. */
@@ -155,12 +168,10 @@ export async function createHarness(
     widgets: host.widgets,
     commands: host.commands,
     renderers: host.renderers,
-    // Legacy tests pin the blocking path explicitly; the detached default
-    // is pinned separately through callRaw, which passes params untouched.
     call: (params, callOptions) =>
       tool.execute(
         `call-${Math.random().toString(36).slice(2)}`,
-        { wait: true, ...params },
+        params,
         callOptions?.signal,
         undefined,
         host.ctx,
@@ -173,6 +184,23 @@ export async function createHarness(
         undefined,
         host.ctx,
       ),
+    collect: (label, timeoutMs) => {
+      const start = host.messages.length;
+      return waitFor(
+        () =>
+          host.messages
+            .slice(start)
+            .some((message) => isAgentOutcome(message, label)),
+        label ? `outcome for ${label}` : 'herdr agent outcome',
+        timeoutMs,
+      ).then(() => {
+        const message = host.messages
+          .slice(start)
+          .find((item) => isAgentOutcome(item, label));
+        if (!message) throw new Error('missing herdr agent outcome');
+        return message;
+      });
+    },
     fire: host.fire,
     getTool: (name) => host.tools.get(name),
     runCommand: async (name, args = '') => {

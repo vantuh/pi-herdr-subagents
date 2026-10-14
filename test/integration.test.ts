@@ -4,7 +4,6 @@ import * as path from 'node:path';
 
 import { test } from 'vitest';
 
-import { waitForAgent } from '../src/herdr/agent.ts';
 import {
   setFailNextStateMutation,
   clearStateSaveFailures,
@@ -58,10 +57,12 @@ test('spawns a one-shot pane agent, collects the artifact and closes it', async 
     });
 
     assert.equal(result.isError, undefined);
-    assert.match(result.content[0].text, /Result from scout_/);
-    assert.equal(result.details.waited, true);
-    assert.equal(result.details.closed, true);
+    assert.match(result.content[0].text, /started/);
     assert.equal(result.details.reused, false);
+    assert.equal(result.details.closed, undefined);
+
+    const delivered = await harness.collect('Scout');
+    assert.match(delivered.content, /Result from scout_/);
 
     // 60/40 split off the Orchestrator, child markers on the new pane.
     const split = harness.fake.callsMatching('pane', 'split')[0];
@@ -86,18 +87,6 @@ test('spawns a one-shot pane agent, collects the artifact and closes it', async 
     assert.match(prompt[3], /Task from Orchestrator:\nFind the auth flow/);
     assert.match(prompt[3], /^HERDR_RESULT_FILE: \S+result\.md$/m);
 
-    // Herdr is told the Orchestrator is blocked, then unblocked.
-    assert.deepEqual(
-      harness.events.map((event) => [
-        event.name,
-        (event.payload as { active: boolean }).active,
-      ]),
-      [
-        ['herdr:blocked', true],
-        ['herdr:blocked', false],
-      ],
-    );
-
     // Pane closed, layout back to a single pane, state pruned.
     assert.deepEqual(
       harness.fake.panes.map((pane) => pane.pane_id),
@@ -111,16 +100,23 @@ test('spawns a one-shot pane agent, collects the artifact and closes it', async 
   });
 });
 
-test('falls back to pane scrollback when the child writes no artifact', async () => {
+test('status check shows scrollback when the child writes no artifact', async () => {
   await withHarness({}, async (harness) => {
     harness.fake.setBehavior(() => ({
       transcript: 'only scrollback, no HERDR_RESULT',
     }));
 
-    const result = await harness.call({ agent: 'scout', task: 'Look around' });
+    await harness.call({ agent: 'scout', task: 'Look around' });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const result = await harness.call({ agent: 'scout', tabLabel: 'Scout' });
 
-    assert.equal(result.content[0].text, 'only scrollback, no HERDR_RESULT');
-    assert.equal(harness.fake.callsMatching('agent', 'read').length, 1);
+    assert.match(result.content[0].text, /finished without a result/);
+    assert.match(result.content[0].text, /only scrollback, no HERDR_RESULT/);
+    assert.equal(result.details.status, 'idle');
+    assert.equal(harness.messages.length, 0);
+    const read = harness.fake.callsMatching('agent', 'read')[0];
+    assert.ok(read);
+    assert.equal(read.includes('--source') && read[read.indexOf('--source') + 1], 'recent-unwrapped');
   });
 });
 
@@ -180,7 +176,6 @@ test('a caller model field does not replace the profile model', async () => {
         model: 'opus-5',
       });
       assert.equal(result.isError ?? false, false);
-      assert.equal(result.details.waited, false);
 
       const start = harness.fake.callsMatching('agent', 'start')[0];
       assert.ok(start);
@@ -218,25 +213,18 @@ test('rejects a task addressed to a live agent by its label', async () => {
       duplicate.content[0].text,
       /live Herdr agent named "Scout — repo" already exists/,
     );
-    assert.match(duplicate.content[0].text, /re-wait/);
+    assert.match(duplicate.content[0].text, /check its status/);
     assert.match(duplicate.content[0].text, /resumeClosed/);
     assert.equal(harness.fake.panes.length, 2); // orchestrator + agent
     assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
     assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
 
-    // Re-wait without a task still reaches the live agent: settle it first,
-    // as a real child would, then collect.
     const record = Object.values((await harness.readState()).agents)[0];
     assert.ok(record?.automationName);
     await harness.fake.completeAgent(record.automationName, 'Late result');
 
-    const reWaited = await harness.call({
-      agent: 'scout',
-      tabLabel: 'Scout — repo',
-    });
-    assert.equal(reWaited.isError ?? false, false);
-    assert.match(reWaited.content[0].text, /Late result/);
-    assert.equal(reWaited.details.closed, true);
+    const delivered = await harness.collect('Scout — repo');
+    assert.match(delivered.content, /Late result/);
     assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
   });
 });
@@ -250,10 +238,11 @@ test('returns a child question early, keeps the one-shot parked, and answers it 
     );
 
     const asked = await harness.call({ agent: 'scout', task: 'Find auth' });
-    assert.equal(asked.details.status, 'question');
-    assert.equal(asked.details.closed, false);
-    assert.match(asked.content[0].text, /Cookie session or JWT\?/);
-    assert.match(asked.content[0].text, /tabLabel "Scout"/);
+    assert.match(asked.content[0].text, /started/);
+    const question = await harness.collect('Scout');
+    assert.equal(question.customType, 'herdr_agent_question');
+    assert.match(question.content, /Cookie session or JWT\?/);
+    assert.match(question.content, /tabLabel "Scout"/);
 
     // Parked, not closed: pane and state record survive.
     assert.equal(harness.fake.panes.length, 2);
@@ -273,8 +262,8 @@ test('returns a child question early, keeps the one-shot parked, and answers it 
     });
 
     assert.equal(answered.details.reused, true);
-    assert.equal(answered.details.closed, true);
-    assert.match(answered.content[0].text, /Answered: cookie session/);
+    const answeredDelivery = await harness.collect('Scout');
+    assert.match(answeredDelivery.content, /Answered: cookie session/);
     // The parked one-shot was reused, not duplicated.
     assert.equal(harness.fake.callsMatching('pane', 'split').length, 1);
     assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 2);
@@ -304,8 +293,13 @@ test('serializes parallel spawns into one agent column and rebalances it', async
 
     for (const result of results) {
       assert.equal(result.isError, undefined);
-      assert.equal(result.details.closed, true);
+      assert.match(result.content[0].text, /started/);
     }
+    await harness.waitFor(
+      () => harness.messages.length >= 3,
+      'three pane results',
+      8000,
+    );
 
     const splits = harness.fake.callsMatching('pane', 'split');
     assert.equal(splits.length, 3);
@@ -373,7 +367,8 @@ test('retries a busy child shell without creating another target or prompt', asy
 
     const result = await harness.call({ agent: 'scout', task: 'Find it' });
 
-    assert.equal(result.details.closed, true);
+    assert.equal(result.isError, undefined);
+    await harness.collect('Scout');
     assert.equal(harness.fake.callsMatching('agent', 'start').length, 3);
     assert.equal(harness.fake.callsMatching('tab', 'create').length, 1);
     assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
@@ -416,85 +411,41 @@ test('recovers from a transient agent kind mismatch by waiting and renaming', as
   });
 });
 
-test('waits for delayed prompt acceptance without sending another Enter', async () => {
+test('submits one prompt and delivers a delayed result without another Enter', async () => {
   await withHarness({}, async (harness) => {
     harness.fake.setBehavior(() => ({
-      staleWindowMs: 5500,
+      staleWindowMs: 300,
       result: 'Delayed acceptance',
     }));
-    const result = await harness.call({ agent: 'scout', task: 'Find it' });
-    assert.match(result.content[0].text, /Delayed acceptance/);
+    const started = await harness.call({ agent: 'scout', task: 'Find it' });
+    assert.match(started.content[0].text, /started/);
     assert.equal(harness.fake.callsMatching('agent', 'send-keys').length, 0);
     assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
+    const delivered = await harness.collect('Scout', 5000);
+    assert.match(delivered.content, /Delayed acceptance/);
   });
 });
 
-test('does not resubmit an unaccepted prompt and leaves it open after abort', async () => {
+test('a stalled prompt returns immediately and leaves the pane open', async () => {
   await withHarness({}, async (harness) => {
     harness.fake.setBehavior(() => ({ stalled: true }));
-    const controller = new AbortController();
-    const pending = harness.call(
-      { agent: 'scout', task: 'Find it' },
-      { signal: controller.signal },
-    );
-    await harness.waitFor(
-      () => harness.fake.callsMatching('agent', 'prompt').length === 1,
-      'prompt submission',
-    );
-    const timer = setTimeout(() => controller.abort(), 5500);
-    try {
-      const result = await pending;
-      assert.equal(result.details.interrupted, true);
-      assert.equal(result.details.interruptReason, 'aborted');
-      assert.equal(harness.fake.panes.length, 2);
-      assert.equal(harness.fake.callsMatching('agent', 'send-keys').length, 0);
-      assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
-    } finally {
-      clearTimeout(timer);
-    }
+    const result = await harness.call({ agent: 'scout', task: 'Find it' });
+    assert.match(result.content[0].text, /started/);
+    assert.equal(harness.fake.panes.length, 2);
+    assert.equal(harness.fake.callsMatching('agent', 'send-keys').length, 0);
+    assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
+    assert.equal(harness.messages.length, 0);
   });
 });
 
-test('collects a completion that settles before the acceptance poll', async () => {
+test('delivers a fast completion without another Enter', async () => {
   await withHarness({}, async (harness) => {
     harness.fake.setBehavior(() => ({ delayMs: 0, result: 'Fast completion' }));
-    const result = await harness.call({ agent: 'scout', task: 'Find it' });
-    assert.match(result.content[0].text, /Fast completion/);
-    assert.equal(result.details.closed, true);
+    const started = await harness.call({ agent: 'scout', task: 'Find it' });
+    assert.match(started.content[0].text, /started/);
+    const delivered = await harness.collect('Scout');
+    assert.match(delivered.content, /Fast completion/);
     assert.equal(harness.fake.callsMatching('agent', 'send-keys').length, 0);
-  });
-});
-
-test('returns a soft re-wait hint on wait timeout and collects the result on re-wait', async () => {
-  await withHarness({}, async (harness) => {
-    harness.fake.setBehavior(() => ({ neverSettle: true }));
-    // The wait timeout is a code constant now, so the fake caps the timeout
-    // it honors to make the interrupt observable.
-    harness.fake.waitTimeoutCapMs = 50;
-
-    const timedOut = await harness.call({
-      agent: 'scout',
-      task: 'Long job',
-    });
-
-    assert.equal(timedOut.details.interrupted, true);
-    assert.equal(timedOut.details.interruptReason, 'timeout');
-    assert.match(timedOut.content[0].text, /omit task to re-wait/);
-    // Nothing was closed and no second prompt was sent.
-    assert.equal(harness.fake.panes.length, 2);
-
-    const record = Object.values((await harness.readState()).agents)[0];
-    assert.ok(record?.automationName);
-    await harness.fake.completeAgent(record.automationName, 'Late result');
-
-    // Restore the real timeout so the re-wait can run to completion.
-    harness.fake.waitTimeoutCapMs = Number.POSITIVE_INFINITY;
-
-    const reWaited = await harness.call({ agent: 'scout', tabLabel: 'Scout' });
-
-    assert.match(reWaited.content[0].text, /Late result/);
-    assert.equal(reWaited.details.closed, true);
-    assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
     assert.deepEqual(
       harness.fake.panes.map((pane) => pane.pane_id),
       [harness.fake.orchestratorPane.pane_id],
@@ -502,29 +453,21 @@ test('returns a soft re-wait hint on wait timeout and collects the result on re-
   });
 });
 
-test('treats an aborted wait as recoverable and leaves the child running', async () => {
+test('returns before a never-settling agent finishes and leaves it open', async () => {
   await withHarness({}, async (harness) => {
     harness.fake.setBehavior(() => ({ neverSettle: true }));
-
-    const controller = new AbortController();
-    const pending = harness.call(
-      { agent: 'scout', task: 'Long job' },
-      { signal: controller.signal },
-    );
-    await harness.waitFor(
-      () => harness.fake.callsMatching('agent', 'wait').length > 0,
-      'agent wait to start',
-    );
-    controller.abort();
-
-    const result = await pending;
-    assert.equal(result.details.interrupted, true);
-    assert.equal(result.details.interruptReason, 'aborted');
+    const started = await harness.call({
+      agent: 'scout',
+      task: 'Long job',
+    });
+    assert.match(started.content[0].text, /started/);
     assert.equal(harness.fake.panes.length, 2);
+    assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
+    assert.equal(harness.messages.length, 0);
   });
 });
 
-test('rejects re-wait for a label that has no running agent', async () => {
+test('rejects a status check for an unknown label', async () => {
   await withHarness({}, async (harness) => {
     const result = await harness.call({ agent: 'scout', tabLabel: 'Ghost' });
 
@@ -536,12 +479,33 @@ test('rejects re-wait for a label that has no running agent', async () => {
   });
 });
 
-test('requires a label for re-wait mode', async () => {
+test('requires a label when task is omitted', async () => {
   await withHarness({}, async (harness) => {
     const result = await harness.call({ agent: 'scout' });
 
     assert.equal(result.isError, true);
     assert.match(result.content[0].text, /tabLabel is required/);
+  });
+});
+
+test('a blank task is a status check and does not spawn', async () => {
+  await withHarness({}, async (harness) => {
+    const missing = await harness.call({ agent: 'scout', task: '   ' });
+    assert.equal(missing.isError, true);
+    assert.match(missing.content[0].text, /tabLabel is required/);
+    assert.equal(harness.fake.callsMatching('agent', 'start').length, 0);
+
+    const unknown = await harness.call({
+      agent: 'scout',
+      task: '',
+      tabLabel: 'Ghost',
+    });
+    assert.equal(unknown.isError, true);
+    assert.match(
+      unknown.content[0].text,
+      /No running Herdr agent named "Ghost"/,
+    );
+    assert.equal(harness.fake.callsMatching('agent', 'start').length, 0);
   });
 });
 
@@ -556,20 +520,6 @@ test('rejects an unknown agent profile before touching Herdr', async () => {
   });
 });
 
-test('refuses a detached one-shot without a UI poller to collect it', async () => {
-  await withHarness({ hasUI: false }, async (harness) => {
-    const result = await harness.call({
-      agent: 'scout',
-      task: 'Find it',
-      wait: false,
-    });
-
-    assert.equal(result.isError, true);
-    assert.match(result.content[0].text, /Non-TUI sessions require wait: true/);
-    assert.equal(harness.fake.calls.length, 0);
-  });
-});
-
 test('a default call detaches in a UI session', async () => {
   await withHarness({}, async (harness) => {
     const started = await harness.callRaw({
@@ -577,20 +527,9 @@ test('a default call detaches in a UI session', async () => {
       task: 'Background job',
     });
 
-    assert.equal(started.details.waited, false);
+    assert.match(started.content[0].text, /started/);
     const record = Object.values((await harness.readState()).agents)[0];
     assert.equal(record?.detached, true);
-  });
-});
-
-test('a default call blocks in a headless session', async () => {
-  await withHarness({ hasUI: false }, async (harness) => {
-    const result = await harness.callRaw({
-      agent: 'scout',
-      task: 'Find it',
-    });
-
-    assert.equal(result.details.waited, true);
   });
 });
 
@@ -599,10 +538,8 @@ test('delivers a detached result through the widget poller and closes the one-sh
     const started = await harness.call({
       agent: 'scout',
       task: 'Background job',
-      wait: false,
     });
 
-    assert.equal(started.details.waited, false);
     assert.match(started.content[0].text, /started/);
     // Nobody is waiting, so the poller owns the result.
     const record = Object.values((await harness.readState()).agents)[0];
@@ -634,168 +571,7 @@ test('delivers a detached result through the widget poller and closes the one-sh
   });
 });
 
-test('recovers an EmptyResponse wait without collecting an intermediate artifact or repeating the task', async () => {
-  await withHarness({ mode: 'rpc', hasUI: false }, async (harness) => {
-    harness.fake.setBehavior(async (turn) => {
-      await fs.writeFile(turn.resultFile!, 'INTERMEDIATE');
-      return { result: 'TRANSPORT_FINAL', delayMs: 600 };
-    });
-    harness.fake.failCommand('agent wait', 'client_disconnected', {
-      times: 1,
-      stderr: 'Error: Custom { kind: Other, error: EmptyResponse }',
-    });
-    const result = await harness.call({
-      agent: 'scout',
-      task: 'Only once',
-      tabLabel: 'Reconnect',
-    });
-    assert.match(result.content[0].text, /TRANSPORT_FINAL/);
-    assert.doesNotMatch(result.content[0].text, /INTERMEDIATE/);
-    assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
-    assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
-    assert.equal(harness.fake.callsMatching('pane', 'close').length, 1);
-    assert.equal(harness.messages.length, 0);
-  });
-});
-
-test('taskless re-wait recovers EmptyResponse and returns a question before the intermediate result', async () => {
-  await withHarness({}, async (harness) => {
-    harness.fake.setBehavior(async (turn) => {
-      await fs.writeFile(turn.resultFile!, 'INTERMEDIATE');
-      return { question: 'Reconnect question?', delayMs: 600 };
-    });
-    await harness.call({
-      agent: 'scout',
-      task: 'Only once',
-      tabLabel: 'Reconnect Question',
-      wait: false,
-    });
-    harness.fake.failCommand('agent wait', 'client_disconnected', {
-      times: 1,
-      stderr: 'Error: Custom { kind: Other, error: EmptyResponse }',
-    });
-    const result = await harness.call({
-      agent: 'scout',
-      tabLabel: 'Reconnect Question',
-    });
-    assert.equal(result.details.status, 'question');
-    assert.match(result.content[0].text, /Reconnect question\?/);
-    assert.doesNotMatch(result.content[0].text, /INTERMEDIATE/);
-    assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
-    assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
-    assert.equal(harness.fake.callsMatching('pane', 'close').length, 0);
-    await new Promise((resolve) => setTimeout(resolve, 1100));
-    assert.equal(harness.messages.length, 0);
-    harness.fake.setBehavior(() => ({ result: 'ANSWER_FINAL' }));
-    const answered = await harness.call({
-      agent: 'scout',
-      tabLabel: 'Reconnect Question',
-      task: 'Answer',
-    });
-    assert.match(answered.content[0].text, /ANSWER_FINAL/);
-    assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
-  });
-});
-
-test('repeated wait transport failures return actionable recovery and retain the child in RPC mode', async () => {
-  await withHarness({ mode: 'rpc', hasUI: false }, async (harness) => {
-    harness.fake.setBehavior(() => ({ neverSettle: true }));
-    harness.fake.failCommand('agent wait', 'client_disconnected', {
-      stderr: 'Error: Custom { kind: Other, error: EmptyResponse }',
-    });
-    const result = await harness.call({
-      agent: 'scout',
-      task: 'Only once',
-      tabLabel: 'Reconnect Exhausted',
-    });
-    assert.equal(result.details.interruptReason, 'connection');
-    assert.match(result.content[0].text, /omit task to re-wait/);
-    assert.equal(harness.fake.callsMatching('agent', 'wait').length, 4);
-    assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
-    assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
-    assert.equal(harness.fake.callsMatching('pane', 'close').length, 0);
-    assert.equal(Object.keys((await harness.readState()).agents).length, 1);
-  });
-});
-
-test('concurrent explicit re-waits collect a detached outcome only once', async () => {
-  await withHarness({}, async (harness) => {
-    harness.fake.holdChildren();
-    harness.fake.setBehavior(() => ({
-      result: 'ONLY_COLLECT_ONCE',
-      delayMs: 0,
-    }));
-    await harness.call({
-      agent: 'scout',
-      task: 'One task',
-      tabLabel: 'Claim Race',
-      wait: false,
-    });
-    const one = harness.call({ agent: 'scout', tabLabel: 'Claim Race' });
-    const two = harness.call({ agent: 'scout', tabLabel: 'Claim Race' });
-    await harness.waitFor(
-      () => harness.fake.callsMatching('agent', 'wait').length >= 2,
-      'both collectors waiting',
-    );
-    await harness.fake.releaseChildren();
-    const results = await Promise.all([one, two]);
-    assert.equal(
-      results.filter((result) =>
-        result.content[0].text.includes('ONLY_COLLECT_ONCE'),
-      ).length,
-      1,
-    );
-    assert.equal(harness.fake.callsMatching('pane', 'close').length, 1);
-    assert.equal(harness.messages.length, 0);
-  });
-});
-
-test('abort during wait reconnect preserves the child without another wait or prompt', async () => {
-  await withHarness({ mode: 'rpc', hasUI: false }, async (harness) => {
-    harness.fake.setBehavior(() => ({ neverSettle: true }));
-    harness.fake.failCommand('agent wait', 'client_disconnected', {
-      stderr: 'Error: Custom { kind: Other, error: EmptyResponse }',
-    });
-    const controller = new AbortController();
-    const pending = harness.call(
-      { agent: 'scout', task: 'Only once' },
-      { signal: controller.signal },
-    );
-    await harness.waitFor(
-      () => harness.fake.callsMatching('agent', 'wait').length === 1,
-      'first transport failure',
-    );
-    controller.abort();
-    const result = await pending;
-    assert.equal(result.details.interruptReason, 'aborted');
-    assert.equal(harness.fake.callsMatching('agent', 'wait').length, 1);
-    assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
-    assert.equal(harness.fake.callsMatching('pane', 'close').length, 0);
-  });
-});
-
-test('wait reconnect keeps the original timeout budget instead of resetting it per retry', async () => {
-  await withHarness({}, async (harness) => {
-    harness.fake.setBehavior(() => ({ neverSettle: true }));
-    await harness.call({ agent: 'scout', task: 'Only once', wait: false });
-    const target = Object.values((await harness.readState()).agents)[0]
-      ?.automationName;
-    assert.ok(target);
-    harness.fake.failCommand('agent wait', 'client_disconnected', {
-      stderr: 'Error: Custom { kind: Other, error: EmptyResponse }',
-    });
-    const start = Date.now();
-    await assert.rejects(waitForAgent(target, 180), { code: 'timeout' });
-    assert.ok(Date.now() - start < 2000);
-    const waits = harness.fake.callsMatching('agent', 'wait');
-    assert.ok(waits.length >= 1 && waits.length < 4);
-    for (const args of waits)
-      assert.ok(Number(args[args.indexOf('--timeout') + 1]) <= 180);
-    assert.equal(harness.fake.callsMatching('pane', 'close').length, 0);
-  });
-});
-
-test('re-wait keeps ownership and question handling after simulated handoff changes both terminals', async () => {
+test('status check keeps ownership after a simulated handoff changes both terminals', async () => {
   await withHarness({}, async (harness) => {
     harness.fake.holdChildren();
     harness.fake.setBehavior(() => ({
@@ -806,22 +582,18 @@ test('re-wait keeps ownership and question handling after simulated handoff chan
       agent: 'scout',
       task: 'One task',
       tabLabel: 'Handoff Question',
-      wait: false,
     });
     const before = Object.values((await harness.readState()).agents)[0];
     harness.fake.simulateLiveHandoff();
-    const pending = harness.call({
+    const result = await harness.call({
       agent: 'scout',
       tabLabel: 'Handoff Question',
     });
-    await harness.waitFor(
-      () => harness.fake.callsMatching('agent', 'wait').length > 0,
-      'handoff re-wait',
-    );
+    assert.equal(result.isError, undefined);
+    assert.equal(result.details.tabLabel, 'Handoff Question');
     await harness.fake.releaseChildren();
-    const result = await pending;
-    assert.equal(result.details.status, 'question');
-    assert.match(result.content[0].text, /Handoff question/);
+    const delivered = await harness.collect('Handoff Question');
+    assert.match(delivered.content, /Handoff question/);
     const after = Object.values((await harness.readState()).agents)[0];
     assert.notEqual(after?.ownerTerminalId, before?.ownerTerminalId);
     assert.equal(after?.ownerSessionId, before?.ownerSessionId);
@@ -833,25 +605,21 @@ test('re-wait keeps ownership and question handling after simulated handoff chan
       tabLabel: 'Handoff Question',
       task: 'Answer',
     });
-    assert.match(answered.content[0].text, /HANDOFF_ANSWER/);
+    assert.equal(answered.details.reused, true);
+    const answer = await harness.collect('Handoff Question');
+    assert.match(answer.content, /HANDOFF_ANSWER/);
     assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
   });
 });
 
 test('unreconcilable legacy handoff records are retained without adopting or replacing the child', async () => {
-  await withHarness({ mode: 'rpc', hasUI: false }, async (harness) => {
+  await withHarness({}, async (harness) => {
     harness.fake.setBehavior(() => ({ neverSettle: true }));
-    const controller = new AbortController();
-    const pending = harness.call(
-      { agent: 'scout', task: 'One task', tabLabel: 'Legacy Handoff' },
-      { signal: controller.signal },
-    );
-    await harness.waitFor(
-      () => harness.fake.callsMatching('agent', 'wait').length > 0,
-      'initial wait',
-    );
-    controller.abort();
-    await pending;
+    await harness.call({
+      agent: 'scout',
+      task: 'One task',
+      tabLabel: 'Legacy Handoff',
+    });
     const state = await harness.readState();
     for (const record of Object.values(state.agents)) delete record.ownerPaneId;
     await fs.writeFile(harness.statePath, JSON.stringify(state));
@@ -874,42 +642,6 @@ test('unreconcilable legacy handoff records are retained without adopting or rep
     assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
     assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
     assert.equal(Object.keys((await harness.readState()).agents).length, 1);
-  });
-});
-
-test('concurrent RPC re-waits collect an attached interrupted turn only once', async () => {
-  await withHarness({ mode: 'rpc', hasUI: false }, async (harness) => {
-    harness.fake.setBehavior(() => ({ neverSettle: true, delayMs: 0 }));
-    const controller = new AbortController();
-    const started = harness.call(
-      { agent: 'scout', task: 'One task', tabLabel: 'Attached Race' },
-      { signal: controller.signal },
-    );
-    await harness.waitFor(
-      () => harness.fake.callsMatching('agent', 'wait').length === 1,
-      'initial attached wait',
-    );
-    controller.abort();
-    await started;
-    const one = harness.call({ agent: 'scout', tabLabel: 'Attached Race' });
-    const two = harness.call({ agent: 'scout', tabLabel: 'Attached Race' });
-    await harness.waitFor(
-      () => harness.fake.callsMatching('agent', 'wait').length >= 3,
-      'both attached collectors',
-    );
-    const target = Object.values((await harness.readState()).agents)[0]
-      ?.automationName;
-    assert.ok(target);
-    await harness.fake.completeAgent(target, 'ATTACHED_COLLECT_ONCE');
-    const results = await Promise.all([one, two]);
-    assert.equal(
-      results.filter((result) =>
-        result.content[0].text.includes('ATTACHED_COLLECT_ONCE'),
-      ).length,
-      1,
-    );
-    assert.equal(harness.fake.callsMatching('pane', 'close').length, 1);
-    assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
   });
 });
 
@@ -997,9 +729,9 @@ test('delivers a detached question without closing the agent', async () => {
     await harness.call({
       agent: 'scout',
       task: 'Background job',
-      wait: false,
       tabLabel: 'Scout Detached',
     });
+    await harness.collect('Scout Detached');
 
     await harness.waitFor(
       () => harness.messages.length > 0,
@@ -1022,7 +754,8 @@ test('uses tabs instead of panes when the tab layout is configured', async () =>
   await withHarness({ layout: 'tab' }, async (harness) => {
     const result = await harness.call({ agent: 'scout', task: 'Find it' });
 
-    assert.equal(result.details.closed, true);
+    assert.match(result.content[0].text, /started/);
+    await harness.collect('Scout');
     const create = harness.fake.callsMatching('tab', 'create')[0];
     assert.ok(create, 'expected a tab create');
     assert.equal(flagValue(create, '--label'), 'Scout');
@@ -1038,7 +771,8 @@ test('spawns a one-shot into the Agents workspace and closes its tab', async () 
   await withHarness({ layout: 'workspace' }, async (harness) => {
     const result = await harness.call({ agent: 'scout', task: 'Find it' });
 
-    assert.equal(result.details.closed, true);
+    assert.match(result.content[0].text, /started/);
+    await harness.collect('Scout');
 
     // The Agents workspace was resolved live and created once, unfocused.
     assert.ok(
@@ -1116,7 +850,6 @@ test('recreates the Agents workspace after the user closed it by hand', async ()
       task: 'second',
       tabLabel: 'Scout Two',
     });
-    assert.equal(result.details.waited, false);
     assert.equal(harness.fake.callsMatching('workspace', 'create').length, 2);
     const secondWorkspaceId = flagValue(
       harness.fake.callsMatching('tab', 'create').at(-1)!,
@@ -1145,9 +878,7 @@ test('delivers an unseen done completion, notifies, and closes the one-shot', as
     const started = await harness.call({
       agent: 'scout',
       task: 'Background job',
-      wait: false,
     });
-    assert.equal(started.details.waited, false);
 
     await harness.waitFor(
       () => harness.messages.length > 0,
@@ -1243,8 +974,13 @@ test('serializes parallel workspace spawns into one workspace and unique labels'
     ]);
     for (const result of results) {
       assert.equal(result.isError, undefined);
-      assert.equal(result.details.closed, true);
+      assert.match(result.content[0].text, /started/);
     }
+    await harness.waitFor(
+      () => harness.messages.length >= 3,
+      'three workspace results',
+      8000,
+    );
 
     // One shared Agents workspace, created exactly once.
     assert.equal(harness.fake.callsMatching('workspace', 'create').length, 1);
@@ -1301,7 +1037,7 @@ test('serializes parallel workspace spawns into one workspace and unique labels'
   });
 });
 
-test('re-wait in workspace mode is a pure lookup and never creates the workspace', async () => {
+test('status check in workspace mode is a pure lookup and never creates the workspace', async () => {
   await withHarness({ layout: 'workspace' }, async (harness) => {
     const ghost = await harness.call({ agent: 'scout', tabLabel: 'Ghost' });
     assert.equal(ghost.isError, true);
@@ -1309,28 +1045,26 @@ test('re-wait in workspace mode is a pure lookup and never creates the workspace
     // A missing workspace means "nothing to find", not a fresh workspace.
     assert.equal(harness.fake.callsMatching('workspace', 'create').length, 0);
 
-    // A live detached agent is still findable and re-waitable.
+    // A live detached agent is still findable by label.
     harness.fake.setBehavior(() => ({ neverSettle: true }));
     await harness.call({
       agent: 'scout',
       task: 'stay',
       tabLabel: 'Scout Live',
-      wait: false,
     });
     const rewait = await harness.call({
       agent: 'scout',
       tabLabel: 'Scout Live',
-      wait: false,
     });
-    assert.match(rewait.content[0].text, /is still running/);
-    // Still exactly the one workspace the spawn above created — the re-wait
+    assert.match(rewait.content[0].text, /status: /);
+    // Still exactly the one workspace the spawn above created — the status check
     // added none.
     assert.equal(harness.fake.callsMatching('workspace', 'create').length, 1);
   });
 });
 
 for (const layout of ['tab', 'workspace'] as const) {
-  test(`preserves the logical label through renamed ${layout} question, re-wait and resume`, async () => {
+  test(`preserves the logical label through renamed ${layout} question, status check and resume`, async () => {
     await withHarness({ layout }, async (harness) => {
       harness.fake.setBehavior((turn) =>
         turn.turn === 1 ? { question: 'Which color?' } : { result: 'green' },
@@ -1341,13 +1075,15 @@ for (const layout of ['tab', 'workspace'] as const) {
       );
       assert.ok(tab);
       tab.label = 'pi';
+      const question = await harness.collect('Scout');
+      assert.match(question.content, /tabLabel "Scout"/);
 
       const rewaited = await harness.call({
         agent: 'scout',
         tabLabel: 'Scout',
       });
       assert.equal(rewaited.details.tabLabel, 'Scout');
-      assert.match(rewaited.content[0].text, /tabLabel "Scout"/);
+      assert.equal(rewaited.details.status, 'question');
 
       const answered = await harness.call({
         agent: 'scout',
@@ -1356,7 +1092,7 @@ for (const layout of ['tab', 'workspace'] as const) {
       });
       assert.equal(answered.details.reused, true);
       assert.equal(answered.details.tabLabel, 'Scout');
-      assert.equal(answered.details.closed, true);
+      await harness.collect('Scout');
       assert.equal(
         (await harness.readState()).closedHistory[0]?.tabLabel,
         'Scout',
@@ -1371,7 +1107,8 @@ for (const layout of ['tab', 'workspace'] as const) {
       });
       assert.equal(resumed.details.resumed, true);
       assert.equal(resumed.details.tabLabel, 'Scout');
-      assert.match(resumed.content[0].text, /green remembered/);
+      const remembered = await harness.collect('Scout');
+      assert.match(remembered.content, /green remembered/);
     });
   });
 
@@ -1404,8 +1141,8 @@ test('continues a closed workspace agent via resumeClosed', async () => {
       task: 'first',
       tabLabel: 'Scout Ws',
     });
+    await harness.collect('Scout Ws');
     assert.equal(first.details.reused, false);
-    assert.equal(first.details.closed, true);
 
     const second = await harness.call({
       agent: 'scout',
@@ -1413,8 +1150,8 @@ test('continues a closed workspace agent via resumeClosed', async () => {
       tabLabel: 'Scout Ws',
       resumeClosed: true,
     });
+    await harness.collect('Scout Ws');
     assert.equal(second.details.resumed, true);
-    assert.equal(second.details.closed, true);
     // The emptied workspace vanished with the first close, so the resume
     // re-created it, and each task spawned its own agent tab.
     assert.equal(harness.fake.callsMatching('workspace', 'create').length, 2);
@@ -1474,7 +1211,7 @@ test('resumeClosed archives and resumes in workspace mode', async () => {
       task: 'Remember the token ALPHA-42.',
       tabLabel: 'Scout Ws Resume',
     });
-    assert.equal(first.details.closed, true);
+    await harness.collect(first.details.tabLabel);
     const history = (await harness.readState()).closedHistory;
     assert.equal(history.length, 1);
 
@@ -1484,9 +1221,9 @@ test('resumeClosed archives and resumes in workspace mode', async () => {
       tabLabel: 'Scout Ws Resume',
       resumeClosed: true,
     });
+    const remembered = await harness.collect('Scout Ws Resume');
     assert.equal(resumed.details.resumed, true);
-    assert.equal(resumed.details.closed, true);
-    assert.match(resumed.content[0].text, /Result from scout_/);
+    assert.match(remembered.content, /Result from scout_/);
   });
 });
 
@@ -1595,13 +1332,20 @@ test("does not accept a reused agent's previous settled state as this turn's res
     );
 
     await harness.call({ agent: 'scout', task: 'one' });
-    const second = await harness.call({ agent: 'scout', task: 'Approach B' });
+    const firstDelivery = await harness.collect('Scout');
+    assert.match(firstDelivery.content, /Which approach?/);
+    const second = await harness.call({
+      agent: 'scout',
+      task: 'Approach B',
+      tabLabel: 'Scout',
+    });
 
     assert.equal(second.details.reused, true);
-    assert.match(second.content[0].text, /SECOND TURN RESULT/);
+    assert.match(second.content[0].text, /started/);
     assert.doesNotMatch(second.content[0].text, /Which approach?/);
-    // It really had to wait it out rather than short-circuit on stale idle.
-    assert.ok(harness.fake.callsMatching('agent', 'wait').length >= 2);
+    const secondDelivery = await harness.collect('Scout');
+    assert.match(secondDelivery.content, /SECOND TURN RESULT/);
+    assert.doesNotMatch(secondDelivery.content, /Which approach?/);
   });
 });
 
@@ -1614,9 +1358,9 @@ test('collects a child that finishes as done rather than idle', async () => {
     }));
 
     const result = await harness.call({ agent: 'scout', task: 'Find it' });
+    const delivered = await harness.collect(result.details.tabLabel);
 
-    assert.match(result.content[0].text, /DONE-STATUS RESULT/);
-    assert.equal(result.details.closed, true);
+    assert.match(delivered.content, /DONE-STATUS RESULT/);
   });
 });
 
@@ -1644,6 +1388,7 @@ test('removes the managed temp directory on close but keeps it while an agent ru
       ]);
 
       await harness.call({ agent: 'worker', task: 'close me' });
+      await harness.collect('Worker');
       // The closed one-shot's own directory is gone; the running one is kept.
       const dirs = await fs.readdir(path.dirname(detachedDir));
       assert.equal(
@@ -1671,13 +1416,11 @@ test('delivers two detached outcomes as one batch with a single turn trigger', a
     await harness.call({
       agent: 'scout',
       task: 'a',
-      wait: false,
       tabLabel: 'Scout A',
     });
     await harness.call({
       agent: 'scout',
       task: 'b',
-      wait: false,
       tabLabel: 'Scout B',
     });
     await harness.fake.releaseChildren();
@@ -1799,7 +1542,7 @@ test('archives a completed one-shot and resumes it with --session', async () => 
       task: 'first slice',
       tabLabel: 'Scout Resume',
     });
-    assert.equal(first.details.closed, true);
+    await harness.collect(first.details.tabLabel);
     const history = (await harness.readState()).closedHistory ?? [];
     assert.equal(history.length, 1);
     assert.equal(history[0]?.tabLabel, 'Scout Resume');
@@ -1813,11 +1556,11 @@ test('archives a completed one-shot and resumes it with --session', async () => 
       tabLabel: 'Scout Resume',
       resumeClosed: true,
     });
+    await harness.collect('Scout Resume');
     if (resumed.isError) {
       throw new Error(`resume failed: ${resumed.content[0].text}`);
     }
     assert.equal(resumed.details.resumed, true);
-    assert.equal(resumed.details.closed, true);
 
     const starts = harness.fake.callsMatching('agent', 'start');
     const resumeStart = starts.at(-1) ?? [];
@@ -1840,6 +1583,7 @@ test('resumeClosed errors when the child JSONL is missing or mismatched', async 
       task: 'first',
       tabLabel: 'Scout Resume',
     });
+    await harness.collect('Scout Resume');
     const history = (await harness.readState()).closedHistory ?? [];
     const sessionFile = history[0]?.childSessionFile;
     assert.ok(sessionFile);
@@ -1895,6 +1639,7 @@ test('concurrent resumeClosed has a single winner', async () => {
       task: 'first',
       tabLabel: 'Scout Resume',
     });
+    await harness.collect('Scout Resume');
     harness.fake.setBehavior(() => ({
       result: 'resumed',
       delayMs: 400,
@@ -1925,6 +1670,7 @@ test('a resumed one-shot can ask a question and be answered by label', async () 
       task: 'first',
       tabLabel: 'Scout Resume',
     });
+    await harness.collect('Scout Resume');
     harness.fake.setBehavior(() => ({ question: 'Which module?' }));
     const asked = await harness.call({
       agent: 'scout',
@@ -1932,8 +1678,8 @@ test('a resumed one-shot can ask a question and be answered by label', async () 
       tabLabel: 'Scout Resume',
       resumeClosed: true,
     });
-    assert.equal(asked.details.status, 'question');
-    assert.equal(asked.details.closed, false);
+    const question = await harness.collect('Scout Resume');
+    assert.equal(question.customType, 'herdr_agent_question');
     assert.equal(asked.details.resumed, true);
 
     harness.fake.setBehavior(() => ({ result: 'answered' }));
@@ -1942,9 +1688,9 @@ test('a resumed one-shot can ask a question and be answered by label', async () 
       task: 'the auth module',
       tabLabel: 'Scout Resume',
     });
+    const answeredDelivery = await harness.collect('Scout Resume');
     assert.equal(answered.details.reused, true);
-    assert.equal(answered.details.closed, true);
-    assert.match(answered.content[0].text, /answered/);
+    assert.match(answeredDelivery.content, /answered/);
   });
 });
 
@@ -1953,9 +1699,9 @@ test('detached one-shot completion archives before cleanup', async () => {
     await harness.call({
       agent: 'scout',
       task: 'background',
-      wait: false,
       tabLabel: 'Scout Detached Resume',
     });
+    await harness.collect('Scout Detached Resume');
     await harness.waitFor(async () => {
       const history = (await harness.readState()).closedHistory ?? [];
       // Wait for the final status: the record is staged first and promoted
@@ -1979,6 +1725,7 @@ test('spawn failure after claim releases the closed history slot', async () => {
       task: 'first',
       tabLabel: 'Scout Resume',
     });
+    await harness.collect('Scout Resume');
     harness.fake.failEveryStart('agent_start_failed');
     await assert.rejects(() =>
       harness.call({
@@ -2000,6 +1747,7 @@ test('malformed target creation after claim rolls the history slot back', async 
       task: 'first',
       tabLabel: 'Scout Resume',
     });
+    await harness.collect('Scout Resume');
     harness.fake.malformCommand('pane split', '<html>nope</html>');
     await assert.rejects(() =>
       harness.call({
@@ -2022,6 +1770,7 @@ test('lifecycle write failure after start releases the claim and closes the part
       task: 'first',
       tabLabel: 'Scout Resume',
     });
+    await harness.collect('Scout Resume');
     setFailNextStateMutation('lifecycle');
     await assert.rejects(() =>
       harness.call({
@@ -2044,6 +1793,7 @@ test('failed resume spawn redacts session and temp paths from the error', async 
       task: 'first',
       tabLabel: 'Scout Resume',
     });
+    await harness.collect('Scout Resume');
     const history = (await harness.readState()).closedHistory ?? [];
     const sessionFile = history[0]?.childSessionFile;
     assert.ok(sessionFile);
@@ -2070,16 +1820,13 @@ test('failed resume spawn redacts session and temp paths from the error', async 
 test('missing continuation metadata does not close or archive a one-shot', async () => {
   await withHarness({}, async (harness) => {
     harness.fake.skipSessionMeta();
-    const result = await harness.call({
+    await harness.call({
       agent: 'scout',
       task: 'first',
       tabLabel: 'Scout Missing Meta',
     });
-    assert.equal(result.details.closed, false);
-    assert.match(
-      String(result.details.closeError),
-      /session metadata is missing/,
-    );
+    const delivered = await harness.collect('Scout Missing Meta');
+    assert.match(delivered.content, /session metadata is missing/);
     assert.equal(harness.fake.panes.length, 2);
     const history = (await harness.readState()).closedHistory ?? [];
     assert.equal(history.length, 0);
@@ -2092,7 +1839,6 @@ test('stage write failure keeps the live one-shot and does not expose resumable 
     await harness.call({
       agent: 'scout',
       task: 'background',
-      wait: false,
       tabLabel: 'Scout Stage Fail',
     });
     setFailNextStateMutation('stage');
@@ -2119,7 +1865,9 @@ test('close failure after staging keeps the live agent and is not resumable', as
       task: 'Find it',
       tabLabel: 'Scout Close Fail',
     });
-    assert.equal(result.details.closed, false);
+    const delivered = await harness.collect('Scout Close Fail');
+    assert.match(delivered.content, /PRECIOUS RESULT/);
+    assert.match(delivered.content, /failed to close/);
     assert.equal(harness.fake.panes.length, 2);
     const state = await harness.readState();
     assert.ok(Object.keys(state.agents).length > 0);
@@ -2139,6 +1887,7 @@ test('/herdr-agents refuses to close a questioned one-shot', async () => {
       task: 'ask',
       tabLabel: 'Scout Question Close',
     });
+    await harness.collect('Scout Question Close');
     await harness.runCommand('herdr-agents');
     assert.equal(harness.fake.panes.length, 2);
     assert.match(
@@ -2157,6 +1906,7 @@ test('/herdr-agents refuses to close an active resumed one-shot', async () => {
       task: 'first',
       tabLabel: 'Scout Resume Close',
     });
+    await harness.collect('Scout Resume Close');
     harness.fake.setBehavior(() => ({ question: 'Which module?' }));
     const asked = await harness.call({
       agent: 'scout',
@@ -2164,8 +1914,8 @@ test('/herdr-agents refuses to close an active resumed one-shot', async () => {
       tabLabel: 'Scout Resume Close',
       resumeClosed: true,
     });
-    assert.equal(asked.details.status, 'question');
-    assert.equal(asked.details.closed, false);
+    const question = await harness.collect('Scout Resume Close');
+    assert.equal(question.customType, 'herdr_agent_question');
     await harness.runCommand('herdr-agents');
     assert.equal(harness.fake.panes.length, 2);
     assert.match(
@@ -2184,6 +1934,7 @@ test('aborted resume spawn still cleans up with an independent signal', async ()
       task: 'first',
       tabLabel: 'Scout Resume Abort',
     });
+    await harness.collect('Scout Resume Abort');
     harness.fake.delayAgentStart(800);
     const controller = new AbortController();
     const pending = harness.call(
@@ -2214,6 +1965,7 @@ test('unconfirmed rollback close keeps the claim instead of a resumable duplicat
       task: 'first',
       tabLabel: 'Scout Resume CloseFail',
     });
+    await harness.collect('Scout Resume CloseFail');
     harness.fake.failEveryStart('agent_start_failed');
     harness.fake.failCommand('pane close', 'pane_close_failed');
     await assert.rejects(() =>
@@ -2237,6 +1989,7 @@ test('prompt failure after a durable resume leaves the live generation recoverab
       task: 'first',
       tabLabel: 'Scout Resume Prompt',
     });
+    await harness.collect('Scout Resume Prompt');
     harness.fake.failCommand('agent prompt', 'agent_prompt_failed', {
       times: 1,
     });
@@ -2263,6 +2016,7 @@ test('close success plus finalize failure still lets a later resume succeed', as
       task: 'first',
       tabLabel: 'Scout Resume Finalize',
     });
+    await harness.collect('Scout Resume Finalize');
     assert.equal(first.isError, undefined);
     assert.equal(harness.fake.panes.length, 1);
     const history = (await harness.readState()).closedHistory ?? [];
@@ -2273,9 +2027,9 @@ test('close success plus finalize failure still lets a later resume succeed', as
       tabLabel: 'Scout Resume Finalize',
       resumeClosed: true,
     });
+    await harness.collect('Scout Resume Finalize');
     assert.equal(resumed.isError, undefined);
     assert.equal(resumed.details.resumed, true);
-    assert.equal(resumed.details.closed, true);
   });
 });
 
@@ -2286,11 +2040,11 @@ test('resumeClosed does not spawn over a live working agent', async () => {
       task: 'first',
       tabLabel: 'Scout Live Working',
     });
+    await harness.collect('Scout Live Working');
     harness.fake.setBehavior(() => ({ neverSettle: true }));
     await harness.call({
       agent: 'scout',
       task: 'live',
-      wait: false,
       tabLabel: 'Scout Live Working',
     });
     await harness.waitFor(
@@ -2316,19 +2070,14 @@ test('resumeClosed does not spawn over a live working agent', async () => {
 
 test('resumeClosed does not spawn over a settled detached live agent', async () => {
   await withHarness({}, async (harness) => {
+    // No result artifact: the poller leaves the settled agent detached so a
+    // status check can still read the scrollback.
+    harness.fake.setBehavior(() => ({ transcript: 'finished talking' }));
     await harness.call({
       agent: 'scout',
       task: 'first',
       tabLabel: 'Scout Live Settled',
     });
-    harness.fake.holdChildren();
-    await harness.call({
-      agent: 'scout',
-      task: 'background',
-      wait: false,
-      tabLabel: 'Scout Live Settled',
-    });
-    await harness.fake.releaseChildren();
     await harness.waitFor(
       () =>
         harness.fake.panes.some(
@@ -2338,6 +2087,7 @@ test('resumeClosed does not spawn over a settled detached live agent', async () 
         ),
       'detached live agent to settle',
     );
+    await new Promise((resolve) => setTimeout(resolve, 1200));
     const blocked = await harness.call({
       agent: 'scout',
       task: 'resume anyway',
@@ -2345,8 +2095,9 @@ test('resumeClosed does not spawn over a settled detached live agent', async () 
       resumeClosed: true,
     });
     assert.equal(blocked.isError, true);
-    assert.match(blocked.content[0].text, /waiting to be collected|still open/);
-    assert.equal(harness.fake.callsMatching('agent', 'start').length, 2);
+    assert.match(blocked.content[0].text, /waiting to be delivered/);
+    assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
+    assert.equal(harness.messages.length, 0);
   });
 });
 
@@ -2367,6 +2118,7 @@ test('resumeClosed resolves project skills from the archived cwd', async () => {
         task: 'first',
         tabLabel: 'Scout Cwd',
       });
+    await harness.collect('Scout Cwd');
       const statePath = harness.statePath;
       const state = JSON.parse(await fs.readFile(statePath, 'utf8'));
       const record = state.closedHistory[0];
@@ -2388,6 +2140,7 @@ test('resumeClosed resolves project skills from the archived cwd', async () => {
         tabLabel: 'Scout Cwd',
         resumeClosed: true,
       });
+    await harness.collect('Scout Cwd');
       if (resumed.isError) {
         throw new Error(`resume failed: ${resumed.content[0].text}`);
       }
@@ -2412,6 +2165,7 @@ test('failed resume spawn redacts session paths that contain whitespace', async 
       task: 'first',
       tabLabel: 'Scout Space Path',
     });
+    await harness.collect('Scout Space Path');
     const state = JSON.parse(await fs.readFile(harness.statePath, 'utf8'));
     const sessionFile = state.closedHistory[0].childSessionFile as string;
     const spaced = path.join(path.dirname(sessionFile), 'child session.jsonl');

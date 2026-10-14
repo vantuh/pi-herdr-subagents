@@ -40,9 +40,11 @@ describe('prompts', () => {
     assert.ok(!GLOBAL_INSTRUCTIONS.includes('timeoutMs'));
   });
 
-  it('GLOBAL_INSTRUCTIONS covers detached delivery default', () => {
-    assert.ok(GLOBAL_INSTRUCTIONS.includes('By default'));
-    assert.ok(GLOBAL_INSTRUCTIONS.includes('pass `wait: true`'));
+  it('GLOBAL_INSTRUCTIONS covers delivery without blocking', () => {
+    assert.ok(
+      GLOBAL_INSTRUCTIONS.includes('as soon as the prompt is submitted'),
+    );
+    assert.ok(GLOBAL_INSTRUCTIONS.includes('requires TUI mode'));
   });
 
   it('GLOBAL_INSTRUCTIONS does not use proactive delegation', () => {
@@ -50,10 +52,10 @@ describe('prompts', () => {
     assert.ok(!GLOBAL_INSTRUCTIONS.includes('Proactively use'));
   });
 
-  it('GLOBAL_INSTRUCTIONS covers abort and timeout re-wait', () => {
-    assert.ok(GLOBAL_INSTRUCTIONS.includes('times out or was aborted'));
+  it('GLOBAL_INSTRUCTIONS covers status checks', () => {
     assert.ok(GLOBAL_INSTRUCTIONS.includes('no `task`'));
-    assert.ok(GLOBAL_INSTRUCTIONS.includes('re-wait'));
+    assert.ok(GLOBAL_INSTRUCTIONS.includes('status and recent output'));
+    assert.ok(GLOBAL_INSTRUCTIONS.includes('Do not poll it in a loop'));
   });
 
   it('GLOBAL_INSTRUCTIONS covers closed one-shot resume and duplicate guard', () => {

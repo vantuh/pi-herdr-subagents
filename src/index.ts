@@ -156,7 +156,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
         'Delegate exploration, research, planning, review, and isolated implementation to a one-shot Herdr agent.',
       promptGuidelines: [
         'Use herdr_agent when global Delegation says isolated context helps; call after /run, a named role, or explicit delegation request.',
-        'Follow the Herdr agents system instructions for self-contained tasks, independent parallel calls, avoiding duplicate work, re-wait, and resume.',
+        'Follow the Herdr agents system instructions for self-contained tasks, independent parallel calls, avoiding duplicate work, status checks, and resume.',
       ],
       parameters: buildHerdrAgentParams(agentDescription),
 

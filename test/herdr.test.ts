@@ -3,13 +3,9 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 
 import {
-  buildAgentPromptArgs,
-  buildAgentRenameArgs,
-  buildAgentWaitArgs,
   mapPromptError,
   parseAgentSnapshot,
   parseStartedAgentSnapshot,
-  promptAcceptanceObserved,
   startedAgentReady,
 } from '../src/herdr/agent.ts';
 import {
@@ -26,22 +22,13 @@ import {
   listManagedWorkspaceAgents,
 } from '../src/herdr/placement.ts';
 import {
-  buildAgentFinishedNotificationArgs,
   findAgentsWorkspaceId,
   parseCreatedWorkspace,
   parseWorkspaceListOutput,
 } from '../src/herdr/snapshot.ts';
+import { buildAgentFinishedNotificationArgs } from '../src/ui/poller.ts';
 import { emptyHerdrAgentsState } from '../src/state/store.ts';
 import type { HerdrContext, PaneInfo, TabInfo } from '../src/types.ts';
-
-test('builds an atomic prompt submit without the hardcoded --wait stall gate', () => {
-  assert.deepEqual(buildAgentPromptArgs('reviewer_ab12', 'Review'), [
-    'agent',
-    'prompt',
-    'reviewer_ab12',
-    'Review',
-  ]);
-});
 
 test('maps agent_blocked prompt failures to an actionable orchestrator error', () => {
   const secret = 'SECRET_PROMPT_TEXT';
@@ -143,32 +130,6 @@ test('sanitizes exact argv values including paths with spaces from Herdr stderr'
   }
 });
 
-test('builds a completion wait that ignores blocked', () => {
-  assert.deepEqual(
-    buildAgentWaitArgs('worker_ab12', 120000, ['idle', 'done']),
-    [
-      'agent',
-      'wait',
-      'worker_ab12',
-      '--until',
-      'idle',
-      '--until',
-      'done',
-      '--timeout',
-      '120000',
-    ],
-  );
-});
-
-test('reassigns the requested automation name after startup recovery', () => {
-  assert.deepEqual(buildAgentRenameArgs('w1:p2', 'scout_ab12'), [
-    'agent',
-    'rename',
-    'w1:p2',
-    'scout_ab12',
-  ]);
-});
-
 test('recognizes Pi after a transient startup kind mismatch', () => {
   const kiro = parseStartedAgentSnapshot(
     JSON.stringify({
@@ -207,62 +168,6 @@ test('parses only real completion sequences from agent get', () => {
       stateChangeSeq: 12,
       completionSeq: typeof completion === 'number' ? completion : undefined,
     });
-  }
-});
-
-test('prompt acceptance requires newer activity or an actual completion', () => {
-  const before = { status: 'idle', stateChangeSeq: 10, completionSeq: 9 };
-  for (const status of ['working', 'blocked']) {
-    assert.equal(
-      promptAcceptanceObserved(before, {
-        status,
-        stateChangeSeq: 10,
-        completionSeq: 9,
-      }),
-      null,
-    );
-    assert.equal(
-      promptAcceptanceObserved(before, {
-        status,
-        stateChangeSeq: 11,
-        completionSeq: 9,
-      }),
-      'working',
-    );
-  }
-  for (const status of ['idle', 'done']) {
-    for (const completionSeq of [undefined, 0, 9]) {
-      assert.equal(
-        promptAcceptanceObserved(before, {
-          status,
-          stateChangeSeq: 11,
-          completionSeq,
-        }),
-        null,
-      );
-    }
-    assert.equal(
-      promptAcceptanceObserved(before, {
-        status,
-        stateChangeSeq: 11,
-        completionSeq: 11,
-      }),
-      'settled',
-    );
-    assert.equal(
-      promptAcceptanceObserved(
-        { status: 'idle', stateChangeSeq: 10 },
-        { status, stateChangeSeq: 11 },
-      ),
-      null,
-    );
-    assert.equal(
-      promptAcceptanceObserved(
-        { status: 'idle', stateChangeSeq: 10 },
-        { status, stateChangeSeq: 11, completionSeq: 11 },
-      ),
-      'settled',
-    );
   }
 });
 
@@ -842,7 +747,7 @@ test('parses the workspace list envelope and drops malformed entries', () => {
       }),
     ),
     [
-      { workspace_id: 'w1', label: 'main', focused: true },
+      { workspace_id: 'w1', label: 'main' },
       { workspace_id: 'w2', label: 'Agents' },
     ],
   );

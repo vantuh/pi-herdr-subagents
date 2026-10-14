@@ -73,34 +73,9 @@ function elapsedLabel(agent: HerdrAgentInfo, now: number): string {
   return formatElapsed(now - started);
 }
 
-/**
- * The widget exists to surface agents nobody is currently watching. While the
- * Orchestrator blocks on `wait: true`, the tool call already renders
- * "Waiting for Herdr agent <label>...", so a widget row would be a third copy
- * of the same fact.
- *
- * The one exception is `blocked`: Herdr reports it when the child sits on an
- * approval dialog or a question, and the tool call cannot distinguish that from
- * healthy work — it keeps showing the same "Waiting for…" line until timeout.
- * That state is the whole reason the row is worth keeping.
- */
-/**
- * The same definition of "finished" the blocking path uses: `waitForAgent`
- * waits `--until idle --until done`. Keeping one definition means async
- * delivery cannot disagree with a synchronous wait about whether an agent is
- * done.
- */
+/** Idle or done: the child has finished its turn. */
 export function isSettledAgentStatus(status: string): boolean {
   return status === 'idle' || status === 'done';
-}
-
-export function visibleWidgetAgents(
-  agents: readonly HerdrAgentInfo[],
-  awaitedLabels: ReadonlySet<string>,
-): HerdrAgentInfo[] {
-  return agents.filter(
-    (agent) => !awaitedLabels.has(agent.tabLabel) || agent.status === 'blocked',
-  );
 }
 
 export function renderAgentWidgetLines(

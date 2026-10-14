@@ -6,10 +6,7 @@ import type {
 import { readAgentQuestion, readAgentResult } from '../artifacts.ts';
 import { execHerdr } from '../herdr/cli.ts';
 import { listManagedWorkspaceAgents } from '../herdr/placement.ts';
-import {
-  buildAgentFinishedNotificationArgs,
-  getCurrentContext,
-} from '../herdr/snapshot.ts';
+import { getCurrentContext } from '../herdr/snapshot.ts';
 import { formatAgentQuestion } from '../prompts.ts';
 import {
   claimDetachedAgent,
@@ -35,7 +32,6 @@ import {
   isSettledAgentStatus,
   renderAgentWidgetLines,
   type StatusTone,
-  visibleWidgetAgents,
   type WidgetPaint,
 } from './widget.ts';
 
@@ -111,22 +107,6 @@ function startWidgetTick(
   });
 }
 
-// Labels the Orchestrator is currently blocked on inside a `wait: true` call.
-// Kept in-process rather than in the state file: it describes this session's
-// call stack, not the agent, and it must stay accurate across the re-wait path
-// too. Deliberately not derived from the `herdr:blocked` event — that payload
-// is a contract consumed by Herdr's own Pi state extension
-// (extensions/herdr-agent-state.ts), so it is left untouched.
-const awaitedAgentLabels = new Set<string>();
-
-export function beginAwaitingAgent(label: string): void {
-  awaitedAgentLabels.add(label);
-}
-
-export function endAwaitingAgent(label: string): void {
-  awaitedAgentLabels.delete(label);
-}
-
 export function stopAgentsWidgetPoller(pi: ExtensionAPI): void {
   const poller = pollers.get(pi);
   if (!poller) return;
@@ -149,19 +129,31 @@ function themeWidgetPaint(ctx: ExtensionContext): WidgetPaint {
   };
 }
 
+export function buildAgentFinishedNotificationArgs(
+  tabLabel: string,
+  agent: string,
+  resultExcerpt: string,
+): string[] {
+  const trimmed = resultExcerpt.trim();
+  const body =
+    trimmed.length > 400 ? `${trimmed.slice(0, 400).trimEnd()}…` : trimmed;
+  return [
+    'notification',
+    'show',
+    `Pi · ${tabLabel} finished`,
+    '--body',
+    body || `${agent} finished with an empty result.`,
+  ];
+}
+
 /**
- * Deliver outcomes of agents nobody is waiting for — a finished result, or a
- * question the child asked instead of finishing.
+ * Deliver outcomes of detached agents — a finished result, or a question the
+ * child asked instead of finishing.
  *
- * This is the half of `wait: false` that was missing: the tool returns
- * immediately, and from then on nothing watches the child, so an uncollected
- * result was simply lost. The widget poller is already a per-second watcher
- * that knows every agent's status, so delivery rides on it rather than adding
- * another loop.
+ * The tool returns as soon as the prompt is submitted, so this poller is the
+ * only collector. It already watches every agent's status once a second.
  *
- * The claim is taken *before* sending, and any synchronous collection releases
- * it too, so a result is delivered exactly once no matter which path gets there
- * first.
+ * The claim is taken *before* sending, so a result is delivered exactly once.
  *
  * Outcomes found in one tick are sent as a batch with a single turn trigger on
  * the last message. Triggering on the first instead starts a turn that the rest
@@ -184,17 +176,12 @@ export async function deliverDetachedOutcomes(
 
   for (const agent of agents) {
     if (signal?.aborted) break;
-    if (
-      !agent.detached ||
-      !agent.terminalId ||
-      awaitedAgentLabels.has(agent.tabLabel)
-    )
-      continue;
+    if (!agent.detached || !agent.terminalId) continue;
     if (!isSettledAgentStatus(agent.status)) continue;
 
-    // Checked before the result, exactly as the blocking path does: a child that
-    // asked ends its turn without HERDR_RESULT, so it settles like a completion
-    // while the artifact may already hold its assistant text.
+    // Checked before the result: a child that asked ends its turn without
+    // HERDR_RESULT, so it settles like a completion while the artifact may
+    // already hold its assistant text.
     const question = await bestEffort(undefined, () =>
       readAgentQuestion(agent.resultFile),
     );
@@ -237,8 +224,8 @@ export async function deliverDetachedOutcomes(
     const result = await bestEffort(undefined, () =>
       readAgentResult(agent.resultFile),
     );
-    // Settled without an artifact means the child produced nothing usable;
-    // leave the claim so an explicit re-wait can still read the scrollback.
+    // Settled without an artifact means the child produced nothing usable.
+    // Leave the claim so a status check can still read the scrollback.
     if (!result) continue;
 
     const claimed = await bestEffort(false, () =>
@@ -269,9 +256,7 @@ export async function deliverDetachedOutcomes(
     // string; readAgentResult trims and maps "" to undefined.
     let closeError: string | undefined;
     if (agent.lifecycle === 'oneshot') {
-      // One-shots are closed by whoever collects them. Until now that was
-      // always the waiting tool call, which is why `oneshot` required
-      // `wait: true`.
+      // One-shots close when their result is delivered.
       closeError = await closeOneShot({
         layout: agent.layout,
         tabId: agent.tabId,
@@ -343,14 +328,9 @@ async function updateAgentsWidget(
       ctx.ui.setWidget(AGENTS_WIDGET_ID, undefined);
       return;
     }
-    const visible = visibleWidgetAgents(agents, awaitedAgentLabels);
-    if (visible.length === 0) {
-      ctx.ui.setWidget(AGENTS_WIDGET_ID, undefined);
-      return;
-    }
     ctx.ui.setWidget(
       AGENTS_WIDGET_ID,
-      renderAgentWidgetLines(visible, Date.now(), themeWidgetPaint(ctx)),
+      renderAgentWidgetLines(agents, Date.now(), themeWidgetPaint(ctx)),
       { placement: 'aboveEditor' },
     );
   } catch {
