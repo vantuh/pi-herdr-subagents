@@ -92,7 +92,7 @@ import type {
   PaneInfo,
 } from "./types.ts";
 import {
-  buildChildToolAllowlist,
+  buildChildToolArgs,
   clearAgentQuestion,
   clearAgentResult,
   createAgentTempFiles,
@@ -392,8 +392,7 @@ async function buildChildPiArgs(options: {
     }
     spawnWarnings.push(...resolved.diagnostics);
   }
-  const toolAllowlist = buildChildToolAllowlist(options.agent.tools);
-  if (toolAllowlist) piArgs.push("--tools", toolAllowlist.join(","));
+  piArgs.push(...buildChildToolArgs(options.agent.tools));
   piArgs.push(
     options.agent.systemPromptMode === "replace"
       ? "--system-prompt"

@@ -84,6 +84,7 @@ export function registerChildMode(pi: ExtensionAPI): void {
   pi.registerTool({
     name: ASK_QUESTION_TOOL,
     label: "Ask Orchestrator",
+    exposure: "model-only",
     description:
       "Ask the Orchestrator one question when requirements are ambiguous or a decision would materially change scope. End your turn immediately after calling this; the answer arrives as your next prompt.",
     promptSnippet:

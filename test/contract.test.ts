@@ -811,6 +811,8 @@ test("a profile with every optional frontmatter field drives the exact spawn arg
         skillPath,
         "--tools",
         "read,ask_question",
+        "--exclude-tools",
+        "mcp__*",
         "--system-prompt",
         systemFile,
       ]);

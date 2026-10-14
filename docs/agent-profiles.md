@@ -63,10 +63,12 @@ protocol text.
 
 - Empty or omitted `tools` does not deny all tools; it means "no restriction".
   The extension passes no `--tools` flag.
-- A non-empty `tools` list becomes `--tools`, a strict allowlist over all tools,
-  extension-provided ones included. The extension adds `ask_question` to the
-  list, because a child cannot re-enable a filtered tool itself and would
-  otherwise have no way to ask the Orchestrator a question.
+- A non-empty `tools` list becomes `--tools`, with `ask_question` added.
+  Unlisted MCP tools are excluded unless the profile explicitly names MCP tools
+  or patterns starting with `mcp__`. `*` intentionally allows every tool.
+  Use `mcp__server__*` to allow one MCP server. Other broad patterns do not opt
+  into MCP access. These restrictions select tools, not an OS sandbox.
+- `ask_question` is model-only: it cannot run inside a codemode script.
 - Child panes run with `HERDR_AGENT_CHILD=1`. In that mode the extension
   registers only `ask_question`: the `herdr_agent` tool, commands and
   instruction injection are not available, so children cannot delegate through

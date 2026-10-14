@@ -25,11 +25,8 @@ export interface PiSessionHeader {
 }
 
 /**
- * `--tools` is a strict allowlist over *all* tools, extension-provided ones
- * included, and a child cannot re-enable a filtered tool itself: the flag is
- * applied before the active set is built, so the tool is absent from
- * `getAllTools()` and `setActiveTools` ignores unknown names. The question
- * channel therefore has to be named at spawn time.
+ * Keep the question channel available in a restricted profile. Pi preserves
+ * unlisted MCP tools unless they are explicitly filtered separately.
  *
  * Returns undefined when the profile does not restrict tools — then no flag is
  * passed at all and `ask_question` is available anyway.
@@ -39,6 +36,16 @@ export function buildChildToolAllowlist(
 ): string[] | undefined {
   if (!tools?.length) return undefined;
   return [...new Set([...tools, ASK_QUESTION_TOOL])];
+}
+
+export function buildChildToolArgs(tools: readonly string[] | undefined): string[] {
+  const allowlist = buildChildToolAllowlist(tools);
+  if (!allowlist) return [];
+  const args = ["--tools", allowlist.join(",")];
+  if (!allowlist.some((name) => name === "*" || name.startsWith("mcp__"))) {
+    args.push("--exclude-tools", "mcp__*");
+  }
+  return args;
 }
 
 export function makeHerdrAgentName(profileName: string): string {
