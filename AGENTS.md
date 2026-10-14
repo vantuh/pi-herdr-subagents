@@ -214,12 +214,11 @@ Useful smoke checks:
 
 ```bash
 # Parse/bundle the extension modules.
-bun build src/index.ts \
-  --target node \
-  --outfile /tmp/herdr-agents-check.js \
-  --external @earendil-works/pi-coding-agent \
-  --external @earendil-works/pi-tui \
-  --external typebox
+npx rolldown src/index.ts \
+  --file /tmp/herdr-agents-check.js \
+  --platform node \
+  --external @earendil-works/pi-coding-agent,@earendil-works/pi-tui,typebox \
+  --no-codeSplitting
 
 # Confirm the tool is visible to a fresh Pi model.
 PI_OFFLINE=1 pi --no-context-files --no-skills --no-prompt-templates --no-themes \
