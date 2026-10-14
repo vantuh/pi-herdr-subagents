@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
+import { readIfExists } from '../artifacts.ts';
 import {
   isHerdrAgentLayout,
   type HerdrAgentLayout,
@@ -268,15 +269,8 @@ export function paneStateKey(
 export async function loadHerdrAgentsState(
   filePath = getHerdrAgentsStatePath(),
 ): Promise<HerdrAgentsState> {
-  let raw: string;
-  try {
-    raw = await fs.readFile(filePath, 'utf8');
-  } catch (error) {
-    if ((error as { code?: string }).code === 'ENOENT') {
-      return emptyHerdrAgentsState();
-    }
-    throw error;
-  }
+  const raw = await readIfExists(filePath);
+  if (raw === undefined) return emptyHerdrAgentsState();
 
   let parsed: {
     version?: unknown;

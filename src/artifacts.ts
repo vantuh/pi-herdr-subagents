@@ -25,17 +25,41 @@ interface PiSessionHeader {
   cwd: string;
 }
 
+async function makeAgentTempDir(): Promise<string> {
+  return fs.mkdtemp(path.join(os.tmpdir(), 'herdr-agent-'));
+}
+
+/** Raw file contents, or undefined when the file does not exist. */
+export async function readIfExists(
+  filePath: string,
+): Promise<string | undefined> {
+  try {
+    return await fs.readFile(filePath, 'utf8');
+  } catch (error) {
+    if ((error as { code?: string }).code === 'ENOENT') return undefined;
+    throw error;
+  }
+}
+
+async function readTrimmedIfExists(
+  filePath: string,
+): Promise<string | undefined> {
+  return (await readIfExists(filePath))?.trim() || undefined;
+}
+
+async function writePrivateFile(filePath: string, text: string): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, text, { encoding: 'utf8', mode: 0o600 });
+}
+
 export async function createAgentTempFiles(systemPrompt: string): Promise<{
   systemFile: string;
   resultFile: string;
   sessionMetaFile: string;
 }> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'herdr-agent-'));
+  const dir = await makeAgentTempDir();
   const systemFile = path.join(dir, 'system.md');
-  await fs.writeFile(systemFile, systemPrompt, {
-    encoding: 'utf8',
-    mode: 0o600,
-  });
+  await writePrivateFile(systemFile, systemPrompt);
   return {
     systemFile,
     resultFile: path.join(dir, 'result.md'),
@@ -44,8 +68,7 @@ export async function createAgentTempFiles(systemPrompt: string): Promise<{
 }
 
 export async function createResultFile(): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'herdr-agent-'));
-  return path.join(dir, 'result.md');
+  return path.join(await makeAgentTempDir(), 'result.md');
 }
 
 export function isManagedHerdrTempPath(filePath: string): boolean {
@@ -73,11 +96,18 @@ function isManagedResultFile(filePath: string): boolean {
  * the single `HERDR_RESULT_FILE:` marker already present in its prompt — no
  * second marker to keep in sync.
  */
+function siblingArtifact(
+  resultFile: string | undefined,
+  fileName: string,
+): string | undefined {
+  if (!resultFile || !isManagedResultFile(resultFile)) return undefined;
+  return path.join(path.dirname(path.resolve(resultFile)), fileName);
+}
+
 export function questionFileFor(
   resultFile: string | undefined,
 ): string | undefined {
-  if (!resultFile || !isManagedResultFile(resultFile)) return undefined;
-  return path.join(path.dirname(path.resolve(resultFile)), 'question.md');
+  return siblingArtifact(resultFile, 'question.md');
 }
 
 function isManagedSessionMetaFile(filePath: string): boolean {
@@ -87,11 +117,7 @@ function isManagedSessionMetaFile(filePath: string): boolean {
 export function sessionMetaFileFor(
   resultFile: string | undefined,
 ): string | undefined {
-  if (!resultFile || !isManagedResultFile(resultFile)) return undefined;
-  return path.join(
-    path.dirname(path.resolve(resultFile)),
-    SESSION_META_FILE_NAME,
-  );
+  return siblingArtifact(resultFile, SESSION_META_FILE_NAME);
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -103,11 +129,7 @@ export async function writeAgentSessionMeta(
   meta: ChildSessionMeta,
 ): Promise<string | undefined> {
   if (!filePath || !isManagedSessionMetaFile(filePath)) return undefined;
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, `${JSON.stringify(meta)}\n`, {
-    encoding: 'utf8',
-    mode: 0o600,
-  });
+  await writePrivateFile(filePath, `${JSON.stringify(meta)}\n`);
   return filePath;
 }
 
@@ -116,8 +138,9 @@ export async function readAgentSessionMeta(
 ): Promise<ChildSessionMeta | undefined> {
   const filePath = sessionMetaFileFor(resultFile);
   if (!filePath) return undefined;
+  const raw = await readTrimmedIfExists(filePath);
+  if (!raw) return undefined;
   try {
-    const raw = await fs.readFile(filePath, 'utf8');
     const parsed = JSON.parse(raw) as Partial<ChildSessionMeta>;
     if (!isNonEmptyString(parsed.sessionId) || !isNonEmptyString(parsed.cwd)) {
       return undefined;
@@ -134,7 +157,6 @@ export async function readAgentSessionMeta(
         : {}),
     };
   } catch (error) {
-    if ((error as { code?: string }).code === 'ENOENT') return undefined;
     if (error instanceof SyntaxError) return undefined;
     throw error;
   }
@@ -207,8 +229,7 @@ export async function writeAgentQuestion(
 ): Promise<string | undefined> {
   const filePath = questionFileFor(resultFile);
   if (!filePath) return undefined;
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, question, { encoding: 'utf8', mode: 0o600 });
+  await writePrivateFile(filePath, question);
   return filePath;
 }
 
@@ -217,13 +238,7 @@ export async function readAgentQuestion(
 ): Promise<string | undefined> {
   const filePath = questionFileFor(resultFile);
   if (!filePath) return undefined;
-  try {
-    const question = await fs.readFile(filePath, 'utf8');
-    return question.trim() || undefined;
-  } catch (error) {
-    if ((error as { code?: string }).code === 'ENOENT') return undefined;
-    throw error;
-  }
+  return readTrimmedIfExists(filePath);
 }
 
 export async function clearAgentQuestion(
@@ -261,8 +276,7 @@ export async function writeAgentResult(
   output: string,
 ): Promise<void> {
   if (!isManagedResultFile(filePath)) return;
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, output, { encoding: 'utf8', mode: 0o600 });
+  await writePrivateFile(filePath, output);
 }
 
 export async function clearAgentResult(
@@ -283,11 +297,5 @@ export async function readAgentResult(
   filePath: string | undefined,
 ): Promise<string | undefined> {
   if (!filePath || !isManagedResultFile(filePath)) return undefined;
-  try {
-    const output = await fs.readFile(filePath, 'utf8');
-    return output.trim() || undefined;
-  } catch (error) {
-    if ((error as { code?: string }).code === 'ENOENT') return undefined;
-    throw error;
-  }
+  return readTrimmedIfExists(filePath);
 }
