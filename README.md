@@ -21,7 +21,7 @@ and closes the target.
   poller once the agent settles. RPC, JSON, and print sessions wait for the outcome.
 - Result artifacts, so large outputs do not depend on terminal scrollback.
 - Per-spawn `model` override, for asking the same profile to several models.
-- Commands: `/run`, `/council`, `/herdr-agents`.
+- Commands: `/run`, `/herdr-agents`.
 - Layouts: a dedicated subagents workspace (default), split panes, or tabs.
 
 ## Prerequisites
@@ -100,10 +100,6 @@ Lifecycle:
 
 - `/run [agent] <task>` — explicitly delegate a task, for example
   `/run scout find where auth is handled`.
-- `/council <question>` — ask every model listed in `council.json` in the Pi
-  agent dir (`{ "models": ["provider/model-id", ...] }`) and consolidate the
-  answers. Requires TUI mode for detached result delivery. It spawns one
-  `researcher` per model, so a `researcher` profile must exist.
 - `/herdr-agents` — TUI-only overlay to list managed agents across workspaces, focus or close them.
 
 ## Configuration

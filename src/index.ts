@@ -2,7 +2,6 @@ import { join } from 'node:path';
 
 import {
   DynamicBorder,
-  getAgentDir,
   type AgentToolUpdateCallback,
   type ExtensionAPI,
   type ExtensionCommandContext,
@@ -29,7 +28,6 @@ import {
   getHerdrAgentsLayout,
   getHerdrAgentsWorkspaceLabel,
   loadHerdrAgentsConfig,
-  readCouncilConfig,
 } from './config.ts';
 import {
   buildRunTurnInstructions,
@@ -59,9 +57,7 @@ import {
   waitForAgent,
 } from './herdr.ts';
 import {
-  formatCouncilUserMessage,
   formatRunUserMessage,
-  parseCouncilArgs,
   parseRunArgs,
   type RunDelegationRequest,
 } from './run.ts';
@@ -1274,51 +1270,6 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
 
       pendingRunDelegation = parsed;
       pi.sendUserMessage(formatRunUserMessage(parsed));
-    },
-  });
-
-  pi.registerCommand('council', {
-    description:
-      'Ask one question to several models in parallel and consolidate',
-    handler: async (args, ctx) => {
-      const question = parseCouncilArgs(args);
-      if (!question) {
-        ctx.ui.notify(
-          'Usage: /council <question> — asked to every model in council.json',
-          'warning',
-        );
-        return;
-      }
-
-      if (!ctx.isIdle()) {
-        ctx.ui.notify(
-          'Agent is busy. Wait for the current turn to finish.',
-          'warning',
-        );
-        return;
-      }
-
-      if (ctx.mode !== 'tui') {
-        ctx.ui.notify(
-          '/council requires TUI mode for detached delivery.',
-          'warning',
-        );
-        return;
-      }
-
-      const configPath = join(getAgentDir(), 'council.json');
-      const { models, error } = await readCouncilConfig(configPath);
-      if (models.length === 0) {
-        ctx.ui.notify(
-          error
-            ? `council.json could not be read (${error})`
-            : `No council models configured in ${configPath} — add {"models":["..."]}`,
-          'warning',
-        );
-        return;
-      }
-
-      pi.sendUserMessage(formatCouncilUserMessage(question, models));
     },
   });
 

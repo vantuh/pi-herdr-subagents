@@ -1,12 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'vitest';
 
-import {
-  formatCouncilUserMessage,
-  formatRunUserMessage,
-  parseCouncilArgs,
-  parseRunArgs,
-} from '../src/run.ts';
+import { formatRunUserMessage, parseRunArgs } from '../src/run.ts';
 
 describe('parseRunArgs', () => {
   it('parses agent and task', () => {
@@ -45,37 +40,5 @@ describe('formatRunUserMessage', () => {
       formatRunUserMessage({ task: 'check diff' }),
       '[via /run] check diff',
     );
-  });
-});
-
-describe('parseCouncilArgs', () => {
-  it('returns the question verbatim', () => {
-    assert.equal(
-      parseCouncilArgs('Why is X better than Y?'),
-      'Why is X better than Y?',
-    );
-  });
-
-  it('trims surrounding whitespace', () => {
-    assert.equal(parseCouncilArgs('  pick a database  '), 'pick a database');
-  });
-
-  it('rejects empty input', () => {
-    assert.equal(parseCouncilArgs(''), null);
-    assert.equal(parseCouncilArgs('   '), null);
-  });
-});
-
-describe('formatCouncilUserMessage', () => {
-  it('wraps the question and names both models', () => {
-    const message = formatCouncilUserMessage('Why is X better than Y?', [
-      'model-a',
-      'model-b',
-    ]);
-    assert.match(message, /^\[via \/council\] Why is X better than Y\?/);
-    assert.ok(message.includes('model-a'));
-    assert.ok(message.includes('model-b'));
-    assert.ok(message.includes('wait: false'));
-    assert.ok(message.includes('consolidate'));
   });
 });

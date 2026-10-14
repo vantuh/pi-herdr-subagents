@@ -35,8 +35,8 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 
 - `src/index.ts` — Pi extension entrypoint and `herdr_agent` tool registration.
 - `src/agents.ts` — loads agent profiles from user/project Pi agent directories.
-- `src/config.ts` — layout env and `council.json` loading.
-- `src/run.ts` — `/run` and `/council` arg parsing and injected user messages.
+- `src/config.ts` — layout config loading.
+- `src/run.ts` — `/run` arg parsing and injected user messages.
 - `src/herdr.ts` — Herdr CLI/API wrappers, snapshot discovery, layout helpers, and named-agent lifecycle commands.
 - `src/schema.ts` — TypeBox schema for tool parameters.
 - `src/constants.ts` — injected Orchestrator instructions and child-agent protocol.
@@ -58,9 +58,8 @@ Write each plan to `docs/plans/<short-task-name>.md`. The filename names the wor
 - Child panes start with `HERDR_AGENT_CHILD=1` and `PROCESS_LAUNCHED_BY_Q=1`: delegation tools stay disabled, final responses are persisted, zsh selects `HISTFILE=/dev/null` from the child marker, and Kiro's terminal wrapper cannot hide the real shell from `herdr agent start`.
 - `HERDR_PANE_ID` is preferred over focused pane detection. Focus can move while a tool is running.
 - New agents start through `herdr agent start`; prompts use atomic `herdr agent prompt` (no `--wait`), then wait for newer `state_change_seq` activity with `working`/`blocked` or an actual newer `completion_seq` while settled, before `herdr agent wait --until idle --until done`. This avoids Herdr's hardcoded 5s `agent_prompt_stalled` gate. Abort / Herdr wait timeout returns a soft re-wait hint (child stays); re-wait uses `herdr agent wait` only.
-- Explicit `wait: false` is rejected outside TUI mode, including taskless re-waits. RPC can report `hasUI: true` but has no widget collector. TUI defaults to detaching; its poller delivers outcomes and closes completed one-shots. `/council` requires TUI mode.
+- Explicit `wait: false` is rejected outside TUI mode, including taskless re-waits. RPC can report `hasUI: true` but has no widget collector. TUI defaults to detaching; its poller delivers outcomes and closes completed one-shots.
 - `herdr_agent` accepts a fresh-spawn-only `model` override that replaces the profile model for that spawn.
-- `/council <question>` reads `council.json` from `getAgentDir()` (`~/.pi/agent/council.json` by default). It injects a persisted user message with the question and a per-model spawn contract (`researcher`, `wait: false`, `tabLabel: "Council — <model>"`). The Orchestrator consolidates after every council answer is delivered. Empty question shows usage; a busy Orchestrator or empty/unreadable config warns and injects nothing.
 - Layout defaults to `workspace`, configured via `herdr-agents.json` in the Pi agent dir (`layout: "pane"` or `"tab"` for the legacy layouts); the model receives no layout parameter.
 - Workspace mode keeps every agent tab in a dedicated subagents workspace (label from `herdr-agents.json` → `workspace.label`, default `subagents`), so the Orchestrator's screen never gains splits or tabs. The workspace is re-resolved from `herdr workspace list` on every spawn and recreated if the user closed it. `/herdr-agents` lists agents across workspaces and focuses them via `tab focus` (workspace-qualified ids). A detached agent that finishes unseen also raises a native `herdr notification show`.
 - Pane mode splits the Orchestrator 60/40 on the first spawn and stacks additional agents down the right column. The placement lock is held through `agent start`, managed-state recording, and rebalancing so parallel calls cannot create competing right columns; in workspace mode the same lock serializes the subagents-workspace lookup within one Orchestrator process and is released once the agent's tab is visible to the next `listTabs` (label uniqueness is computed client-side by `uniqueLabel`). Across separate Orchestrator processes a duplicate workspace creation degrades gracefully: lookups take the first label match and managed records stay ownership-scoped. Changing `layout` in `herdr-agents.json` while agents are live orphans them (they stay visible/closable via `/herdr-agents`); close live agents before switching.

@@ -13,11 +13,6 @@ for (const mode of ['rpc', 'json', 'print'] as const) {
         harness.notifications.at(-1)?.message ?? '',
         /requires TUI mode/,
       );
-      await harness.runCommand('council', 'Compare approaches.');
-      assert.match(
-        harness.notifications.at(-1)?.message ?? '',
-        /requires TUI mode/,
-      );
       assert.deepEqual(harness.userMessages, []);
 
       for (const task of ['Find it', undefined]) {
