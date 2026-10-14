@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 
-import { exportPaneLayout } from '../src/herdr.ts';
+import { exportPaneLayout } from '../src/herdr/placement.ts';
 import {
   createE2eHarness,
   type E2eHarness,

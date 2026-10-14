@@ -3,28 +3,34 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 
 import {
-  buildAgentFinishedNotificationArgs,
   buildAgentPromptArgs,
   buildAgentRenameArgs,
   buildAgentWaitArgs,
-  buildEqualAgentSplitRatios,
-  chooseAgentColumnSplitTarget,
-  findAgentsWorkspaceId,
-  findReusableAgentPane,
-  findReusableAgentTab,
-  HerdrCliError,
-  listManagedWorkspaceAgents,
   mapPromptError,
   parseAgentSnapshot,
-  parseCreatedWorkspace,
   parseStartedAgentSnapshot,
-  parseWorkspaceListOutput,
   promptAcceptanceObserved,
+  startedAgentReady,
+} from '../src/herdr/agent.ts';
+import {
+  HerdrCliError,
   redactHerdrArgs,
   sanitizeHerdrOutput,
   sensitiveArgValues,
-  startedAgentReady,
-} from '../src/herdr.ts';
+} from '../src/herdr/cli.ts';
+import {
+  buildEqualAgentSplitRatios,
+  chooseAgentColumnSplitTarget,
+  findReusableAgentPane,
+  findReusableAgentTab,
+  listManagedWorkspaceAgents,
+} from '../src/herdr/placement.ts';
+import {
+  buildAgentFinishedNotificationArgs,
+  findAgentsWorkspaceId,
+  parseCreatedWorkspace,
+  parseWorkspaceListOutput,
+} from '../src/herdr/snapshot.ts';
 import { emptyHerdrAgentsState } from '../src/state/store.ts';
 import type { HerdrContext, PaneInfo, TabInfo } from '../src/types.ts';
 

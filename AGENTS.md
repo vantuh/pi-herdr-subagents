@@ -37,7 +37,10 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 - `src/agents.ts` — loads agent profiles from user/project Pi agent directories.
 - `src/config.ts` — layout config loading.
 - `src/run.ts` — `/run` arg parsing and injected user messages.
-- `src/herdr.ts` — Herdr CLI/API wrappers, snapshot discovery, layout helpers, and named-agent lifecycle commands.
+- `src/herdr/cli.ts` — Herdr CLI/API process wrappers, argument redaction, and CLI error parsing.
+- `src/herdr/snapshot.ts` — session snapshot, pane/tab/workspace discovery, and Agents workspace resolution.
+- `src/herdr/placement.ts` — label uniqueness, reusable-tab/pane lookup, managed-agent listing, and split-ratio layout helpers.
+- `src/herdr/agent.ts` — named-agent start, prompt, wait, and read wrappers with their snapshot parsers.
 - `src/schema.ts` — TypeBox schema for tool parameters.
 - `src/prompts.ts` — injected Orchestrator instructions and child-agent protocol.
 - `src/artifacts.ts` — result/question/session-meta file IO and child protocol constants.

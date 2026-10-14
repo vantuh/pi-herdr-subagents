@@ -44,26 +44,30 @@ import {
   loadHerdrAgentsConfig,
 } from './config.ts';
 import {
-  buildEqualAgentSplitRatios,
-  buildAgentFinishedNotificationArgs,
-  chooseAgentColumnSplitTarget,
-  execHerdr,
-  exportPaneLayout,
-  findAgentsWorkspaceId,
-  findReusableAgentPane,
-  findReusableAgentTab,
-  getCurrentContext,
-  listManagedWorkspaceAgents,
-  listPanes,
-  listTabs,
   promptAgent,
   readAgent,
-  resolveAgentsWorkspace,
-  setLayoutSplitRatio,
   startAgent,
-  uniqueLabel,
   waitForAgent,
-} from './herdr.ts';
+} from './herdr/agent.ts';
+import { execHerdr } from './herdr/cli.ts';
+import {
+  buildEqualAgentSplitRatios,
+  chooseAgentColumnSplitTarget,
+  exportPaneLayout,
+  findReusableAgentPane,
+  findReusableAgentTab,
+  listManagedWorkspaceAgents,
+  setLayoutSplitRatio,
+  uniqueLabel,
+} from './herdr/placement.ts';
+import {
+  buildAgentFinishedNotificationArgs,
+  findAgentsWorkspaceId,
+  getCurrentContext,
+  listPanes,
+  listTabs,
+  resolveAgentsWorkspace,
+} from './herdr/snapshot.ts';
 import {
   buildRunTurnInstructions,
   CHILD_PROTOCOL,

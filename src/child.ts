@@ -13,7 +13,7 @@ import {
   writeAgentResult,
   writeAgentSessionMeta,
 } from './artifacts.ts';
-import { getCurrentContext } from './herdr.ts';
+import { getCurrentContext } from './herdr/snapshot.ts';
 
 export async function captureChildSessionMeta(
   ctx: ExtensionContext,
