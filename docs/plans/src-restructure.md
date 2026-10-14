@@ -146,7 +146,7 @@ Done when: `src/herdr.ts` is gone; tests green; commit
 Done when: `index.ts` has no TUI component imports except via `ui/`; unit + e2e
 green; commit `refactor: move widget, poller and manager into ui`.
 
-### [ ] Phase 5 — tool helpers out of index
+### [x] Phase 5 — tool helpers out of index (`3fb7bbb`)
 
 - `schema.ts` → `tool/schema.ts`.
 - `tool/child-args.ts`: `herdrChildEnvArgs`, `orchestratorIdentity`,
