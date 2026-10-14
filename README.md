@@ -36,9 +36,8 @@ and closes the target.
 ## Loading
 
 The package manifest declares `./src/index.ts` as its Pi extension entrypoint.
-Resolve the peer dependencies listed in `package.json` and configure Pi to load
-that entrypoint. `test-support/link-deps.sh` can link dependencies from a globally
-installed Pi for local development.
+Pi supplies the peer dependencies when loading the extension. For local
+development, run `npm ci --ignore-scripts` to install the locked dependencies.
 
 Child agents set `HERDR_AGENT_CHILD=1`. In that mode only `ask_question` and the
 result writer are registered, so children cannot delegate through this extension.
@@ -130,16 +129,17 @@ live:** they become orphaned. They stay visible and closable through
 ## Development
 
 ```bash
-bun run test              # unit + integration, no real Herdr (links Pi peer deps first)
+npm ci --ignore-scripts   # install locked development dependencies
+bun run test              # unit + integration, no real Herdr
 bun run test:unit         # pure helpers
 bun run test:integration  # herdr_agent flow against a fake Herdr
 bun run test:e2e          # real Herdr server and real Pi children
 bun run test:all          # everything
 ```
 
-`test-support/link-deps.sh` symlinks the Pi packages from the globally installed
-`pi` into a local `node_modules`, so `pi` must be on `PATH`. Tests redirect
-`TMPDIR`, state and the Pi agent dir, so a live session is not touched.
+Tests use local dependencies from `package-lock.json`. E2E also requires `pi`
+and `herdr` on `PATH`. Tests redirect `TMPDIR`, state and the Pi agent dir,
+so a live session is not touched.
 
 ## Documentation
 

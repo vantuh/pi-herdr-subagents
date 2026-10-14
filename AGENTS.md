@@ -48,7 +48,7 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 - `src/state.ts` — managed-agent lifecycle records.
 - `src/widget.ts` — agents widget rendering.
 - `src/child.ts` — child-mode `ask_question` and result writer.
-- `test-support/` — test harnesses: `mock-extension.ts` (shared mock `ExtensionAPI` host, env and profile fixtures), `fake-herdr.ts` (in-process Herdr simulator), `herdr-shim.mjs` (executable `herdr` stand-in), `harness.ts` (integration harness), `mock-llm.ts` (scripted `openai-completions` server), `e2e-harness.ts` (hermetic real Herdr server), `link-deps.sh` (peer-dep symlinks).
+- `test-support/` — test harnesses: `mock-extension.ts` (shared mock `ExtensionAPI` host, env and profile fixtures), `fake-herdr.ts` (in-process Herdr simulator), `herdr-shim.mjs` (executable `herdr` stand-in), `harness.ts` (integration harness), `mock-llm.ts` (scripted `openai-completions` server), `e2e-harness.ts` (hermetic real Herdr server).
 - `e2e/` — end-to-end scenarios against a real Herdr server and real Pi children.
 - `docs/` — detailed implementation and session notes.
 
@@ -85,10 +85,10 @@ bun run test:e2e          # real Herdr server + real Pi children (~50s)
 bun run test:all          # everything
 ```
 
-`bun run test` first runs `test-support/link-deps.sh`, which symlinks the Pi
-packages from the globally installed `pi` into a local (gitignored)
-`node_modules`. The extension has no install step of its own, so without those
-links `index.ts` cannot be imported.
+Run `npm ci --ignore-scripts` once to install local development dependencies
+from `package-lock.json`. Pi supplies the host peers when loading the extension;
+unit and integration tests use the local packages. E2E additionally requires
+`pi` and `herdr` on `PATH`.
 
 Three layers:
 
