@@ -1,9 +1,5 @@
 # pi-herdr-subagents
 
-> **Retired (2026-09-04): archived, not loaded automatically and not maintained.**
-> Development moved to [pi-subagents](https://github.com/nicobailon/pi-subagents)
-> (with pi-intercom). This repository is kept as source and design reference.
-
 A Pi coding-agent extension (package
 `@vantuh/pi-herdr-subagents`) that delegates one-shot tasks to child Pi agents
 running in [Herdr](https://herdr.dev) panes or tabs.
@@ -39,10 +35,9 @@ and closes the target.
 
 ## Loading
 
-This archive is not configured to load automatically. The package manifest
-declares `./src/index.ts` as its Pi extension entrypoint. To restore it, resolve
-the peer dependencies listed in `package.json` and configure Pi to load that
-entrypoint. `test-support/link-deps.sh` can link dependencies from a globally
+The package manifest declares `./src/index.ts` as its Pi extension entrypoint.
+Resolve the peer dependencies listed in `package.json` and configure Pi to load
+that entrypoint. `test-support/link-deps.sh` can link dependencies from a globally
 installed Pi for local development.
 
 Child agents set `HERDR_AGENT_CHILD=1`. In that mode only `ask_question` and the
