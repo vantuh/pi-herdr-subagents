@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import * as path from "node:path";
-import { SESSION_META_ENV } from "../utils.ts";
+import { SESSION_META_ENV } from "../src/utils.ts";
 
 /**
  * In-process Herdr simulator for integration tests.

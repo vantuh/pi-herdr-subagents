@@ -5,7 +5,7 @@ import {
   formatRunUserMessage,
   parseCouncilArgs,
   parseRunArgs,
-} from "../run.ts";
+} from "../src/run.ts";
 
 describe("parseRunArgs", () => {
   it("parses agent and task", () => {

@@ -29,8 +29,8 @@ import {
   CLOSED_HISTORY_MAX_PER_OWNER,
   CLOSED_HISTORY_TTL_MS,
   type ClosedAgentHistoryRecord,
-} from "../state.ts";
-import type { PaneInfo } from "../types.ts";
+} from "../src/state.ts";
+import type { PaneInfo } from "../src/types.ts";
 
 function pane(overrides: Partial<PaneInfo> = {}): PaneInfo {
   return {
@@ -901,7 +901,7 @@ test("a waiter cannot steal a live lock after the old stale threshold", async ()
   const dir = path.dirname(filePath);
   const stateModule = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    "../state.ts",
+    "../src/state.ts",
   );
   const holderScript = path.join(dir, "holder.ts");
   const waiterScript = path.join(dir, "waiter.ts");
@@ -956,7 +956,7 @@ test("two processes cannot occupy the state lock at the same time", async () => 
   const dir = path.dirname(filePath);
   const stateModule = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    "../state.ts",
+    "../src/state.ts",
   );
   const lockerScript = path.join(dir, "locker.ts");
   await fs.writeFile(
@@ -1061,7 +1061,7 @@ test("two waiters observing a legacy lock file never unlink it or both win", asy
 
   const stateModule = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    "../state.ts",
+    "../src/state.ts",
   );
   const waiterScript = path.join(dir, "stale-waiter.ts");
   await fs.writeFile(

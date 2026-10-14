@@ -8,7 +8,7 @@ import {
   normalizeSkillList,
   resolveProfileSkills,
   resolveThinkingLevel,
-} from "../agents.ts";
+} from "../src/agents.ts";
 import { applyEnv } from "../test-support/mock-extension.ts";
 
 /**

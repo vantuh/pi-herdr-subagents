@@ -5,13 +5,13 @@ import test from "node:test";
 import {
   AGENT_QUESTION_MESSAGE_TYPE,
   AGENT_RESULT_MESSAGE_TYPE,
-} from "../index.ts";
+} from "../src/index.ts";
 import {
   type Harness,
   type HarnessOptions,
   createHarness,
 } from "../test-support/harness.ts";
-import { AGENTS_WIDGET_ID } from "../widget.ts";
+import { AGENTS_WIDGET_ID } from "../src/widget.ts";
 
 /**
  * Behavior lock for refactoring.

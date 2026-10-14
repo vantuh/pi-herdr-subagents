@@ -11,7 +11,7 @@ import {
   herdrAgentsConfigPath,
   loadHerdrAgentsConfig,
   readCouncilConfig,
-} from "../config.ts";
+} from "../src/config.ts";
 
 test("uses the workspace layout by default", async () => {
   assert.equal(DEFAULT_HERDR_AGENTS_LAYOUT, "workspace");

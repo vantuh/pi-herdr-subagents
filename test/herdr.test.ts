@@ -22,9 +22,9 @@ import {
   sanitizeHerdrOutput,
   sensitiveArgValues,
   startedAgentReady,
-} from "../herdr.ts";
-import { emptyHerdrAgentsState } from "../state.ts";
-import type { HerdrContext, PaneInfo, TabInfo } from "../types.ts";
+} from "../src/herdr.ts";
+import { emptyHerdrAgentsState } from "../src/state.ts";
+import type { HerdrContext, PaneInfo, TabInfo } from "../src/types.ts";
 
 test("builds an atomic prompt submit without the hardcoded --wait stall gate", () => {
   assert.deepEqual(buildAgentPromptArgs("reviewer_ab12", "Review"), [

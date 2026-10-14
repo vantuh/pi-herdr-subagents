@@ -8,7 +8,7 @@ import {
   type HarnessOptions,
   createHarness,
 } from "../test-support/harness.ts";
-import { setFailNextStateMutation, clearStateSaveFailures } from "../state.ts";
+import { setFailNextStateMutation, clearStateSaveFailures } from "../src/state.ts";
 
 /**
  * Integration tests for the whole `herdr_agent` flow: the real extension runs

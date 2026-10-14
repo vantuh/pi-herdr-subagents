@@ -2,8 +2,8 @@ import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import herdrAgentsExtension from "../index.ts";
-import type { HerdrAgentsState } from "../state.ts";
+import herdrAgentsExtension from "../src/index.ts";
+import type { HerdrAgentsState } from "../src/state.ts";
 import { FakeHerdr } from "./fake-herdr.ts";
 import {
   type AgentProfileFixture,

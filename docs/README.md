@@ -144,20 +144,20 @@ The extension uses:
 
 ## Runtime files
 
-- `index.ts` — registers the Pi extension hook and `herdr_agent` tool.
-- `constants.ts` — global injected instruction and child protocol text.
-- `agents.ts` — profile discovery and frontmatter parsing.
-- `herdr.ts` — Herdr CLI calls, session snapshot discovery, named-agent lifecycle, and server-owned waits.
-- `schema.ts` — TypeBox tool parameter schema.
-- `utils.ts` — shell-safe command building and temp prompt files.
-- `types.ts` — shared interfaces.
+- `src/index.ts` — registers the Pi extension hook and `herdr_agent` tool.
+- `src/constants.ts` — global injected instruction and child protocol text.
+- `src/agents.ts` — profile discovery and frontmatter parsing.
+- `src/herdr.ts` — Herdr CLI calls, session snapshot discovery, named-agent lifecycle, and server-owned waits.
+- `src/schema.ts` — TypeBox tool parameter schema.
+- `src/utils.ts` — shell-safe command building and temp prompt files.
+- `src/types.ts` — shared interfaces.
 
 ## Loading
 
 The extension is loaded from the symlinked Pi extension directory:
 
 ```text
-~/.pi/agent/extensions/herdr-agents/index.ts
+~/.pi/agent/extensions/herdr-agents/src/index.ts
 ```
 
 Its package metadata declares only the extension entrypoint:
@@ -165,7 +165,7 @@ Its package metadata declares only the extension entrypoint:
 ```json
 {
   "pi": {
-    "extensions": ["./index.ts"]
+    "extensions": ["./src/index.ts"]
   }
 }
 ```

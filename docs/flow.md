@@ -7,7 +7,7 @@ This document describes the runtime flow of the `herdr_agent` tool.
 Pi loads the extension from the symlinked extension directory:
 
 ```text
-~/.pi/agent/extensions/herdr-agents/index.ts
+~/.pi/agent/extensions/herdr-agents/src/index.ts
 ```
 
 `index.ts` runs in Orchestrator or child mode. `HERDR_AGENT_CHILD=1` prevents recursive delegation tools inside child panes, but child mode still registers a small result-writer hook. On each assistant `message_end`, that hook writes the latest finalized response to the result artifact named in the task prompt.

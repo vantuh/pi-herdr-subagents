@@ -29,7 +29,7 @@ import {
   sessionMetaFileFor,
   validateResumableSessionFile,
   readPiSessionHeader,
-} from "../utils.ts";
+} from "../src/utils.ts";
 
 test("generates valid unique Herdr automation names", () => {
   const first = makeHerdrAgentName("Code Reviewer");

@@ -3,9 +3,9 @@ import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import test from "node:test";
-import herdrAgentsExtension from "../index.ts";
+import herdrAgentsExtension from "../src/index.ts";
 import { applyEnv, createMockHost } from "../test-support/mock-extension.ts";
-import { RESULT_FILE_MARKER, SESSION_META_ENV } from "../utils.ts";
+import { RESULT_FILE_MARKER, SESSION_META_ENV } from "../src/utils.ts";
 
 /**
  * Child-mode contract (docs/session-findings.md §4): with

@@ -36,15 +36,18 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 
 ## Files
 
-- `index.ts` — Pi extension entrypoint and `herdr_agent` tool registration.
-- `agents.ts` — loads agent profiles from user/project Pi agent directories.
-- `config.ts` — layout env and `council.json` loading.
-- `run.ts` — `/run` and `/council` arg parsing and injected user messages.
-- `herdr.ts` — Herdr CLI/API wrappers, snapshot discovery, layout helpers, and named-agent lifecycle commands.
-- `schema.ts` — TypeBox schema for tool parameters.
-- `constants.ts` — injected Orchestrator instructions and child-agent protocol.
-- `utils.ts` — agent-name generation, title casing, result artifacts, and temp prompt files.
-- `types.ts` — shared TypeScript interfaces.
+- `src/index.ts` — Pi extension entrypoint and `herdr_agent` tool registration.
+- `src/agents.ts` — loads agent profiles from user/project Pi agent directories.
+- `src/config.ts` — layout env and `council.json` loading.
+- `src/run.ts` — `/run` and `/council` arg parsing and injected user messages.
+- `src/herdr.ts` — Herdr CLI/API wrappers, snapshot discovery, layout helpers, and named-agent lifecycle commands.
+- `src/schema.ts` — TypeBox schema for tool parameters.
+- `src/constants.ts` — injected Orchestrator instructions and child-agent protocol.
+- `src/utils.ts` — agent-name generation, title casing, result artifacts, and temp prompt files.
+- `src/types.ts` — shared TypeScript interfaces.
+- `src/state.ts` — managed-agent lifecycle records.
+- `src/widget.ts` — agents widget rendering.
+- `src/child.ts` — child-mode `ask_question` and result writer.
 - `test-support/` — test harnesses: `mock-extension.ts` (shared mock `ExtensionAPI` host, env and profile fixtures), `fake-herdr.ts` (in-process Herdr simulator), `herdr-shim.mjs` (executable `herdr` stand-in), `harness.ts` (integration harness), `mock-llm.ts` (scripted `openai-completions` server), `e2e-harness.ts` (hermetic real Herdr server), `link-deps.sh` (peer-dep symlinks).
 - `e2e/` — end-to-end scenarios against a real Herdr server and real Pi children.
 - `docs/` — detailed implementation and session notes.
@@ -208,7 +211,7 @@ Useful smoke checks:
 
 ```bash
 # Parse/bundle the extension modules.
-bun build home/dot_pi/agent/archive/herdr-agents/index.ts \
+bun build home/dot_pi/agent/archive/herdr-agents/src/index.ts \
   --target node \
   --outfile /tmp/herdr-agents-check.js \
   --external @earendil-works/pi-coding-agent \

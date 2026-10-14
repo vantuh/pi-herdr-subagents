@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { exportPaneLayout } from "../herdr.ts";
+import { exportPaneLayout } from "../src/herdr.ts";
 import { createE2eHarness, type E2eHarness } from "../test-support/e2e-harness.ts";
 import {
   DEFAULT_RESULT_TEXT,
