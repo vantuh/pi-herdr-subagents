@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import type { ExtensionMode } from '@earendil-works/pi-coding-agent';
 
 import herdrAgentsExtension from '../src/index.ts';
-import type { HerdrAgentsState } from '../src/state.ts';
+import type { HerdrAgentsState } from '../src/state/store.ts';
 import { FakeHerdr } from './fake-herdr.ts';
 import {
   type AgentProfileFixture,

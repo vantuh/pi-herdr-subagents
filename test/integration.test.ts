@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
+
 import { test } from 'vitest';
 
 import {
   setFailNextStateMutation,
   clearStateSaveFailures,
-} from '../src/state.ts';
+} from '../src/state/store.ts';
 import type { LayoutNode } from '../test-support/fake-herdr.ts';
 import {
   type Harness,

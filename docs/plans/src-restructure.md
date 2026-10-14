@@ -83,12 +83,15 @@ Done when: `utils.ts` has no file IO; tests green; commit
 - `state.ts` → `state/store.ts` (lines 1–613: records, env, lock, load/save,
   migrate, prune, ownership, lifecycle record ops, `claimDetachedAgent`,
   test failure hooks).
-- `state/closed-history.ts` (lines 614–1056: parse/reconcile/prune history,
-  archive, stage, finalize, claim, release, invalidate, find).
+- `state/closed-history.ts` (lines 789–1056: archive, stage, finalize, claim,
+  release, invalidate, find).
 - `store.ts` exports the lock/load/save primitives `closed-history.ts` needs.
-  If `reconcileHerdrAgentsState` / history parsing is called from
-  `loadHerdrAgentsState`, keep the call direction `store → closed-history` for
-  parsing only and verify no cycle; otherwise move the parser into `store.ts`.
+  The store's load/save path calls `parseClosedHistory`,
+  `reconcileHerdrAgentsState` and `pruneClosedHistory`, so those stay in
+  `store.ts`: the pure history helpers live in the store and
+  `closed-history.ts` holds only the locked operations. The dependency is
+  one-way (`closed-history → store`); `store.ts` never imports
+  `closed-history.ts`.
 - Update imports: `herdr.ts`, `index.ts`, `test/state.test.ts` (including the
   path strings), `test/herdr.test.ts`, `test/integration.test.ts`,
   `test-support/harness.ts`, `test-support/e2e-harness.ts`.

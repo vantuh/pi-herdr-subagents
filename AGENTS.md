@@ -43,7 +43,8 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 - `src/artifacts.ts` — result/question/session-meta file IO and child protocol constants.
 - `src/utils.ts` — agent-name generation, title casing, tool allowlist, and formatting helpers.
 - `src/types.ts` — shared TypeScript interfaces.
-- `src/state.ts` — managed-agent lifecycle records.
+- `src/state/store.ts` — managed-agent lifecycle records, state lock, load/save/migrate/prune, and the pure closed-history parser/reconciler.
+- `src/state/closed-history.ts` — closed one-shot archive/stage/finalize/claim/release/find.
 - `src/widget.ts` — agents widget rendering.
 - `src/child.ts` — child-mode `ask_question` and result writer.
 - `test-support/` — test harnesses: `mock-extension.ts` (shared mock `ExtensionAPI` host, env and profile fixtures), `fake-herdr.ts` (in-process Herdr simulator), `herdr-shim.mjs` (executable `herdr` stand-in), `harness.ts` (integration harness), `mock-llm.ts` (scripted `openai-completions` server), `e2e-harness.ts` (hermetic real Herdr server).

@@ -3,34 +3,37 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterAll, test } from 'vitest';
 import { fileURLToPath } from 'node:url';
 
+import { afterAll, test } from 'vitest';
+
 import {
+  archiveClosedOneShot,
+  claimClosedHistory,
+  finalizeStagedClosedOneShot,
+  releaseClosedHistory,
+  stageClosedOneShot,
+  type ClosedAgentHistoryRecord,
+} from '../src/state/closed-history.ts';
+import {
+  CLOSED_HISTORY_MAX_GLOBAL,
+  CLOSED_HISTORY_MAX_PER_OWNER,
+  CLOSED_HISTORY_TTL_MS,
   claimDetachedAgent,
   clearAgentSpawnWarnings,
   deleteAgentLifecycle,
   emptyHerdrAgentsState,
+  isAgentOwnedBy,
   loadHerdrAgentsState,
   paneStateKey,
+  persistPrunedAgentsState,
+  pruneClosedHistory,
   pruneHerdrAgentsState,
   recordAgentLifecycle,
-  isAgentOwnedBy,
-  archiveClosedOneShot,
-  claimClosedHistory,
-  releaseClosedHistory,
-  pruneClosedHistory,
-  stageClosedOneShot,
-  finalizeStagedClosedOneShot,
-  setFailNextStateSaves,
   setFailNextStateMutation,
-  persistPrunedAgentsState,
+  setFailNextStateSaves,
   withHerdrAgentsStateLock,
-  CLOSED_HISTORY_MAX_GLOBAL,
-  CLOSED_HISTORY_MAX_PER_OWNER,
-  CLOSED_HISTORY_TTL_MS,
-  type ClosedAgentHistoryRecord,
-} from '../src/state.ts';
+} from '../src/state/store.ts';
 import type { PaneInfo } from '../src/types.ts';
 
 function pane(overrides: Partial<PaneInfo> = {}): PaneInfo {
@@ -911,7 +914,7 @@ test('a waiter cannot steal a live lock after the old stale threshold', async ()
   const dir = path.dirname(filePath);
   const stateModule = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    '../src/state.ts',
+    '../src/state/store.ts',
   );
   const holderScript = path.join(dir, 'holder.ts');
   const waiterScript = path.join(dir, 'waiter.ts');
@@ -966,7 +969,7 @@ test('two processes cannot occupy the state lock at the same time', async () => 
   const dir = path.dirname(filePath);
   const stateModule = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    '../src/state.ts',
+    '../src/state/store.ts',
   );
   const lockerScript = path.join(dir, 'locker.ts');
   await fs.writeFile(
@@ -1070,7 +1073,7 @@ test('two waiters observing a legacy lock file never unlink it or both win', asy
 
   const stateModule = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    '../src/state.ts',
+    '../src/state/store.ts',
   );
   const waiterScript = path.join(dir, 'stale-waiter.ts');
   await fs.writeFile(

@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import herdrAgentsExtension from '../src/index.ts';
-import type { HerdrAgentsState } from '../src/state.ts';
+import type { HerdrAgentsState } from '../src/state/store.ts';
 import type { HerdrSessionSnapshot } from '../src/types.ts';
 import {
   type AgentProfileFixture,

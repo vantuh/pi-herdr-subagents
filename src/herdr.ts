@@ -6,7 +6,7 @@ import {
   isAgentOwnedBy,
   paneStateKey,
   type HerdrAgentsState,
-} from './state.ts';
+} from './state/store.ts';
 import type {
   HerdrAgentInfo,
   HerdrContext,

@@ -77,6 +77,15 @@ import {
 } from './run.ts';
 import { buildHerdrAgentParams, describeAgentProfiles } from './schema.ts';
 import {
+  claimClosedHistory,
+  finalizeStagedClosedOneShot,
+  findOwnedClosedHistory,
+  markClosedHistoryInvalid,
+  releaseClosedHistory,
+  stageClosedOneShot,
+  type ClosedAgentHistoryRecord,
+} from './state/closed-history.ts';
+import {
   claimDetachedAgent,
   clearAgentSpawnWarnings,
   deleteAgentLifecycle,
@@ -85,15 +94,8 @@ import {
   paneStateKey,
   persistPrunedAgentsState,
   recordAgentLifecycle,
-  claimClosedHistory,
-  releaseClosedHistory,
-  markClosedHistoryInvalid,
-  findOwnedClosedHistory,
-  stageClosedOneShot,
-  finalizeStagedClosedOneShot,
-  type ClosedAgentHistoryRecord,
   type HerdrAgentStateRecord,
-} from './state.ts';
+} from './state/store.ts';
 import type {
   AgentProfile,
   HerdrAgentInfo,
@@ -120,7 +122,7 @@ import {
   type WidgetPaint,
 } from './widget.ts';
 
-// Lifecycle state persistence (state.ts) is best-effort: a failure to
+// Lifecycle state persistence (state/store.ts) is best-effort: a failure to
 // load/save/prune/record/delete must never abort agent execution/output or
 // manager listing. This swallows the error and returns a fallback so callers
 // can proceed without persisted lifecycle info.
