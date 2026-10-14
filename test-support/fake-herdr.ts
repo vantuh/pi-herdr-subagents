@@ -57,6 +57,7 @@ export interface FakeAgent {
   kind: string;
   status: string;
   stateChangeSeq: number;
+  completionSeq?: number;
   interactiveReady: boolean;
   piArgs: string[];
   transcript: string;
@@ -81,7 +82,7 @@ export interface ChildOutcome {
    * the real path; a very short one would settle before the first poll.
    */
   delayMs?: number;
-  /** Prompt text lands in the composer but Enter never fires. */
+  /** Prompt submission never starts a turn. */
   stalled?: boolean;
   /** Never leaves `working`, so waits time out or get aborted. */
   neverSettle?: boolean;
@@ -202,7 +203,6 @@ export class FakeHerdr {
   /** Caps the --timeout the extension passes to `agent wait` (tests). */
   waitTimeoutCapMs = Number.POSITIVE_INFINITY;
   /** Prompts whose Enter never fired, keyed by agent name. */
-  private readonly stalledPrompts = new Map<string, () => Promise<void>>();
   private behavior: ChildBehavior = defaultBehavior;
   private cliServer?: Server;
   private apiServer?: Server;
@@ -812,11 +812,6 @@ export class FakeHerdr {
 
     if (command === "send-keys") {
       if (!agent) return fail("agent_not_found", `unknown agent ${target}`);
-      const pending = this.stalledPrompts.get(agent.name);
-      if (pending && argv[3] === "enter") {
-        this.stalledPrompts.delete(agent.name);
-        this.track(pending());
-      }
       return ok({ sent: argv.slice(3) });
     }
 
@@ -880,12 +875,10 @@ export class FakeHerdr {
       }
       agent.transcript = outcome.transcript ?? agent.transcript;
       this.setStatus(agent, outcome.settleStatus ?? "idle");
+      agent.completionSeq = agent.stateChangeSeq;
     };
 
     if (outcome.stalled) {
-      // Text is in the composer but the agent never left idle: the extension
-      // must notice and send one Enter, which releases this.
-      this.stalledPrompts.set(agent.name, run);
       return;
     }
     if (this.childrenHeld) {
@@ -976,6 +969,7 @@ export class FakeHerdr {
       agent: agent.kind,
       agent_status: agent.status,
       state_change_seq: agent.stateChangeSeq,
+      completion_seq: agent.completionSeq,
       interactive_ready: agent.interactiveReady,
       pane_id: agent.paneId,
     };

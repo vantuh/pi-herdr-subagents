@@ -181,77 +181,81 @@ test("recognizes Pi after a transient startup kind mismatch", () => {
   );
 });
 
-test("parses agent get snapshots used for prompt acceptance", () => {
-  assert.deepEqual(
-    parseAgentSnapshot(
+test("parses only real completion sequences from agent get", () => {
+  for (const completion of [undefined, null, 0, 13]) {
+    const snapshot = parseAgentSnapshot(
       JSON.stringify({
         result: {
           agent: {
             agent_status: "idle",
             state_change_seq: 12,
-            interactive_ready: true,
+            completion_seq: completion,
           },
         },
       }),
-    ),
-    { status: "idle", stateChangeSeq: 12, interactiveReady: true },
-  );
+    );
+    assert.deepEqual(snapshot, {
+      status: "idle",
+      stateChangeSeq: 12,
+      completionSeq: typeof completion === "number" ? completion : undefined,
+    });
+  }
 });
 
-test("prompt acceptance requires a newer seq for working or settled", () => {
-  const before = {
-    status: "idle",
-    stateChangeSeq: 10,
-    interactiveReady: true,
-  };
-  // Same seq while still working: prior turn, not this prompt.
-  assert.equal(
-    promptAcceptanceObserved(before, {
-      status: "working",
-      stateChangeSeq: 10,
-      interactiveReady: true,
-    }),
-    null,
-  );
-  assert.equal(
-    promptAcceptanceObserved(
-      { status: "working", stateChangeSeq: 10, interactiveReady: true },
-      { status: "working", stateChangeSeq: 10, interactiveReady: true },
-    ),
-    null,
-  );
-  assert.equal(
-    promptAcceptanceObserved(before, {
-      status: "working",
-      stateChangeSeq: 11,
-      interactiveReady: true,
-    }),
-    "working",
-  );
-  assert.equal(
-    promptAcceptanceObserved(before, {
-      status: "blocked",
-      stateChangeSeq: 11,
-      interactiveReady: true,
-    }),
-    "working",
-  );
-  assert.equal(
-    promptAcceptanceObserved(before, {
-      status: "idle",
-      stateChangeSeq: 11,
-      interactiveReady: true,
-    }),
-    "settled",
-  );
-  assert.equal(
-    promptAcceptanceObserved(before, {
-      status: "idle",
-      stateChangeSeq: 10,
-      interactiveReady: true,
-    }),
-    null,
-  );
+test("prompt acceptance requires newer activity or an actual completion", () => {
+  const before = { status: "idle", stateChangeSeq: 10, completionSeq: 9 };
+  for (const status of ["working", "blocked"]) {
+    assert.equal(
+      promptAcceptanceObserved(before, {
+        status,
+        stateChangeSeq: 10,
+        completionSeq: 9,
+      }),
+      null,
+    );
+    assert.equal(
+      promptAcceptanceObserved(before, {
+        status,
+        stateChangeSeq: 11,
+        completionSeq: 9,
+      }),
+      "working",
+    );
+  }
+  for (const status of ["idle", "done"]) {
+    for (const completionSeq of [undefined, 0, 9]) {
+      assert.equal(
+        promptAcceptanceObserved(before, {
+          status,
+          stateChangeSeq: 11,
+          completionSeq,
+        }),
+        null,
+      );
+    }
+    assert.equal(
+      promptAcceptanceObserved(before, {
+        status,
+        stateChangeSeq: 11,
+        completionSeq: 11,
+      }),
+      "settled",
+    );
+    assert.equal(
+      promptAcceptanceObserved(
+        { status: "idle", stateChangeSeq: 10 },
+        { status, stateChangeSeq: 11 },
+      ),
+      null,
+    );
+    assert.equal(
+      promptAcceptanceObserved(
+        { status: "idle", stateChangeSeq: 10 },
+        { status, stateChangeSeq: 11, completionSeq: 11 },
+      ),
+      "settled",
+    );
+  }
 });
 
 test("finds a reusable managed pane by exact label in the orchestrator tab", () => {

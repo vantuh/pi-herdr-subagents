@@ -53,7 +53,7 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 
 - Child panes start with `HERDR_AGENT_CHILD=1` and `PROCESS_LAUNCHED_BY_Q=1`: delegation tools stay disabled, final responses are persisted, zsh selects `HISTFILE=/dev/null` from the child marker, and Kiro's terminal wrapper cannot hide the real shell from `herdr agent start`.
 - `HERDR_PANE_ID` is preferred over focused pane detection. Focus can move while a tool is running.
-- New agents start through `herdr agent start`; prompts use atomic `herdr agent prompt` (no `--wait`), then wait for a newer `state_change_seq` with `working`/`blocked` (or settled idle/done), with one Enter nudge only while idle and `interactive_ready`, before `herdr agent wait --until idle --until done`. This avoids Herdr's hardcoded 5s `agent_prompt_stalled` gate. Abort / Herdr wait timeout returns a soft re-wait hint (child stays); re-wait uses `herdr agent wait` only.
+- New agents start through `herdr agent start`; prompts use atomic `herdr agent prompt` (no `--wait`), then wait for newer `state_change_seq` activity with `working`/`blocked` or an actual newer `completion_seq` while settled, before `herdr agent wait --until idle --until done`. This avoids Herdr's hardcoded 5s `agent_prompt_stalled` gate. Abort / Herdr wait timeout returns a soft re-wait hint (child stays); re-wait uses `herdr agent wait` only.
 - An explicit `wait: false` in a headless session (`!ctx.hasUI`) is rejected, because nobody is around to collect a detached result. With a UI, `wait: false` (the default) is valid: the widget poller delivers the outcome and closes one-shot targets. `/council` depends on that path.
 - `herdr_agent` accepts a fresh-spawn-only `model` override that replaces the profile model for that spawn.
 - `/council <question>` reads `council.json` from `getAgentDir()` (`~/.pi/agent/council.json` by default). It injects a persisted user message with the question and a per-model spawn contract (`researcher`, `wait: false`, `tabLabel: "Council — <model>"`). The Orchestrator consolidates after every council answer is delivered. Empty question shows usage; a busy Orchestrator or empty/unreadable config warns and injects nothing.
@@ -126,7 +126,7 @@ fallback, the `ask_question` round trip (parked one-shot answered by label),
 rejection of label-addressed tasks to live agents, parallel spawns serialized
 into one agent column
 with rebalancing, `agent_pane_busy` retry, `agent_kind_mismatch` recovery, the
-single Enter nudge for a stalled prompt, timeout/abort soft re-wait plus the
+delayed and fast prompt acceptance without duplicate Enter, timeout/abort soft re-wait plus the
 re-wait path, detached result and question delivery through the widget poller
 (exactly once), the tab layout, the injected Orchestrator / `/run`
 instructions, and closed one-shot archive/resume (`resumeClosed`, session

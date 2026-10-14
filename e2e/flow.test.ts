@@ -56,6 +56,17 @@ test("spawns a real Pi child in a real pane, collects its result and closes the 
   });
 });
 
+test("collects a real fast completion without a duplicate Enter", async () => {
+  await withE2e({}, async (harness) => {
+    harness.llm.setScript(() => ({ text: DEFAULT_RESULT_TEXT, delayMs: 0 }));
+    const result = await harness.call({ agent: "scout", task: "Fast result." });
+    assert.equal(result.isError, undefined);
+    assert.equal(result.details.closed, true);
+    assert.match(result.content[0].text, /MOCK_CHILD_OK/);
+    assert.equal(harness.llm.requests.length, 1);
+  });
+});
+
 test("continues a closed one-shot via resumeClosed and keeps its context", async () => {
   await withE2e({}, async (harness) => {
     const first = await harness.call({

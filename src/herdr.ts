@@ -765,7 +765,7 @@ type ParsedAgentGet = {
   agent?: string;
   status?: string;
   stateChangeSeq?: number;
-  interactiveReady: boolean;
+  completionSeq?: number;
 };
 
 function parseAgentGetOutput(output: string): ParsedAgentGet {
@@ -775,7 +775,7 @@ function parseAgentGetOutput(output: string): ParsedAgentGet {
         agent?: unknown;
         agent_status?: unknown;
         state_change_seq?: unknown;
-        interactive_ready?: unknown;
+        completion_seq?: unknown;
       };
     };
   };
@@ -789,13 +789,9 @@ function parseAgentGetOutput(output: string): ParsedAgentGet {
   const raw = parsed.result?.agent;
   return {
     agent: typeof raw?.agent === "string" ? raw.agent : undefined,
-    status:
-      typeof raw?.agent_status === "string" ? raw.agent_status : undefined,
-    stateChangeSeq:
-      typeof raw?.state_change_seq === "number"
-        ? raw.state_change_seq
-        : undefined,
-    interactiveReady: raw?.interactive_ready === true,
+    status: typeof raw?.agent_status === "string" ? raw.agent_status : undefined,
+    stateChangeSeq: typeof raw?.state_change_seq === "number" ? raw.state_change_seq : undefined,
+    completionSeq: typeof raw?.completion_seq === "number" ? raw.completion_seq : undefined,
   };
 }
 
@@ -909,12 +905,11 @@ export async function startAgent(
 /** Herdr hardcodes a 5s lifecycle gate on `agent prompt --wait`. */
 const PROMPT_ACCEPT_TIMEOUT_MS = 30_000;
 const PROMPT_ACCEPT_POLL_MS = 100;
-const PROMPT_ENTER_RETRY_AT = 5_000;
 
 export type HerdrAgentSnapshot = {
   status: string;
   stateChangeSeq: number;
-  interactiveReady: boolean;
+  completionSeq?: number;
 };
 
 export function buildAgentPromptArgs(target: string, prompt: string): string[] {
@@ -936,10 +931,7 @@ export function buildAgentWaitArgs(
 
 export function parseAgentSnapshot(output: string): HerdrAgentSnapshot {
   const parsed = parseAgentGetOutput(output);
-  if (
-    typeof parsed.status !== "string" ||
-    typeof parsed.stateChangeSeq !== "number"
-  ) {
+  if (typeof parsed.status !== "string" || typeof parsed.stateChangeSeq !== "number") {
     throw new Error(
       "Malformed herdr agent get output: expected result.agent.agent_status and state_change_seq.",
     );
@@ -947,7 +939,7 @@ export function parseAgentSnapshot(output: string): HerdrAgentSnapshot {
   return {
     status: parsed.status,
     stateChangeSeq: parsed.stateChangeSeq,
-    interactiveReady: parsed.interactiveReady,
+    completionSeq: parsed.completionSeq,
   };
 }
 
@@ -956,16 +948,17 @@ export function promptAcceptanceObserved(
   before: HerdrAgentSnapshot,
   current: HerdrAgentSnapshot,
 ): "working" | "settled" | null {
-  // Require a newer seq so a reused agent still working from a prior turn
-  // is not mistaken for acceptance of the just-submitted prompt.
-  if (current.stateChangeSeq <= before.stateChangeSeq) {
-    return null;
-  }
-  if (current.status === "working" || current.status === "blocked") {
+  if (
+    current.stateChangeSeq > before.stateChangeSeq &&
+    (current.status === "working" || current.status === "blocked")
+  ) {
     return "working";
   }
-  if (current.status === "idle" || current.status === "done") {
-    // Finished so quickly that `working` was never observed.
+  if (
+    (current.status === "idle" || current.status === "done") &&
+    current.completionSeq !== undefined &&
+    current.completionSeq > (before.completionSeq ?? 0)
+  ) {
     return "settled";
   }
   return null;
@@ -983,30 +976,14 @@ async function waitForPromptAcceptance(
   before: HerdrAgentSnapshot,
   signal?: AbortSignal,
 ): Promise<"working" | "settled"> {
-  const startedAt = Date.now();
-  const deadline = startedAt + PROMPT_ACCEPT_TIMEOUT_MS;
-  let enterSent = false;
+  const deadline = Date.now() + PROMPT_ACCEPT_TIMEOUT_MS;
 
   while (true) {
     const current = await getAgentSnapshot(target, signal);
     const observed = promptAcceptanceObserved(before, current);
     if (observed) return observed;
 
-    const now = Date.now();
-    if (
-      !enterSent &&
-      now - startedAt >= PROMPT_ENTER_RETRY_AT &&
-      current.status === "idle" &&
-      current.interactiveReady
-    ) {
-      // Text often lands in the composer while Enter does not. Nudge once,
-      // but only while the composer is still accepting input — never into a
-      // live turn or approval UI that lifecycle detection has not yet shown.
-      await execHerdr(["agent", "send-keys", target, "enter"], signal);
-      enterSent = true;
-    }
-
-    if (now >= deadline) {
+    if (Date.now() >= deadline) {
       throw new HerdrCliError(
         `herdr agent prompt ${target} <prompt> failed [agent_prompt_stalled]: no lifecycle change within ${PROMPT_ACCEPT_TIMEOUT_MS}ms after submit`,
         "agent_prompt_stalled",
@@ -1039,7 +1016,7 @@ export async function promptAgent(
   // Avoid `agent prompt --wait`: Herdr's hardcoded 5s post-submit lifecycle
   // gate returns agent_prompt_stalled when Pi is slow to leave idle, which
   // looks like "text pasted, Enter never pressed". Submit atomically, then
-  // wait for working ourselves (with one Enter recovery) before completion.
+  // wait for newer activity or a real completion before collecting.
   const before = await getAgentSnapshot(target, signal);
   try {
     await execHerdr(buildAgentPromptArgs(target, prompt), signal);

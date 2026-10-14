@@ -390,19 +390,52 @@ test("recovers from a transient agent kind mismatch by waiting and renaming", as
   });
 });
 
-test("nudges Enter once when the prompt lands in the composer but never submits", async () => {
+test("waits for delayed prompt acceptance without sending another Enter", async () => {
   await withHarness({}, async (harness) => {
     harness.fake.setBehavior(() => ({
-      stalled: true,
-      result: "Result after the Enter nudge",
+      staleWindowMs: 5500,
+      result: "Delayed acceptance",
     }));
-
     const result = await harness.call({ agent: "scout", task: "Find it" });
+    assert.match(result.content[0].text, /Delayed acceptance/);
+    assert.equal(harness.fake.callsMatching("agent", "send-keys").length, 0);
+    assert.equal(harness.fake.callsMatching("agent", "prompt").length, 1);
+  });
+});
 
-    assert.match(result.content[0].text, /Result after the Enter nudge/);
-    const nudges = harness.fake.callsMatching("agent", "send-keys");
-    assert.equal(nudges.length, 1);
-    assert.equal(nudges[0]?.[3], "enter");
+test("does not resubmit an unaccepted prompt and leaves it open after abort", async () => {
+  await withHarness({}, async (harness) => {
+    harness.fake.setBehavior(() => ({ stalled: true }));
+    const controller = new AbortController();
+    const pending = harness.call(
+      { agent: "scout", task: "Find it" },
+      { signal: controller.signal },
+    );
+    await harness.waitFor(
+      () => harness.fake.callsMatching("agent", "prompt").length === 1,
+      "prompt submission",
+    );
+    const timer = setTimeout(() => controller.abort(), 5500);
+    try {
+      const result = await pending;
+      assert.equal(result.details.interrupted, true);
+      assert.equal(result.details.interruptReason, "aborted");
+      assert.equal(harness.fake.panes.length, 2);
+      assert.equal(harness.fake.callsMatching("agent", "send-keys").length, 0);
+      assert.equal(harness.fake.callsMatching("agent", "prompt").length, 1);
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+});
+
+test("collects a completion that settles before the acceptance poll", async () => {
+  await withHarness({}, async (harness) => {
+    harness.fake.setBehavior(() => ({ delayMs: 0, result: "Fast completion" }));
+    const result = await harness.call({ agent: "scout", task: "Find it" });
+    assert.match(result.content[0].text, /Fast completion/);
+    assert.equal(result.details.closed, true);
+    assert.equal(harness.fake.callsMatching("agent", "send-keys").length, 0);
   });
 });
 
