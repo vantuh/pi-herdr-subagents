@@ -6,14 +6,51 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 
 import { discoverAgents } from '../agents.ts';
+import type { AgentProfile } from '../agents/types.ts';
 import { getHerdrAgentsLayout } from '../config.ts';
 import type { HerdrAgentsConfig } from '../config/schema.ts';
+import { listManagedWorkspaceAgents } from '../herdr/placement.ts';
+import { loadContextWithState } from '../herdr/snapshot.ts';
+import { findOwnedClosedHistory } from '../state/closed-history.ts';
 import { titleCase } from '../utils.ts';
 import { orchestratorIdentity } from './child-args.ts';
 import { textResult } from './result.ts';
 import type { HerdrAgentParams } from './schema.ts';
 import { runAgentTask } from './spawn/flow.ts';
 import { executeAgentStatus } from './status.ts';
+
+function unknownProfileResult(
+  agents: readonly AgentProfile[],
+  name: string,
+): AgentToolResult<Record<string, unknown>> {
+  // Hidden (disable-model-invocation) profiles stay spawnable by exact name.
+  const listable = agents.filter((item) => !item.disableModelInvocation);
+  const available = listable.map((item) => item.name).join(', ') || 'none';
+  return textResult(
+    `Unknown Herdr agent: ${name}. Available: ${available}`,
+    { availableAgents: listable },
+    true,
+  );
+}
+
+/**
+ * A call without `agent` addresses an existing agent through its label, so the
+ * profile name comes from the record this Orchestrator session owns.
+ */
+async function resolveProfileNameByLabel(
+  label: string,
+  resumeClosed: boolean,
+  ownerSessionId: string | undefined,
+  signal: AbortSignal | undefined,
+): Promise<string | undefined> {
+  const { context, state } = await loadContextWithState(signal);
+  const live = listManagedWorkspaceAgents(context, state).find(
+    (item) => item.tabLabel === label,
+  );
+  if (live) return live.agent;
+  if (!resumeClosed || !ownerSessionId) return undefined;
+  return findOwnedClosedHistory(state, ownerSessionId, label)?.profileName;
+}
 
 export async function executeHerdrAgent(
   pi: ExtensionAPI,
@@ -24,17 +61,17 @@ export async function executeHerdrAgent(
   configPromise: Promise<HerdrAgentsConfig>,
 ): Promise<AgentToolResult<Record<string, unknown>>> {
   const agents = await discoverAgents(ctx.cwd);
-  const agent = agents.find((item) => item.name === params.agent);
-  if (!agent) {
-    // Profiles marked disable-model-invocation stay spawnable by exact
-    // name, but they are not offered as options to the Orchestrator.
-    const listable = agents.filter((item) => !item.disableModelInvocation);
-    const available = listable.map((item) => item.name).join(', ') || 'none';
-    return textResult(
-      `Unknown Herdr agent: ${params.agent}. Available: ${available}`,
-      { availableAgents: listable },
-      true,
-    );
+  const requestedName = params.agent?.trim();
+  const tabLabel = params.tabLabel?.trim();
+  const resumeClosed = params.resumeClosed === true;
+  const owner = orchestratorIdentity(ctx);
+
+  const named = requestedName
+    ? agents.find((item) => item.name === requestedName)
+    : undefined;
+  // Checked before the TUI gate, so an unknown name is reported outside TUI too.
+  if (requestedName && !named) {
+    return unknownProfileResult(agents, requestedName);
   }
 
   if (ctx.mode !== 'tui') {
@@ -45,11 +82,33 @@ export async function executeHerdrAgent(
     );
   }
 
+  const profileName =
+    requestedName ??
+    (tabLabel
+      ? await resolveProfileNameByLabel(
+          tabLabel,
+          resumeClosed,
+          owner.ownerSessionId,
+          signal,
+        )
+      : undefined);
+  if (!profileName) {
+    return textResult(
+      tabLabel
+        ? `No agent labeled "${tabLabel}" found for this session. Pass agent to start a new one.`
+        : 'agent is required to start a new agent; tabLabel is required to address an existing one.',
+      {},
+      true,
+    );
+  }
+  const agent = named ?? agents.find((item) => item.name === profileName);
+  if (!agent) {
+    return unknownProfileResult(agents, profileName);
+  }
+
   const config = await configPromise;
   const layout = getHerdrAgentsLayout(config);
-  const baseLabel = params.tabLabel?.trim() || titleCase(agent.name);
-  const resumeClosed = params.resumeClosed === true;
-  const owner = orchestratorIdentity(ctx);
+  const baseLabel = tabLabel || titleCase(agent.name);
 
   if (resumeClosed) {
     if (!params.task?.trim()) {
@@ -59,7 +118,7 @@ export async function executeHerdrAgent(
         true,
       );
     }
-    if (!params.tabLabel?.trim()) {
+    if (!tabLabel) {
       return textResult(
         'resumeClosed requires an explicit non-empty tabLabel.',
         { resumeClosed: true },
@@ -75,7 +134,7 @@ export async function executeHerdrAgent(
     // Omitting task never resurrects a closed agent.
     return await executeAgentStatus({
       agent,
-      tabLabel: params.tabLabel,
+      tabLabel,
       baseLabel,
       layout,
       config,

@@ -79,6 +79,12 @@ closes a finished one-shot. The extension never sends an extra Enter.
 before any Herdr call, because they have no widget poller. The profile is
 resolved first, so an unknown profile is reported even outside TUI.
 
+`agent` is required to start a new agent. A call that omits it must pass a
+`tabLabel`, which `execute` resolves against this session's managed state — the
+live record, or the owned closed-history record when `resumeClosed` is set — to
+the profile name it continues with. An unresolved label is an error, never a
+spawn.
+
 A call without `task` (or with a blank one) is a status check. It first returns
 a parked question or an already-collected notice if there is one. Otherwise it
 reads the status from `herdr agent get` and previews the child's latest captured

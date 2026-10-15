@@ -96,7 +96,7 @@ Tool parameters:
 
 | Parameter      | Description                                                                                        |
 | -------------- | -------------------------------------------------------------------------------------------------- |
-| `agent`        | Profile name.                                                                                      |
+| `agent`        | Profile name. Required to start a new agent; omit it when `tabLabel` addresses an existing one.    |
 | `task`         | Self-contained task. Omit it to check the status of a live agent by `tabLabel`.                    |
 | `tabLabel`     | Agent label. Defaults to the title-cased profile name. Used for status checks, answers and resume. |
 | `resumeClosed` | Reopen a closed agent, matched by `tabLabel`, with its prior conversation. Requires `task` and an explicit `tabLabel`; only agents started by the current Orchestrator session can be resumed. |

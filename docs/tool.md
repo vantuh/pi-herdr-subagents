@@ -25,11 +25,11 @@ Child Pi panes (`HERDR_AGENT_CHILD=1`) never get this tool.
 
 ### Parameters
 
-Only `agent` is required by the schema. Some modes require more fields at runtime (see the table).
+No parameter is required by the schema. `agent` is required to start a new agent; a call that addresses an existing agent by `tabLabel` may omit it. Some modes require more fields at runtime (see the table).
 
 | Parameter | Type | Required | Default | Meaning |
 |---|---|---|---|---|
-| `agent` | string | yes | — | Profile name from `~/.pi/agent/agents/*.md` (project profiles in `.pi/agents/` override same-named user profiles). Schema description: `Agent profile name from ~/.pi/agent/agents/*.md or the project .pi/agents.` plus the dynamic `Available:` list. |
+| `agent` | string | to start a new agent | — | Profile name from `~/.pi/agent/agents/*.md` (project profiles in `.pi/agents/` override same-named user profiles). Schema description: `Agent profile name from ~/.pi/agent/agents/*.md or the project .pi/agents.` plus the dynamic `Available:` list. Omit it when `tabLabel` addresses an existing agent: the profile comes from this session's live record, or with `resumeClosed: true` from the owned closed-history record. An unresolved label is an error, never a spawn. |
 | `task` | string | no | — | Self-contained task for the agent. Omit it to check a live agent matched by `tabLabel`: the call returns status and a preview of the latest captured assistant text, and does not send a new prompt. |
 | `tabLabel` | string | no* | Title-cased profile name, e.g. `Researcher` | Agent label. Identifies the agent for status checks, parked-question answers and `resumeClosed`. *Required when `task` is omitted, and when `resumeClosed` is `true`. |
 | `resumeClosed` | boolean | no | `false` | Continue a closed one-shot with its prior context. Requires a non-empty `task` and an explicit `tabLabel`. Never resumes over a live agent. |
@@ -42,7 +42,7 @@ The mode is picked from `task`, `resumeClosed` and what is already live under th
 
 | Call | Mode |
 |---|---|
-| `task`, no live agent under the label | Fresh spawn |
+| `task`, no live agent under the label | Fresh spawn (requires `agent`) |
 | no `task`, `tabLabel` | Status check on a live agent |
 | `task` + same `tabLabel` as a live agent that parked a question | Answer a parked question |
 | `task` + `tabLabel` + `resumeClosed: true`, agent closed | Resume a closed one-shot |
@@ -63,10 +63,10 @@ If the label is taken by a live managed agent, a default label gets a suffix (fo
 
 #### Status check
 
-Omit `task` and pass the `tabLabel` of a live agent. No prompt is sent, and nothing is claimed, closed, or resumed.
+Omit `task` and pass the `tabLabel` of a live agent. No prompt is sent, and nothing is claimed, closed, or resumed. `agent` may be omitted too: the profile is resolved from the live record this session owns, and only when nothing matches does the call fail with `No agent labeled "<label>" found for this session. Pass agent to start a new one.`
 
 ```json
-{ "agent": "scout", "tabLabel": "Scout" }
+{ "tabLabel": "Scout" }
 ```
 
 Notes:
@@ -76,7 +76,7 @@ Notes:
 - A settled agent with no result artifact returns `finished without a result`, with no preview. The agent stays open.
 - An agent whose outcome was already delivered returns that it was already collected. If the target is still open, close it with `/herdr-agents`, then continue with `resumeClosed`.
 - A blank `task` is treated as omitted.
-- Errors: `tabLabel is required when task is omitted.` and `No running Herdr agent named "<label>" found.`
+- Errors: `tabLabel is required when task is omitted.`, `No running Herdr agent named "<label>" found.`, and, when `agent` is omitted too, `No agent labeled "<label>" found for this session. Pass agent to start a new one.`
 - Omitting `task` never reopens a closed agent. Use `resumeClosed` for that.
 
 #### Answer a parked question
@@ -113,7 +113,7 @@ Rules checked by `execute`:
 
 - `task` must be non-empty and `tabLabel` must be explicit (not defaulted).
 - `tabLabel` must match exactly a closed one-shot owned by this Orchestrator session.
-- `agent` must be the same profile the closed agent used.
+- `agent` must be the same profile the closed agent used. It may be omitted when the live record or the owned closed-history record supplies the profile.
 - The archived session file and working directory must still exist. Otherwise the history entry is marked invalid and the call fails.
 - A closed agent that is already being resumed cannot be claimed again.
 - `resumeClosed` never resumes over a live agent. A working agent, an agent still open, or a settled result that has not been delivered is rejected with guidance (check status, or wait for delivery). A parked question is the exception: it is answered in place.
@@ -151,6 +151,8 @@ Returned with `isError: true`:
 | Condition | Message (start) |
 |---|---|
 | Unknown profile | `Unknown Herdr agent: <name>. Available: …` (`details.availableAgents`) |
+| No profile at all | `agent is required to start a new agent; tabLabel is required to address an existing one.` |
+| `agent` omitted and no matching agent | `No agent labeled "<label>" found for this session. Pass agent to start a new one.` |
 | Non-TUI session | `herdr_agent requires TUI mode. …` |
 | `resumeClosed` without `task` | `resumeClosed requires a non-empty task. …` |
 | `resumeClosed` without `tabLabel` | `resumeClosed requires an explicit non-empty tabLabel.` |

@@ -23,9 +23,9 @@ test('exposes exactly the documented parameters', () => {
   ]);
 });
 
-test('requires only the agent profile', () => {
-  // task is optional on purpose: omitting it checks a live agent's status.
-  assert.deepEqual(HerdrAgentParams.required, ['agent']);
+test('requires no parameter of its own', () => {
+  // agent is optional on purpose: tabLabel alone can address an existing agent.
+  assert.deepEqual(HerdrAgentParams.required ?? [], []);
 });
 
 test('has no lifecycle or timeout parameters', () => {
@@ -56,6 +56,12 @@ test('task description says omitting it checks status', () => {
   const task = HerdrAgentParams.properties.task as { description?: string };
   assert.match(task.description ?? '', /Omit to check a live agent/);
   assert.match(task.description ?? '', /does not send a new prompt/);
+});
+
+test('agent description says when the profile may be omitted', () => {
+  const agent = HerdrAgentParams.properties.agent as { description?: string };
+  assert.match(agent.description ?? '', /Required to start a new agent/);
+  assert.match(agent.description ?? '', /omit it when tabLabel addresses/);
 });
 
 test('resumeClosed description names the continuation contract', () => {

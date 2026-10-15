@@ -208,6 +208,28 @@ test('archives a completed one-shot and resumes it with --session', async () => 
   });
 });
 
+test('resumeClosed resolves the profile from the closed history when agent is omitted', async () => {
+  await withHarness({}, async (harness) => {
+    const first = await harness.call({
+      agent: 'scout',
+      task: 'first slice',
+      tabLabel: 'Scout Label Resume',
+    });
+    await harness.collect(first.details.tabLabel);
+
+    const resumed = await harness.call({
+      task: 'second slice',
+      tabLabel: 'Scout Label Resume',
+      resumeClosed: true,
+    });
+
+    assert.equal(resumed.isError, undefined);
+    assert.equal(resumed.details.resumed, true);
+    assert.equal(resumed.details.agent.name, 'scout');
+    await harness.collect('Scout Label Resume');
+  });
+});
+
 test('resumeClosed does not spawn over a live working agent', async () => {
   await withHarness({}, async (harness) => {
     await harness.call({

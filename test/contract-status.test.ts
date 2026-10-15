@@ -46,6 +46,32 @@ test('a status check reports status and does not prompt, wait, or close', async 
   });
 });
 
+test('a task without agent needs a live agent under the label', async () => {
+  await withHarness({}, async (harness) => {
+    const result = await harness.call({ tabLabel: 'Ghost', task: 'Go' });
+
+    assert.equal(result.isError, true);
+    assert.match(
+      result.content[0].text,
+      /No agent labeled "Ghost" found for this session\. Pass agent to start a new one\./,
+    );
+    assert.deepEqual(harness.fake.callsMatching('agent', 'start'), []);
+  });
+});
+
+test('a call without agent and without tabLabel starts nothing', async () => {
+  await withHarness({}, async (harness) => {
+    const result = await harness.call({ task: 'Go' });
+
+    assert.equal(result.isError, true);
+    assert.match(
+      result.content[0].text,
+      /agent is required to start a new agent; tabLabel is required to address an existing one\./,
+    );
+    assert.deepEqual(harness.fake.callsMatching('agent', 'start'), []);
+  });
+});
+
 test('resumeClosed without a task is rejected and does not resurrect', async () => {
   await withHarness({}, async (harness) => {
     const result = await harness.call({

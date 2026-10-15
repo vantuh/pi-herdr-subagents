@@ -96,6 +96,21 @@ test('status check never prompts, waits, claims, or closes', async () => {
   });
 });
 
+test('status check resolves the profile from the label when agent is omitted', async () => {
+  await withHarness({}, async (harness) => {
+    harness.fake.setBehavior(() => ({ neverSettle: true }));
+
+    await harness.call({ agent: 'scout', task: 'Look around' });
+    const result = await harness.call({ tabLabel: 'Scout' });
+
+    assert.equal(result.isError, undefined);
+    assert.equal(result.details.status, 'working');
+    assert.equal(result.details.agent.name, 'scout');
+    assert.equal(result.details.tabLabel, 'Scout');
+    assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
+  });
+});
+
 test('rejects a status check for an unknown label', async () => {
   await withHarness({}, async (harness) => {
     const result = await harness.call({ agent: 'scout', tabLabel: 'Ghost' });

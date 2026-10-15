@@ -2,7 +2,7 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
 export const DEFAULT_AGENT_PARAM_DESCRIPTION =
-  'Agent profile name from ~/.pi/agent/agents/*.md or the project .pi/agents.';
+  'Agent profile name from ~/.pi/agent/agents/*.md or the project .pi/agents. Required to start a new agent; omit it when tabLabel addresses an existing one (status check, answering a question, resumeClosed).';
 
 /**
  * The `agent` parameter is model-facing: profiles marked
@@ -38,9 +38,11 @@ export function buildHerdrAgentParams(
   agentDescription: string = DEFAULT_AGENT_PARAM_DESCRIPTION,
 ) {
   return Type.Object({
-    agent: Type.String({
-      description: agentDescription,
-    }),
+    agent: Type.Optional(
+      Type.String({
+        description: agentDescription,
+      }),
+    ),
     task: Type.Optional(
       Type.String({
         description:
