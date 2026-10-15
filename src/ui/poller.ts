@@ -4,7 +4,7 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 
 import { readAgentQuestion, readAgentResult } from '../artifacts.ts';
-import { isSettledAgentStatus } from '../herdr/agent.ts';
+import { getAgentSnapshot, isSettledAgentStatus } from '../herdr/agent.ts';
 import { execHerdr } from '../herdr/cli.ts';
 import { listManagedWorkspaceAgents } from '../herdr/placement.ts';
 import { loadContextWithState } from '../herdr/snapshot.ts';
@@ -119,6 +119,21 @@ export function buildAgentFinishedNotificationArgs(
 }
 
 /**
+ * A tick's snapshot can predate the prompt, so a stale `idle` would deliver a
+ * partial artifact and close a still-working child. A failed status read keeps
+ * the snapshot's verdict instead of stalling every delivery.
+ */
+async function agentStillSettled(
+  agent: HerdrAgentInfo,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const snapshot = await bestEffort(undefined, () =>
+    getAgentSnapshot(agent.automationName ?? agent.paneId, signal),
+  );
+  return snapshot === undefined || isSettledAgentStatus(snapshot.status);
+}
+
+/**
  * Deliver outcomes of detached agents — a finished result, or a question the
  * child asked instead of finishing.
  *
@@ -158,6 +173,7 @@ export async function deliverDetachedOutcomes(
       readAgentQuestion(agent.resultFile),
     );
     if (question) {
+      if (!(await agentStillSettled(agent, signal))) continue;
       const claimedQuestion = await bestEffort(false, () =>
         claimDetachedAgent(
           { terminal_id: agent.terminalId },
@@ -199,6 +215,7 @@ export async function deliverDetachedOutcomes(
     // Settled without an artifact means the child produced nothing usable.
     // Leave the claim: there is nothing to deliver.
     if (!result) continue;
+    if (!(await agentStillSettled(agent, signal))) continue;
 
     const claimed = await bestEffort(false, () =>
       claimDetachedAgent({ terminal_id: agent.terminalId }, undefined, signal),

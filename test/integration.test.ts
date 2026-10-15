@@ -682,6 +682,52 @@ test('delivers a detached result through the widget poller and closes the one-sh
   });
 });
 
+test('a poller tick with a stale idle snapshot does not deliver a still-working child', async () => {
+  await withHarness({}, async (harness) => {
+    harness.fake.setBehavior(() => ({ neverSettle: true }));
+
+    await harness.call({ agent: 'scout', task: 'Background job' });
+    const record = Object.values((await harness.readState()).agents)[0];
+    assert.ok(record?.resultFile && record.paneId && record.automationName);
+
+    // The child appends assistant text to result.md before its turn ends.
+    await fs.writeFile(record.resultFile, 'still working', 'utf8');
+    // The tick's snapshot is taken before the prompt is submitted, so it
+    // carries the pre-prompt `idle` while the live agent is `working`.
+    const pane = harness.fake.paneById(record.paneId);
+    assert.ok(pane);
+    pane.agent_status = 'idle';
+
+    const snapshots = harness.fake.callsMatching('api', 'snapshot').length;
+    await harness.waitFor(
+      () => harness.fake.callsMatching('api', 'snapshot').length > snapshots,
+      'a widget poller tick',
+    );
+    // The tick must re-check the live status before delivering; delivering the
+    // partial artifact instead is the race this test guards.
+    await harness.waitFor(
+      () =>
+        harness.fake.callsMatching('agent', 'get').length > 0 ||
+        harness.messages.length > 0,
+      'the widget poller tick to settle the working child',
+    );
+    const gets = harness.fake.callsMatching('agent', 'get');
+    assert.equal(gets.length, 1);
+    assert.equal(gets[0]?.[2], record.automationName);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    assert.equal(harness.messages.length, 0);
+    assert.equal(harness.fake.callsMatching('pane', 'close').length, 0);
+    assert.ok(
+      harness.fake.panes.some((item) => item.pane_id === record.paneId),
+      'the still-working agent pane must stay open',
+    );
+    const after = Object.values((await harness.readState()).agents)[0];
+    assert.equal(after?.detached, true);
+    assert.equal(after?.collected, undefined);
+  });
+});
+
 test('status check keeps ownership after a simulated handoff changes both terminals', async () => {
   await withHarness({}, async (harness) => {
     harness.fake.holdChildren();

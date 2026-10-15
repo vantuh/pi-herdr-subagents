@@ -44,7 +44,9 @@ Easy to break and not obvious from one file:
 - The poller delivers each outcome exactly once: `claimDetachedAgent` clears the
   `detached` flag in one locked read-modify-write. A question is checked before
   a result. A one-shot closes only after it wrote a result artifact; a child that
-  asked a question stays open.
+  asked a question stays open. Before claiming, the poller re-reads the live
+  agent status: a tick's snapshot can predate the prompt, and a stale `idle`
+  would deliver partial text and close a working child.
 - Status checks read the result artifact, never the pane.
 - A child appends every assistant message of a task to `result.md`; the parent
   clears it before each prompt. Overwriting lost answers that a model split
