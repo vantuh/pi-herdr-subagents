@@ -14,11 +14,14 @@ Orchestration guidance uses the named `herdr_agents` system-prompt section for
 both user and custom-message runs, preserving Pi's other prompt sections.
 
 `src/agents.ts` discovers profiles on every call from `getAgentDir()/agents`
-and the nearest project `.pi/agents`. Project profiles override user profiles
+and the nearest project `.pi/agents`. `session_start` (including `/reload`)
+also rediscovers them to refresh the `Available:` list in the tool schema.
+`herdr-agents.json` is read once at extension load. Project profiles override user profiles
 by name. See [agent-profiles.md](agent-profiles.md) for fields and precedence.
 
 New children have fresh context. The role body and child protocol are written
-to `system.md`, passed through `--append-system-prompt` or `--system-prompt`.
+to `system.md`, passed through `--append-system-prompt` (default) or
+`--system-prompt` (profile `system-prompt: replace`).
 The task prompt includes the private `HERDR_RESULT_FILE` marker.
 
 ## Target placement and startup
@@ -26,11 +29,8 @@ The task prompt includes the private `HERDR_RESULT_FILE` marker.
 `herdr api snapshot` discovers the session. `HERDR_PANE_ID` takes precedence
 over UI focus because focus can change while a tool runs.
 
-Layout comes from `herdr-agents.json` ([config.md](config.md)), never the tool parameters:
-
-- `workspace` (default): one tab per agent in the dedicated `subagents` workspace.
-- `pane`: first split is right at 60/40; later agents stack down the right column.
-- `tab`: one tab per agent in the orchestrator's workspace.
+Layout comes from `herdr-agents.json` ([config.md](config.md)), never the tool
+parameters.
 
 Creation responses supply IDs; the extension does not predict them. Placement
 is locked through startup, state recording, and pane-column rebalancing so
@@ -65,12 +65,14 @@ result or question and closes a finished one-shot. The extension never sends
 an extra Enter.
 
 `herdr_agent` requires TUI mode. RPC, JSON, and print sessions are rejected
-before any Herdr call, because they have no widget poller.
+before any Herdr call, because they have no widget poller. The profile is
+resolved first, so an unknown profile is reported even outside TUI.
 
-A taskless call (`tabLabel`, no `task`) is a status check. It reads
-`herdr agent get` and previews the child's latest captured assistant text. It
-never prompts, waits, claims, closes, resurrects a closed agent, or reads the
-terminal.
+A call without `task` (or with a blank one) is a status check. It first returns
+a parked question or an already-collected notice if there is one. Otherwise it
+reads the status from `herdr agent get` and previews the child's latest captured
+assistant text from `result.md`. It never prompts, waits, claims, closes,
+resurrects a closed agent, or reads the terminal.
 
 ## Questions and result collection
 
@@ -86,9 +88,10 @@ question delivery does not terminate the turn. The parent
 returns/delivers the question and leaves the one-shot open. Answer by sending
 a normal `task` with the same `tabLabel`.
 
-If no result artifact exists a status check reports `finished without a result`;
-the poller does not deliver that case and the agent stays open. Artifacts are the
-only status source: terminal scrollback is never read, because a Pi pane's output
+If the agent settled without a result artifact, a status check reports
+`finished without a result`; the poller does not deliver that case and the agent
+stays open. A working agent without an artifact reports its Herdr status.
+Agent output comes only from artifacts: terminal scrollback is never read, because a Pi pane's output
 is mostly TUI chrome (banner, resource lists, redraw frames, status bar).
 
 Detached claims use the shared state lock so background collection does not
@@ -97,7 +100,8 @@ only the final custom message triggers a turn.
 
 ## Close and resume
 
-Every new agent is a one-shot. Historical persistent records remain stored but
+Every spawned agent is a one-shot; answering a parked question reuses its open
+target instead of spawning. Historical persistent records remain stored but
 unmanaged; they are never converted to closable one-shots or claimed for delivery.
 Successful collection stages continuation
 metadata before closing the owned pane/tab. Only then does the extension

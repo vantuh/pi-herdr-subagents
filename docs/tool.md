@@ -34,7 +34,7 @@ Only `agent` is required by the schema. Some modes require more fields at runtim
 | `tabLabel` | string | no* | Title-cased profile name, e.g. `Researcher` | Agent label. Identifies the agent for status checks, parked-question answers and `resumeClosed`. *Required when `task` is omitted, and when `resumeClosed` is `true`. |
 | `resumeClosed` | boolean | no | `false` | Continue a closed one-shot with its prior context. Requires a non-empty `task` and an explicit `tabLabel`. Never resumes over a live agent. |
 
-There are no `layout`, `lifecycle`, `wait`, or `timeoutMs` parameters. Layout comes from `herdr-agents.json` ([config.md](config.md)). Every call returns when the prompt is submitted; the widget poller delivers the outcome.
+There are no `layout`, `lifecycle`, `wait`, or `timeoutMs` parameters. Layout comes from `herdr-agents.json` ([config.md](config.md)). A call with a task returns when the prompt is submitted; the widget poller delivers the outcome. A status check returns right after its lookup.
 
 ### Modes
 
@@ -51,7 +51,7 @@ The mode is picked from `task`, `resumeClosed` and what is already live under th
 
 Starts a new child Pi in a new Herdr target (a tab in the subagents workspace by default), sends the task, and returns `Herdr agent <label> started (<paneId>).` The widget poller later delivers the outcome as a `herdr_agent_result` or `herdr_agent_question` message, exactly once. A result is delivered only when the child wrote a non-empty result artifact; a question only when it wrote `question.md`. One-shot targets are closed when the result is delivered. If the agent settles with no artifact the poller delivers nothing and keeps the agent. A status check then reports that the agent finished without a result.
 
-The label is made unique if needed (for example `Researcher #2`) when no `tabLabel` was given and the default label is taken.
+If the label is taken by a live managed agent, a default label gets a suffix (for example `Researcher #2`), while an explicit `tabLabel` is rejected (see [Live agent with the same label](#live-agent-with-the-same-label)). A label that only matches some other tab gets a suffix either way.
 
 ```json
 { "agent": "scout", "task": "Find where session tokens are validated. Read-only. Return file paths with line numbers." }
@@ -75,6 +75,7 @@ Notes:
 - A parked question returns the question text with `status: "question"` and `closed: false`.
 - A settled agent with no result artifact returns `finished without a result`, with no preview. The agent stays open.
 - An agent whose outcome was already delivered returns that it was already collected. If the target is still open, close it with `/herdr-agents`, then continue with `resumeClosed`.
+- A blank `task` is treated as omitted.
 - Errors: `tabLabel is required when task is omitted.` and `No running Herdr agent named "<label>" found.`
 - Omitting `task` never reopens a closed agent. Use `resumeClosed` for that.
 
@@ -176,6 +177,6 @@ On every Orchestrator turn the extension appends `GLOBAL_INSTRUCTIONS` (`src/pro
 - Synthesize results yourself; do not forward raw pane output.
 - Every call returns when the prompt is submitted. Do not start the delegated work yourself meanwhile; end the turn or do unrelated work. The result or question arrives as a message. `herdr_agent` requires TUI mode.
 
-After `/run`, `buildRunTurnInstructions` adds a one-turn note that authorizes delegation for the user's task.
+For the user message that `/run` sends, `buildRunTurnInstructions` adds a one-turn note that authorizes delegation for the user's task.
 
 The child receives its own protocol (`CHILD_PROTOCOL`): finish with a `HERDR_RESULT:` block (`status`, `summary`, `evidence`, `changes`, `next`), or call `ask_question` once when requirements are genuinely ambiguous. The `HERDR_RESULT:` format is only requested; the extension does not validate it, so a result may lack it.

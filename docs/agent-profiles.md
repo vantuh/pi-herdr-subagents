@@ -39,8 +39,8 @@ All keys are lowercase, exactly as written. Unknown keys are ignored.
 | `model` | no | string | Passed as `--model`. Omitted: Pi's default. A non-string value is ignored. |
 | `thinking` | no | string | One of `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` (trimmed, case-insensitive); passed as `--thinking`. Omitted/empty: no flag. Other strings: flag omitted and the spawn result carries the warning `Unknown thinking level "<value>" ignored.`; the spawn still proceeds. |
 | `skills` | no | comma-separated string or YAML list | Omitted (or empty string): child keeps Pi's normal skill discovery. `none`, `[]` or an empty YAML list: no skills (`--no-skills`). A non-empty list: `--no-skills` plus `--skill <file>` for each name found. Names matching no skill produce the warning `Skills not found: ...`; the spawn still proceeds. |
-| `system-prompt` | no | `append` or `replace` (trimmed, case-insensitive) | Default `append` (`--append-system-prompt`). `replace` uses `--system-prompt`. Any other value falls back to `append`. |
-| `disable-model-invocation` | no | `true` / `false` (boolean or string) | Default `false`. Any other value is treated as unset. `true` hides the profile from advertised lists, not from discovery (see [Visibility](#visibility)). |
+| `system-prompt` | no | `append` or `replace` (trimmed, case-insensitive) | Default `append` (`--append-system-prompt`). `replace` uses `--system-prompt`. Any other value, including a YAML boolean, falls back to `append`. |
+| `disable-model-invocation` | no | `true` / `false` (boolean or lowercase string) | Default `false`. Any other value, including `"True"`, is treated as unset. `true` hides the profile from advertised lists, not from discovery (see [Visibility](#visibility)). |
 
 Notes:
 
@@ -99,4 +99,5 @@ unknown-agent error. The profile is still spawnable by exact name.
 - [README.md](../README.md#agent-profiles) — overview of profiles.
 - `src/agents.ts` — parsing, tool normalization and discovery;
   `src/tool/child-args.ts` — `buildChildPiArgs`, `buildChildToolAllowlist`;
-  `src/tool/execute.ts` — the spawn flow that starts the child with those args.
+  `src/tool/execute.ts` — the spawn flow that starts the child with those args;
+  `src/tool/schema.ts` and `src/index.ts` — the advertised profile list.
