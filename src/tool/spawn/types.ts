@@ -1,0 +1,81 @@
+import type {
+  AgentToolResult,
+  AgentToolUpdateCallback,
+  ExtensionAPI,
+  ExtensionToolContext,
+} from '@earendil-works/pi-coding-agent';
+
+import type { AgentProfile } from '../../agents/types.ts';
+import type {
+  HerdrAgentLayout,
+  HerdrAgentsConfig,
+} from '../../config/schema.ts';
+import type { CreatedPane, TabInfo } from '../../herdr/schema.ts';
+import type { HerdrContext } from '../../herdr/types.ts';
+import type {
+  ClosedAgentHistoryRecord,
+  HerdrAgentsState,
+} from '../../state/schema.ts';
+import type { orchestratorIdentity } from '../child-args.ts';
+import type { HerdrAgentParams } from '../schema.ts';
+
+export interface SpawnTarget {
+  tabId: string;
+  paneId: string;
+}
+
+export interface TaskInvocation {
+  pi: ExtensionAPI;
+  params: HerdrAgentParams;
+  task: string;
+  signal: AbortSignal | undefined;
+  onUpdate: AgentToolUpdateCallback<Record<string, unknown>> | undefined;
+  ctx: ExtensionToolContext;
+}
+
+export interface SpawnSettings {
+  agent: AgentProfile;
+  config: HerdrAgentsConfig;
+  layout: HerdrAgentLayout;
+  baseLabel: string;
+  resumeClosed: boolean;
+  owner: ReturnType<typeof orchestratorIdentity>;
+}
+
+// Shared progress lets cleanup see claims and targets even when a phase throws.
+export interface SpawnState {
+  agent: AgentProfile;
+  tabLabel: string;
+  tabId?: string;
+  paneId?: string;
+  agentPane?: CreatedPane;
+  lifecycleRecorded?: boolean;
+  automationName?: string;
+  resultFile?: string;
+  sessionMetaFile?: string;
+  systemFile?: string;
+  reused: boolean;
+  resumed: boolean;
+  resumeClaim?: ClosedAgentHistoryRecord;
+  resumeDurable: boolean;
+  /** Populated only on a fresh spawn: frontmatter fields pi can't honor. */
+  spawnWarnings: string[];
+}
+
+export interface AgentPlacement {
+  current: HerdrContext;
+  state: HerdrAgentsState;
+  tabs: TabInfo[];
+  usesTabs: boolean;
+  agentsWorkspaceId?: string;
+  agentsWorkspaceCreated: boolean;
+  agentsWorkspaceRootTabId?: string;
+}
+
+export type PlacementResolution =
+  | { error: AgentToolResult<Record<string, unknown>> }
+  | { placement: AgentPlacement };
+
+export type SpawnTargetResult =
+  | { error: AgentToolResult<Record<string, unknown>> }
+  | { target: SpawnTarget };

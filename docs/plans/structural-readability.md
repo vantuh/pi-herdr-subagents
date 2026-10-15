@@ -28,7 +28,7 @@ file map in `AGENTS.md` and affected documentation/imports with each step.
   live-agent lifecycle operations from store IO/transactions. Keep one locked
   load-mutate-save boundary and avoid runtime imports back into the store from
   pure schema/policy modules.
-- [ ] 4. Split tool execution into dispatch and cohesive spawn phases: flow and
+- [x] 4. Split tool execution into dispatch and cohesive spawn phases: flow and
   rollback, target placement, continuation/reuse, and start/prompt lifecycle.
   Keep internal types/schemas beside the spawn feature. Preserve partial-progress
   cleanup, pane/workspace lock release points and resume-claim durability.
@@ -73,5 +73,9 @@ and 127 integration tests pass. E2E has not yet been run for this task.
   mutations from store IO. `store.ts` is now 208 lines. Independent diff review
   confirmed equivalent bodies and transaction ordering. Typecheck, lint,
   190 unit, 127 integration and 13 E2E tests pass.
+- Step 4: reduced `execute.ts` to a 92-line dispatcher and moved cohesive spawn
+  phases, contracts and response schemas beside it. Independent diff review
+  confirmed unchanged bodies, lock scope and rollback ordering. Typecheck,
+  lint, 190 unit, 127 integration and 13 E2E tests pass.
 - E2E runs use installed Pi `1.2.0` and Herdr `0.9.5`; the documented Herdr
   `0.9.4` binary is not installed, so that exact version remains unverified.

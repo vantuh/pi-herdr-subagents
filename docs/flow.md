@@ -7,8 +7,10 @@ Current runtime: Pi `1.2.0`, Herdr client/server `0.9.4`, official Pi integratio
 
 Pi loads `src/index.ts` through the package manifest or an explicit
 `pi -e ./src/index.ts`. The main session registers `herdr_agent`, commands,
-renderers, and orchestration guidance; the tool body itself is
-`src/tool/execute.ts` (`executeHerdrAgent`). `HERDR_AGENT_CHILD=1` registers
+renderers, and orchestration guidance; the tool entry is
+`src/tool/execute.ts` (`executeHerdrAgent`), which resolves the profile, applies
+the TUI/config/resume guards, then dispatches to `src/tool/status.ts` (taskless
+status) or the spawn flow in `src/tool/spawn/`. `HERDR_AGENT_CHILD=1` registers
 only the child result/session writer and model-only `ask_question`.
 Orchestration guidance uses the named `herdr_agents` system-prompt section for
 both user and custom-message runs, preserving Pi's other prompt sections.
@@ -29,6 +31,13 @@ The task prompt includes the private `HERDR_RESULT_FILE` marker.
 
 `herdr api snapshot` discovers the session. `HERDR_PANE_ID` takes precedence
 over UI focus because focus can change while a tool runs.
+
+The spawn feature owns its phases: `spawn/flow.ts` (`runAgentTask`) holds the
+placement lock, the rollback of partially spawned resumed agents and the prompt
+handoff; `spawn/targets.ts` resolves placement and creates the tab or split
+pane; `spawn/continuation.ts` reuses a parked question and claims closed
+history for `resumeClosed`; `spawn/lifecycle.ts` starts the child, records its
+lifecycle and runs the prompt turn.
 
 Layout comes from `herdr-agents.json` ([config.md](config.md)), never the tool
 parameters.

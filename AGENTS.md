@@ -29,9 +29,15 @@ flow, config and profiles. Keep those in sync when behavior changes.
 - `src/herdr/layout/schema.ts` — `PortableLayoutNode`, `ExportedLayoutResponse`, `PaneLayout`.
 - `src/herdr/agent.ts` — `herdr agent start`, `prompt` and `read` wrappers.
 - `src/tool/schema.ts` — tool parameter schema.
-- `src/tool/execute.ts` — the `herdr_agent` body: profile resolution, spawn, prompt, immediate return.
+- `src/tool/execute.ts` — the `herdr_agent` entry: profile resolution, TUI/config guards, resume-argument guards, dispatch to status or the spawn flow.
 - `src/tool/status.ts` — taskless status check and the resume-over-live-agent decision.
 - `src/tool/one-shot.ts` — one-shot close, collected spawn-warning cleanup, state cleanup.
+- `src/tool/spawn/types.ts` — spawn types: invocation, settings, shared spawn state, placement, target results.
+- `src/tool/spawn/schema.ts` — Herdr tab-create, pane-split and pane-layout response schemas.
+- `src/tool/spawn/flow.ts` — `runAgentTask`: placement lock, spawn rollback, temp-file sequencing, prompt handoff.
+- `src/tool/spawn/targets.ts` — placement resolution, tab creation, pane split/rename.
+- `src/tool/spawn/continuation.ts` — parked-question reuse, live-label refusal, closed-history resume claim.
+- `src/tool/spawn/lifecycle.ts` — child start/record with mandatory resumed persistence, and the task prompt turn.
 - `src/tool/spawn/placement-lock.ts` — pane placement lock serializing spawn placement.
 - `src/tool/child-args.ts` — child Pi argv/env and tool allowlist.
 - `src/tool/result.ts` — `textResult` helper.
