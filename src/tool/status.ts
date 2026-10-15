@@ -20,8 +20,8 @@ import {
   spawnWarningDetails,
 } from '../output.ts';
 import { formatAgentQuestion } from '../prompts.ts';
+import { paneStateKey } from '../state/live-records.ts';
 import type { HerdrAgentStateRecord } from '../state/schema.ts';
-import { paneStateKey } from '../state/store.ts';
 import { textResult } from './result.ts';
 
 export function resumeClosedLiveDecision(input: {

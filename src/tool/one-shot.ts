@@ -15,8 +15,10 @@ import {
 import {
   clearAgentSpawnWarnings,
   deleteAgentLifecycle,
+} from '../state/lifecycle.ts';
+import { paneStateKey } from '../state/live-records.ts';
+import {
   loadHerdrAgentsState,
-  paneStateKey,
   persistPrunedAgentsState,
 } from '../state/store.ts';
 import { bestEffort, errorMessage } from '../utils.ts';

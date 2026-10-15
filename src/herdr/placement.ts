@@ -1,13 +1,13 @@
+import {
+  isAgentOwnedBy,
+  liveAgentWithAutomationName,
+  paneStateKey,
+} from '../state/live-records.ts';
 import type {
   HerdrAgentStateInfoFields,
   HerdrAgentStateRecord,
   HerdrAgentsState,
 } from '../state/schema.ts';
-import {
-  isAgentOwnedBy,
-  liveAgentWithAutomationName,
-  paneStateKey,
-} from '../state/store.ts';
 import type { PaneInfo, TabInfo } from './schema.ts';
 import type {
   HerdrAgentInfo,

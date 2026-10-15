@@ -36,7 +36,11 @@ flow, config and profiles. Keep those in sync when behavior changes.
 - `src/tool/child-args.ts` — child Pi argv/env and tool allowlist.
 - `src/tool/result.ts` — `textResult` helper.
 - `src/state/schema.ts` — state-file schemas: live agent record/input, closed-history status/record/input, `HerdrAgentsState`, `StateEnvelope`.
-- `src/state/store.ts` — managed-agent records, state lock, load/save/migrate/prune.
+- `src/state/store.ts` — state file IO: path resolution, load/save, quarantine of unreadable files, the locked load-mutate-save transaction and failure injection hooks.
+- `src/state/lock.ts` — in-process state-file queue and the cross-process exclusive lock directory.
+- `src/state/history-policy.ts` — closed-history parsing, TTL/cap policy, reconciliation and pruning.
+- `src/state/live-records.ts` — live-record ownership and snapshot pruning.
+- `src/state/lifecycle.ts` — lifecycle record writes, spawned-warning cleanup and the detached-delivery claim.
 - `src/state/closed-history.ts` — archive and claim of closed one-shots for `resumeClosed`.
 - `src/ui/poller.ts` — per-second poller: delivers results and questions, closes finished one-shots.
 - `src/ui/widget.ts`, `src/ui/manager.ts`, `src/ui/renderers.ts` — widget, `/herdr-agents` overlay, message renderers.

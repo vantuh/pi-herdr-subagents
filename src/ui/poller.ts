@@ -15,7 +15,7 @@ import {
   spawnWarningDetails,
 } from '../output.ts';
 import { formatAgentQuestion } from '../prompts.ts';
-import { claimDetachedAgent } from '../state/store.ts';
+import { claimDetachedAgent } from '../state/lifecycle.ts';
 import { closeOneShot, dropCollectedSpawnWarnings } from '../tool/one-shot.ts';
 import { bestEffort } from '../utils.ts';
 import {

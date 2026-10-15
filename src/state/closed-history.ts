@@ -1,16 +1,15 @@
 import { randomBytes } from 'node:crypto';
 
 import type { PaneInfo } from '../herdr/schema.ts';
-import type { ClosedAgentHistoryRecord, HerdrAgentsState } from './schema.ts';
 import {
-  getHerdrAgentsStatePath,
   historyRecency,
   liveAgentForHistory,
-  mutateHerdrAgentsState,
-  paneStateKey,
   pruneClosedHistory,
   reconcileHerdrAgentsState,
-} from './store.ts';
+} from './history-policy.ts';
+import { paneStateKey } from './live-records.ts';
+import type { ClosedAgentHistoryRecord, HerdrAgentsState } from './schema.ts';
+import { getHerdrAgentsStatePath, mutateHerdrAgentsState } from './store.ts';
 
 function newHistoryId(): string {
   return `ch_${randomBytes(8).toString('hex')}`;

@@ -24,7 +24,7 @@ file map in `AGENTS.md` and affected documentation/imports with each step.
 - [x] 2. Extract layout operations from `herdr/placement.ts` and output formatting
   from `utils.ts`. Put spawn warning formatting/details with output formatting,
   and move the placement lock out of one-shot closing into spawn-owned code.
-- [ ] 3. Separate state locking, history normalization/reconciliation/pruning and
+- [x] 3. Separate state locking, history normalization/reconciliation/pruning and
   live-agent lifecycle operations from store IO/transactions. Keep one locked
   load-mutate-save boundary and avoid runtime imports back into the store from
   pure schema/policy modules.
@@ -69,5 +69,9 @@ and 127 integration tests pass. E2E has not yet been run for this task.
   locking. Independent diff review found no issues. Typecheck, lint, 190 unit,
   127 integration and 13 E2E tests pass; named relative imports also resolve to
   real exports across source and test files.
+- Step 3: split locking, history policy, pure live-record logic and lifecycle
+  mutations from store IO. `store.ts` is now 208 lines. Independent diff review
+  confirmed equivalent bodies and transaction ordering. Typecheck, lint,
+  190 unit, 127 integration and 13 E2E tests pass.
 - E2E runs use installed Pi `1.2.0` and Herdr `0.9.5`; the documented Herdr
   `0.9.4` binary is not installed, so that exact version remains unverified.

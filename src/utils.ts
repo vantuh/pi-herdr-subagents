@@ -23,7 +23,7 @@ export function errorMessage(error: unknown): string {
 }
 
 /**
- * Lifecycle state persistence (state/store.ts) is best-effort: a failure to
+ * Lifecycle state persistence (`src/state/`) is best-effort: a failure to
  * load/save/prune/record/delete must never abort agent execution/output or
  * manager listing. This swallows the error and returns a fallback so callers
  * can proceed without persisted lifecycle info.

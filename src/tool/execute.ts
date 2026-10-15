@@ -55,15 +55,15 @@ import {
   markClosedHistoryInvalid,
   releaseClosedHistory,
 } from '../state/closed-history.ts';
+import { recordAgentLifecycle } from '../state/lifecycle.ts';
+import { paneStateKey } from '../state/live-records.ts';
 import type {
   ClosedAgentHistoryRecord,
   HerdrAgentsState,
 } from '../state/schema.ts';
 import {
   emptyHerdrAgentsState,
-  paneStateKey,
   persistPrunedAgentsState,
-  recordAgentLifecycle,
 } from '../state/store.ts';
 import { ensureAgentsWidget } from '../ui/poller.ts';
 import { bestEffort, makeHerdrAgentName, titleCase } from '../utils.ts';

@@ -14,25 +14,31 @@ import {
   releaseClosedHistory,
   stageClosedOneShot,
 } from '../src/state/closed-history.ts';
-import type { ClosedAgentHistoryRecord } from '../src/state/schema.ts';
 import {
   CLOSED_HISTORY_MAX_GLOBAL,
   CLOSED_HISTORY_MAX_PER_OWNER,
   CLOSED_HISTORY_TTL_MS,
+  pruneClosedHistory,
+} from '../src/state/history-policy.ts';
+import {
   claimDetachedAgent,
   clearAgentSpawnWarnings,
   deleteAgentLifecycle,
-  emptyHerdrAgentsState,
-  isAgentOwnedBy,
-  loadHerdrAgentsState,
-  paneStateKey,
-  persistPrunedAgentsState,
-  pruneClosedHistory,
-  pruneHerdrAgentsState,
   recordAgentLifecycle,
+} from '../src/state/lifecycle.ts';
+import {
+  isAgentOwnedBy,
+  paneStateKey,
+  pruneHerdrAgentsState,
+} from '../src/state/live-records.ts';
+import { withStateFileLock } from '../src/state/lock.ts';
+import type { ClosedAgentHistoryRecord } from '../src/state/schema.ts';
+import {
+  emptyHerdrAgentsState,
+  loadHerdrAgentsState,
+  persistPrunedAgentsState,
   setFailNextStateMutation,
   setFailNextStateSaves,
-  withStateFileLock,
 } from '../src/state/store.ts';
 
 function pane(overrides: Partial<PaneInfo> = {}): PaneInfo {
@@ -1138,15 +1144,15 @@ test('a prior lock holder does not remove a replacement lock directory', async (
 test('a waiter cannot steal a live lock after the old stale threshold', async () => {
   const filePath = await tempStatePath();
   const dir = path.dirname(filePath);
-  const stateModule = path.resolve(
+  const lockModule = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    '../src/state/store.ts',
+    '../src/state/lock.ts',
   );
   const holderScript = path.join(dir, 'holder.ts');
   const waiterScript = path.join(dir, 'waiter.ts');
   await fs.writeFile(
     holderScript,
-    `import { withStateFileLock } from ${JSON.stringify(stateModule)};
+    `import { withStateFileLock } from ${JSON.stringify(lockModule)};
 import { promises as fs } from 'node:fs';
 const filePath = ${JSON.stringify(filePath)};
 const dir = ${JSON.stringify(dir)};
@@ -1159,7 +1165,7 @@ await withStateFileLock(filePath, async () => {
   );
   await fs.writeFile(
     waiterScript,
-    `import { withStateFileLock } from ${JSON.stringify(stateModule)};
+    `import { withStateFileLock } from ${JSON.stringify(lockModule)};
 import { promises as fs } from 'node:fs';
 const filePath = ${JSON.stringify(filePath)};
 const dir = ${JSON.stringify(dir)};
@@ -1193,14 +1199,14 @@ await withStateFileLock(filePath, async () => {
 test('two processes cannot occupy the state lock at the same time', async () => {
   const filePath = await tempStatePath();
   const dir = path.dirname(filePath);
-  const stateModule = path.resolve(
+  const lockModule = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    '../src/state/store.ts',
+    '../src/state/lock.ts',
   );
   const lockerScript = path.join(dir, 'locker.ts');
   await fs.writeFile(
     lockerScript,
-    `import { withStateFileLock } from ${JSON.stringify(stateModule)};
+    `import { withStateFileLock } from ${JSON.stringify(lockModule)};
 import { promises as fs } from 'node:fs';
 const filePath = ${JSON.stringify(filePath)};
 const marker = process.argv[2];
@@ -1297,14 +1303,14 @@ test('two waiters observing a legacy lock file never unlink it or both win', asy
   const old = new Date(Date.now() - 60_000);
   await fs.utimes(lockPath, old, old);
 
-  const stateModule = path.resolve(
+  const lockModule = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    '../src/state/store.ts',
+    '../src/state/lock.ts',
   );
   const waiterScript = path.join(dir, 'stale-waiter.ts');
   await fs.writeFile(
     waiterScript,
-    `import { withStateFileLock } from ${JSON.stringify(stateModule)};
+    `import { withStateFileLock } from ${JSON.stringify(lockModule)};
 const filePath = ${JSON.stringify(filePath)};
 try {
   await withStateFileLock(filePath, async () => {});
