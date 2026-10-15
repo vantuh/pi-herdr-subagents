@@ -21,8 +21,8 @@ the Orchestrator as a message when the child finishes.
   does not depend on terminal scrollback.
 - **Layouts.** Agents open in a dedicated Herdr workspace (default), as split
   panes, or as tabs in the current workspace.
-- **Commands.** `/run` delegates a task explicitly. `/herdr-agents` lists, focuses
-  and closes running agents.
+- **Commands.** `/run` delegates a task explicitly. `/herdr-agents` lists and
+  focuses your agents, and closes finished ones.
 
 ## Requirements
 
@@ -37,7 +37,8 @@ the Orchestrator as a message when the child finishes.
 From a clone of this repository:
 
 ```bash
-pi install .
+pi install .      # for every project
+pi install . -l   # for the current project only (.pi/settings.json)
 ```
 
 Then run `/reload` in Pi. To try the extension without installing it, start Pi
@@ -46,7 +47,8 @@ inside Herdr with `pi -e ./src/index.ts`.
 ## Agent profiles
 
 `herdr_agent` runs a child from a profile: a markdown file with YAML
-frontmatter. Profiles are read on every call from:
+frontmatter. The extension ships no profiles; create at least one. Profiles are
+read on every call from:
 
 - `~/.pi/agent/agents/*.md` (user profiles);
 - the nearest `.pi/agents/` directory above the working directory (project
@@ -64,9 +66,15 @@ You are a disciplined senior code reviewer.
 Report Critical / Warnings / Suggestions with file and line evidence.
 ```
 
+Save it as `~/.pi/agent/agents/reviewer.md` and run `/reload` so the
+Orchestrator and `/run` see the new name.
+
 `name` and `description` are required. Omit `model` to use Pi's default model.
-The body is appended to the child's system prompt. All fields are listed in
-[docs/agent-profiles.md](docs/agent-profiles.md).
+A non-empty `tools` list is an allowlist, with `ask_question` added
+automatically; omit it to keep Pi's default tools. By default the body is
+appended to the child's system prompt; `system-prompt: replace` replaces it.
+Optional fields `thinking`, `skills` and `disable-model-invocation` are
+described with the rest in [docs/agent-profiles.md](docs/agent-profiles.md).
 
 ## Usage
 
@@ -79,8 +87,10 @@ also ask for it explicitly:
 
 The first word is used as the profile when it matches a discovered profile
 name (case-insensitive); otherwise the whole text is the task and the
-Orchestrator picks the profile. Profiles added mid-session appear after
-`/reload`.
+Orchestrator picks the profile. A named profile is a strong hint, not a
+guarantee: the Orchestrator may pick a clearly better one. `/run` is refused
+while the Orchestrator is busy with a turn. Profiles added mid-session appear
+after `/reload`.
 
 Tool parameters:
 
@@ -89,7 +99,7 @@ Tool parameters:
 | `agent`        | Profile name.                                                                                      |
 | `task`         | Self-contained task. Omit it to check the status of a live agent by `tabLabel`.                    |
 | `tabLabel`     | Agent label. Defaults to the title-cased profile name. Used for status checks, answers and resume. |
-| `resumeClosed` | Reopen a closed agent, matched by `tabLabel`, with its prior conversation. Requires `task`.        |
+| `resumeClosed` | Reopen a closed agent, matched by `tabLabel`, with its prior conversation. Requires `task` and an explicit `tabLabel`; only agents started by the current Orchestrator session can be resumed. |
 
 ```json
 {
@@ -109,12 +119,15 @@ How an agent runs:
 4. A child that stops without writing a result stays open. Inspect it or close
    it with `/herdr-agents`.
 
-A new task sent to the label of a live agent is rejected, so work is never
-duplicated. Check its status, answer its question, or wait until it closes and
-use `resumeClosed`.
+A new task sent with an explicit `tabLabel` that belongs to a live agent is
+rejected, so work is never duplicated: check its status, answer its question,
+or wait until it closes and use `resumeClosed`. Without `tabLabel`, a second call
+for the same profile starts another agent with a suffixed label, such as
+`Reviewer #2`.
 
-`/herdr-agents` opens a list of managed agents across workspaces: `Enter`
-focuses an agent, `d` closes it.
+`/herdr-agents` lists the agents this Orchestrator started, across workspaces:
+`Enter` focuses an agent, `d` or `Ctrl+D` closes it, `Esc` exits. Only finished
+agents can be closed; a working agent or one waiting on a question is kept.
 
 ## Configuration
 
@@ -135,9 +148,12 @@ invalid file uses the defaults:
 | `pane`                | The first agent splits your pane 60/40. Later agents stack in the right column.            |
 | `tab`                 | One tab per agent in your current workspace.                                               |
 
-Close running agents before you change `layout`. Agents started with the old
-layout stay visible in `/herdr-agents`, but status checks and reuse no longer
-find them. See [docs/config.md](docs/config.md).
+`workspace.label` must differ from the label of the workspace the Orchestrator
+runs in; otherwise starting an agent fails.
+
+Let running agents finish before you change `layout`. Agents started with the
+old layout stay visible in `/herdr-agents`, but status checks and reuse no
+longer find them. See [docs/config.md](docs/config.md).
 
 ## Development
 
@@ -145,7 +161,7 @@ find them. See [docs/config.md](docs/config.md).
 npm ci --ignore-scripts   # install locked dependencies
 npm run typecheck         # tsc over src/
 npm run lint              # oxlint
-npm run format            # oxfmt
+npm run format            # oxfmt, rewrites files in place
 npm run test:unit         # pure helpers, seconds
 npm run test:integration  # extension against a simulated Herdr, about 2 minutes
 npm run test:e2e          # real Herdr server and real Pi children
