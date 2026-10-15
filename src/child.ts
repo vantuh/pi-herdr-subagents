@@ -76,6 +76,8 @@ export function registerChildMode(pi: ExtensionAPI): void {
     if (event.messageType === 'user') {
       resultFile = findResultFileMarker(event.prompt) ?? resultFile;
     }
+    // Escape skips agent_before_settle, so block delivery before work starts.
+    if (resultFile) await setAgentResultInterrupted(resultFile, true);
   });
 
   pi.on('message_end', async (event, ctx) => {

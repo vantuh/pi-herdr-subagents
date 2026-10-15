@@ -122,6 +122,8 @@ How an agent runs:
 If a child hits a model limit, switch models in its pane and send `continue`.
 Manual and steering messages preserve its result channel. Failed or aborted
 turns stay open with their partial output until a successful continuation.
+You can also press Escape in the child pane and send a correction to continue
+the same task without losing its context or result channel.
 
 A new task sent with an explicit `tabLabel` that belongs to a live agent is
 rejected, so work is never duplicated: check its status, answer its question,

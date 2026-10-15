@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
+import * as path from 'node:path';
 
 import { test } from 'vitest';
 
@@ -461,6 +463,88 @@ test('does not deliver a real intermediate assistant artifact while a detached t
     } finally {
       finalReply.resolve();
     }
+  });
+});
+
+test('keeps an escaped child open for correction and delivers the complete result once', async () => {
+  await withE2e({}, async (harness) => {
+    harness.llm.setScript((body) => {
+      if (
+        lastUserText(body) ===
+        'Correction: stop the timer and finish the original task'
+      ) {
+        return { text: 'FINAL_AFTER_CORRECTION', delayMs: 0 };
+      }
+      return {
+        text: 'PARTIAL_BEFORE_ESCAPE',
+        toolCall: {
+          name: 'bash',
+          args: { command: 'printf started > escape-tool-started; sleep 30' },
+        },
+        delayMs: 0,
+      };
+    });
+    await harness.call({ agent: 'scout', task: 'ORIGINAL_ESCAPE_TASK' });
+    const record = Object.values((await harness.readState()).agents)[0];
+    assert.ok(record);
+    await harness.waitFor(
+      () =>
+        fs.stat(path.join(harness.cwd, 'escape-tool-started')).then(
+          () => true,
+          () => false,
+        ),
+      'the real child tool to start before Escape',
+    );
+    const session = await readAgentSessionMeta(record.resultFile);
+    assert.ok(session?.sessionId);
+    await harness.herdr(['agent', 'send-keys', record.automationName!, 'esc']);
+    await harness.waitFor(async () => {
+      const child = (await harness.snapshot()).panes.find(
+        (pane) => pane.pane_id === record.paneId,
+      );
+      return harness.messages.length > 0 || child?.agent_status === 'idle';
+    }, 'Escape to settle the child');
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+    assert.equal(
+      harness.messages.length,
+      0,
+      'delivered a partial result after Escape',
+    );
+    assert.equal((await harness.snapshot()).panes.length, 2);
+    assert.equal(
+      await readAgentResult(record.resultFile),
+      'PARTIAL_BEFORE_ESCAPE',
+    );
+    const paused = Object.values((await harness.readState()).agents)[0];
+    assert.equal(paused?.paneId, record.paneId);
+    assert.equal(paused?.detached, true);
+    assert.equal(harness.llm.requests.length, 1);
+
+    await harness.herdr([
+      'agent',
+      'prompt',
+      record.automationName!,
+      'Correction: stop the timer and finish the original task',
+    ]);
+    await harness.waitFor(
+      () => harness.messages.length === 1,
+      'corrected result delivery',
+    );
+    assert.equal(harness.messages[0]?.customType, 'herdr_agent_result');
+    assert.match(
+      harness.messages[0]?.content ?? '',
+      /PARTIAL_BEFORE_ESCAPE\n\nFINAL_AFTER_CORRECTION/,
+    );
+    assert.equal(harness.llm.requests.length, 2);
+    const history = JSON.stringify(harness.llm.requests[1]?.messages);
+    assert.match(history, /ORIGINAL_ESCAPE_TASK/);
+    assert.match(history, /PARTIAL_BEFORE_ESCAPE/);
+    assert.equal((await harness.snapshot()).panes.length, 1);
+    const state = await harness.readState();
+    assert.deepEqual(state.agents, {});
+    assert.equal(state.closedHistory[0]?.childSessionId, session.sessionId);
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    assert.equal(harness.messages.length, 1);
   });
 });
 

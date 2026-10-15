@@ -208,7 +208,10 @@ test('failed and aborted turns preserve partial text until a successful continua
           content: [{ type: 'text', text: 'partial' }],
         },
       });
-      await host.fire('agent_before_settle', { outcome });
+      if (outcome === 'error') {
+        await host.fire('agent_before_settle', { outcome });
+      }
+      await host.fire('agent_settled', { aborted: outcome === 'aborted' });
       assert.equal(await isAgentResultInterrupted(resultFile), true);
       assert.equal(await fs.readFile(resultFile, 'utf8'), 'partial');
 
@@ -223,7 +226,8 @@ test('failed and aborted turns preserve partial text until a successful continua
       assert.equal(await isAgentResultInterrupted(resultFile), false);
       assert.equal(await fs.readFile(resultFile, 'utf8'), 'partial\n\nfinal');
 
-      await host.fire('agent_before_settle', { outcome });
+      await host.fire('before_agent_start', { prompt: 'retry' });
+      assert.equal(await isAgentResultInterrupted(resultFile), true);
       await clearAgentResult(resultFile);
       assert.equal(await isAgentResultInterrupted(resultFile), false);
       assert.equal(await fs.stat(resultFile).catch(() => null), null);

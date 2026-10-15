@@ -83,9 +83,10 @@ Easy to break and not obvious from one file:
   clears it before each prompt. Overwriting lost answers that a model split
   across messages. Manual user/steering continuations retain the result channel;
   a new valid marker replaces it, while `session_start` clears it.
-- `agent_before_settle` writes an `interrupted` marker for failed/aborted runs,
-  before Herdr reports idle. The poller must not claim or close their partial
-  results. Successful continuation and a new task clear the marker.
+- Each managed run writes an `interrupted` marker before work starts. Only
+  successful `agent_before_settle` removes it; Escape skips that boundary, so
+  aborted runs stay blocked. The poller must not claim or close partial results.
+  The parent clears old result/interruption artifacts before a new task.
 - `herdr_agent` refuses to run outside TUI mode before any Herdr call, because
   only the TUI poller delivers outcomes.
 - `HERDR_PANE_ID` identifies the Orchestrator pane, not the focused pane: focus
