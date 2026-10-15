@@ -16,11 +16,12 @@ import { withHarness } from '../test-support/contract-harness.ts';
 test('a status check reports status and does not prompt, wait, or close', async () => {
   await withHarness({}, async (harness) => {
     harness.fake.setBehavior(() => ({ neverSettle: true }));
-    await harness.callRaw({
+    const started = await harness.callRaw({
       agent: 'scout',
       task: 'long',
       tabLabel: 'Scout RW',
     });
+    assert.match(started.content[0].text, /Do not check its status/);
     await new Promise((resolve) => setTimeout(resolve, 300));
     const before = harness.fake.calls.length;
 
@@ -32,6 +33,7 @@ test('a status check reports status and does not prompt, wait, or close', async 
     assert.equal(result.isError, undefined);
     assert.equal(result.details.status, 'working');
     assert.match(result.content[0].text, /status: working/);
+    assert.match(result.content[0].text, /Do not check its status/);
     const after = harness.fake.calls.slice(before);
     assert.deepEqual(
       after.filter((argv) =>

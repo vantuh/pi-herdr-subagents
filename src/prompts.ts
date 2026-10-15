@@ -11,7 +11,11 @@ Every call returns as soon as the prompt is submitted. The result or a question 
 
 A question is answered with the same \`tabLabel\` and \`task\` set to the answer. The agent stays open until it really finishes.
 
-To see what a live agent is doing, call \`herdr_agent\` with its \`tabLabel\` and no \`task\`. That returns its status, plus a preview of the latest assistant text it captured, and never re-sends work. Do not poll it in a loop; delivery is automatic. Omitting \`task\` never resurrects a closed agent.`;
+Never wait for an agent: no repeated status checks and no \`sleep\`. Delivery is automatic, even in the middle of your turn. Check a live agent only when the user asks or a decision you must make now depends on its progress: call \`herdr_agent\` with its \`tabLabel\` and no \`task\`. That returns its status, plus a preview of the latest assistant text it captured, and never re-sends work. Omitting \`task\` never resurrects a closed agent.`;
+
+/** Appended to results while an agent runs; models otherwise poll or sleep. */
+export const NO_WAIT_HINT =
+  'Its outcome arrives as a message automatically. Do not check its status or sleep to wait for it; end your turn or continue unrelated work.';
 
 export function buildRunTurnInstructions(agent?: string): string {
   const profile = agent

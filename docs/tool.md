@@ -49,7 +49,7 @@ The mode is picked from `task`, `resumeClosed` and what is already live under th
 
 #### Fresh spawn
 
-Starts a new child Pi in a new Herdr target (a tab in the subagents workspace by default), sends the task, and returns `Herdr agent <label> started (<paneId>).` The widget poller later delivers the outcome as a `herdr_agent_result` or `herdr_agent_question` message, exactly once. A result is delivered only when the child wrote a non-empty result artifact; a question only when it wrote `question.md`. One-shot targets are closed when the result is delivered. If the agent settles with no artifact the poller delivers nothing and keeps the agent. A status check then reports that the agent finished without a result.
+Starts a new child Pi in a new Herdr target (a tab in the subagents workspace by default), sends the task, and returns `Herdr agent <label> started (<paneId>).` followed by a no-wait hint: `Its outcome arrives as a message automatically. Do not check its status or sleep to wait for it; end your turn or continue unrelated work.` Models otherwise poll status or `sleep` while the agent runs. The widget poller later delivers the outcome as a `herdr_agent_result` or `herdr_agent_question` message, exactly once. A result is delivered only when the child wrote a non-empty result artifact; a question only when it wrote `question.md`. One-shot targets are closed when the result is delivered. If the agent settles with no artifact the poller delivers nothing and keeps the agent. A status check then reports that the agent finished without a result.
 
 If the label is taken by a live managed agent, a default label gets a suffix (for example `Researcher #2`), while an explicit `tabLabel` is rejected (see [Live agent with the same label](#live-agent-with-the-same-label)). A label that only matches some other tab gets a suffix either way.
 
@@ -138,10 +138,10 @@ The tool call itself returns text as soon as the prompt is submitted. The child'
 
 | Outcome | Text | Notable `details` |
 |---|---|---|
-| Start | `Herdr agent <label> started (<paneId>).` | `tabId`, `paneId`, `tabLabel`, `reused`, `agent`, optional `resumed`, optional `spawnWarnings` |
+| Start | `Herdr agent <label> started (<paneId>).` plus the no-wait hint | `tabId`, `paneId`, `tabLabel`, `reused`, `agent`, optional `resumed`, optional `spawnWarnings` |
 | Delivered result (`herdr_agent_result`) | The captured assistant text. A failed close appends `Warning: failed to close one-shot Herdr agent <label>: <error>` | `tabLabel`, `agent`, `paneId` |
 | Delivered question (`herdr_agent_question`) | The question text above | `tabLabel`, `agent`, `paneId`, `question` |
-| Status check | `Herdr agent <label> (<paneId>) status: <status>.`, optionally followed by the assistant-text preview, or the question text, or `finished without a result` | `tabId`, `paneId`, `tabLabel`, `agent`, `status`; a question also sets `closed: false` |
+| Status check | `Herdr agent <label> (<paneId>) status: <status>.` (plus the no-wait hint while not settled), optionally followed by the assistant-text preview, or the question text, or `finished without a result` | `tabId`, `paneId`, `tabLabel`, `agent`, `status`; a question also sets `closed: false` |
 | Profile warnings | Appended `Spawn warnings:` list (unknown thinking level, ignored skills) | `spawnWarnings` |
 
 ### Errors

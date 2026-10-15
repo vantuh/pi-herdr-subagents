@@ -56,7 +56,7 @@ describe('prompts', () => {
   it('GLOBAL_INSTRUCTIONS covers status checks', () => {
     assert.ok(GLOBAL_INSTRUCTIONS.includes('no `task`'));
     assert.ok(GLOBAL_INSTRUCTIONS.includes('latest assistant text'));
-    assert.ok(GLOBAL_INSTRUCTIONS.includes('Do not poll it in a loop'));
+    assert.ok(GLOBAL_INSTRUCTIONS.includes('Never wait for an agent'));
   });
 
   it('GLOBAL_INSTRUCTIONS covers closed one-shot resume and duplicate guard', () => {

@@ -19,7 +19,7 @@ import {
   formatSpawnWarnings,
   spawnWarningDetails,
 } from '../output.ts';
-import { formatAgentQuestion } from '../prompts.ts';
+import { formatAgentQuestion, NO_WAIT_HINT } from '../prompts.ts';
 import { paneStateKey } from '../state/live-records.ts';
 import type { HerdrAgentStateRecord } from '../state/schema.ts';
 import { textResult } from './result.ts';
@@ -146,7 +146,9 @@ export async function executeAgentStatus(args: {
     isSettledAgentStatus(snapshot.status) && artifact === undefined;
   const statusLine = settledWithoutResult
     ? `Herdr agent ${label} (${pane.pane_id}) finished without a result.`
-    : `Herdr agent ${label} (${pane.pane_id}) status: ${snapshot.status}.`;
+    : isSettledAgentStatus(snapshot.status)
+      ? `Herdr agent ${label} (${pane.pane_id}) status: ${snapshot.status}.`
+      : `Herdr agent ${label} (${pane.pane_id}) status: ${snapshot.status}. ${NO_WAIT_HINT}`;
   const text = artifact
     ? `${statusLine}\n\nLatest assistant text (preview; not a completion):\n${formatAssistantPreview(artifact)}`
     : statusLine;
