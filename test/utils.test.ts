@@ -27,9 +27,43 @@ import {
 import { buildChildToolAllowlist } from '../src/tool/child-args.ts';
 import {
   formatAgentOutput,
+  formatAssistantPreview,
   formatSpawnWarnings,
   makeHerdrAgentName,
 } from '../src/utils.ts';
+
+test('previews assistant text verbatim', () => {
+  const text = [
+    '• keep this bullet',
+    '──────',
+    'repeated',
+    'repeated',
+    'HERDR_RESULT_FILE: literal content, not a boundary',
+    '↑12 additions and 52 tok/s stay',
+  ].join('\n');
+
+  assert.equal(formatAssistantPreview(text), text);
+});
+
+test('caps the preview to the most recent lines with a truncation marker', () => {
+  const raw = Array.from({ length: 80 }, (_, index) => `line ${index}`).join(
+    '\n',
+  );
+  const lines = formatAssistantPreview(raw).split('\n');
+
+  assert.equal(lines[0], '… (truncated)');
+  assert.equal(lines.length, 31);
+  assert.equal(lines.at(-1), 'line 79');
+  assert.equal(lines[1], 'line 50');
+});
+
+test('caps the preview characters with a truncation marker', () => {
+  const preview = formatAssistantPreview(`${'a'.repeat(3_000)}\nTAIL`);
+
+  assert.match(preview, /^… \(truncated\)\n/);
+  assert.ok(preview.length < 2_100);
+  assert.match(preview, /TAIL$/);
+});
 
 test('generates valid unique Herdr automation names', () => {
   const first = makeHerdrAgentName('Code Reviewer');

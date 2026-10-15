@@ -217,7 +217,8 @@ export async function executeHerdrAgent(
 
   if (!params.task?.trim()) {
     // Status check: no new task. Looks up the live agent and returns its
-    // status plus recent output. It never prompts, claims, collects, or closes.
+    // status plus a preview of its latest captured assistant text. It never
+    // prompts, claims, collects, or closes.
     // Omitting task never resurrects a closed agent.
     return await executeAgentStatus({
       agent,

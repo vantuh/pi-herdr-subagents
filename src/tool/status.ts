@@ -3,11 +3,7 @@ import {
   getHerdrAgentsWorkspaceLabel,
   loadHerdrAgentsConfig,
 } from '../config.ts';
-import {
-  getAgentSnapshot,
-  isSettledAgentStatus,
-  readAgent,
-} from '../herdr/agent.ts';
+import { getAgentSnapshot, isSettledAgentStatus } from '../herdr/agent.ts';
 import {
   findReusableAgentPane,
   findReusableAgentTab,
@@ -26,7 +22,7 @@ import type {
   HerdrAgentStateRecord,
   PaneInfo,
 } from '../types.ts';
-import { formatSpawnWarnings } from '../utils.ts';
+import { formatAssistantPreview, formatSpawnWarnings } from '../utils.ts';
 import { spawnWarningDetails } from './one-shot.ts';
 import { textResult } from './result.ts';
 
@@ -146,13 +142,15 @@ export async function executeAgentStatus(args: {
   }
 
   const snapshot = await getAgentSnapshot(target, signal);
-  const recent = await readAgent(target, signal);
   const artifact = await readAgentResult(record?.resultFile);
-  const finishedWithoutResult =
+  const settledWithoutResult =
     isSettledAgentStatus(snapshot.status) && artifact === undefined;
-  const text = finishedWithoutResult
-    ? `Herdr agent ${label} (${pane.pane_id}) finished without a result.\n\n${recent}`
-    : `Herdr agent ${label} (${pane.pane_id}) status: ${snapshot.status}.\n\n${recent}`;
+  const statusLine = settledWithoutResult
+    ? `Herdr agent ${label} (${pane.pane_id}) finished without a result.`
+    : `Herdr agent ${label} (${pane.pane_id}) status: ${snapshot.status}.`;
+  const text = artifact
+    ? `${statusLine}\n\nLatest assistant text (preview; not a completion):\n${formatAssistantPreview(artifact)}`
+    : statusLine;
   return textResult(formatSpawnWarnings(text, spawnWarnings), {
     tabId,
     paneId: pane.pane_id,

@@ -61,7 +61,6 @@ export interface FakeAgent {
   completionSeq?: number;
   interactiveReady: boolean;
   piArgs: string[];
-  transcript: string;
   turns: number;
   /** Result artifact from the most recent prompt. */
   resultFile?: string;
@@ -75,8 +74,6 @@ export interface ChildOutcome {
   result?: string;
   /** Written to question.md instead of finishing (ask_question). */
   question?: string;
-  /** Scrollback returned by `herdr agent read`. */
-  transcript?: string;
   /**
    * How long the child stays `working`. The default is long enough that the
    * extension observes `working` and goes through `herdr agent wait`, which is
@@ -167,7 +164,6 @@ function parseEnv(argv: string[]): Record<string, string> {
 function defaultBehavior(turn: ChildTurn): ChildOutcome {
   return {
     result: `Result from ${turn.agentName} (turn ${turn.turn}).`,
-    transcript: `scrollback for ${turn.agentName}`,
   };
 }
 
@@ -793,7 +789,6 @@ export class FakeHerdr {
           stateChangeSeq: 1,
           interactiveReady: false,
           piArgs,
-          transcript: '',
           turns: 0,
         };
         this.agents.set(agent.name, agent);
@@ -826,7 +821,6 @@ export class FakeHerdr {
         stateChangeSeq: 1,
         interactiveReady: true,
         piArgs,
-        transcript: '',
         turns: 0,
         ...(flag(piArgs, '--session')
           ? { childSessionFile: flag(piArgs, '--session') }
@@ -876,7 +870,7 @@ export class FakeHerdr {
 
     if (command === 'read') {
       if (!agent) return fail('agent_not_found', `unknown agent ${target}`);
-      return { stdout: agent.transcript };
+      return { stdout: '' };
     }
 
     if (command === 'focus') {
@@ -923,7 +917,6 @@ export class FakeHerdr {
         }
         await this.captureChildSession(agent);
       }
-      agent.transcript = outcome.transcript ?? agent.transcript;
       this.setStatus(agent, outcome.settleStatus ?? 'idle');
       agent.completionSeq = agent.stateChangeSeq;
     };

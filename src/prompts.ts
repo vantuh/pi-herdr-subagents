@@ -11,7 +11,7 @@ Every call returns as soon as the prompt is submitted. The result or a question 
 
 A question is answered with the same \`tabLabel\` and \`task\` set to the answer. The agent stays open until it really finishes.
 
-To see what a live agent is doing, call \`herdr_agent\` with its \`tabLabel\` and no \`task\`. That returns its status and recent output and never re-sends work. Do not poll it in a loop; delivery is automatic. Omitting \`task\` never resurrects a closed agent.`;
+To see what a live agent is doing, call \`herdr_agent\` with its \`tabLabel\` and no \`task\`. That returns its status, plus a preview of the latest assistant text it captured, and never re-sends work. Do not poll it in a loop; delivery is automatic. Omitting \`task\` never resurrects a closed agent.`;
 
 export function buildRunTurnInstructions(agent?: string): string {
   const profile = agent

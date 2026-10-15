@@ -54,7 +54,7 @@ describe('prompts', () => {
 
   it('GLOBAL_INSTRUCTIONS covers status checks', () => {
     assert.ok(GLOBAL_INSTRUCTIONS.includes('no `task`'));
-    assert.ok(GLOBAL_INSTRUCTIONS.includes('status and recent output'));
+    assert.ok(GLOBAL_INSTRUCTIONS.includes('latest assistant text'));
     assert.ok(GLOBAL_INSTRUCTIONS.includes('Do not poll it in a loop'));
   });
 

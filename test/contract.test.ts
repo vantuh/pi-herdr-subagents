@@ -67,19 +67,35 @@ test('a successful one-shot reports the full details contract', async () => {
   });
 });
 
-test('reads the pane with the documented scrollback window when no artifact exists', async () => {
+test('status check reports status only and never reads the pane', async () => {
   await withHarness({}, async (harness) => {
-    harness.fake.setBehavior(() => ({ transcript: 'scrollback only' }));
-
+    harness.fake.setBehavior(() => ({}));
     await harness.call({ agent: 'scout', task: 'Find it', tabLabel: 'Scout' });
     await new Promise((resolve) => setTimeout(resolve, 500));
     const status = await harness.call({ agent: 'scout', tabLabel: 'Scout' });
 
-    assert.match(status.content[0].text, /scrollback only/);
-    const read = harness.fake.callsMatching('agent', 'read')[0];
-    assert.ok(read);
-    assert.equal(flagValue(read, '--source'), 'recent-unwrapped');
-    assert.equal(flagValue(read, '--lines'), '180');
+    assert.equal(
+      status.content[0].text,
+      'Herdr agent Scout (w1:p2) finished without a result.',
+    );
+    assert.deepEqual(harness.fake.callsMatching('agent', 'read'), []);
+
+    // The child writes its assistant text before the turn ends, so a status
+    // check previews it verbatim under an explicit non-completion header.
+    const record = Object.values((await harness.readState()).agents)[0];
+    assert.ok(record?.resultFile);
+    await fs.writeFile(
+      record.resultFile,
+      'Working on the status path.\n\n• bullet kept\n────',
+    );
+    const previewed = await harness.call({ agent: 'scout', tabLabel: 'Scout' });
+
+    assert.equal(
+      previewed.content[0].text,
+      'Herdr agent Scout (w1:p2) status: idle.\n\n' +
+        'Latest assistant text (preview; not a completion):\n' +
+        'Working on the status path.\n\n• bullet kept\n────',
+    );
   });
 });
 
@@ -376,11 +392,10 @@ test('keeps spawn warnings out of a detached question body', async () => {
 });
 
 test('keeps the claim when a detached agent settles with nothing to deliver', async () => {
-  // Without an artifact there is no usable result, so the flag stays set and an
-  // A status check can still read the scrollback.
+  // Without an artifact there is no usable result, so the flag stays set and
+  // the status check reports the agent as finished without a result.
   await withHarness({}, async (harness) => {
-    harness.fake.setBehavior(() => ({ transcript: 'only scrollback' }));
-
+    harness.fake.setBehavior(() => ({}));
     await harness.call({
       agent: 'scout',
       task: 'background',

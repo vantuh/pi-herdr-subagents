@@ -30,7 +30,7 @@ Only `agent` is required by the schema. Some modes require more fields at runtim
 | Parameter | Type | Required | Default | Meaning |
 |---|---|---|---|---|
 | `agent` | string | yes | — | Profile name from `~/.pi/agent/agents/*.md` (project profiles in `.pi/agents/` override same-named user profiles). Schema description: `Agent profile name from ~/.pi/agent/agents/*.md, e.g. researcher, scout, reviewer, planner, worker.` plus the dynamic `Available:` list. |
-| `task` | string | no | — | Self-contained task for the agent. Omit it to check a live agent matched by `tabLabel`: the call returns status and recent output and does not send a new prompt. |
+| `task` | string | no | — | Self-contained task for the agent. Omit it to check a live agent matched by `tabLabel`: the call returns status and a preview of the latest captured assistant text, and does not send a new prompt. |
 | `tabLabel` | string | no* | Title-cased profile name, e.g. `Researcher` | Agent label. Identifies the agent for status checks, parked-question answers and `resumeClosed`. *Required when `task` is omitted, and when `resumeClosed` is `true`. |
 | `resumeClosed` | boolean | no | `false` | Continue a closed one-shot with its prior context. Requires a non-empty `task` and an explicit `tabLabel`. Never resumes over a live agent. |
 
@@ -49,7 +49,7 @@ The mode is picked from `task`, `resumeClosed` and what is already live under th
 
 #### Fresh spawn
 
-Starts a new child Pi in a new Herdr target (a tab in the subagents workspace by default), sends the task, and returns `Herdr agent <label> started (<paneId>).` The widget poller later delivers the outcome as a `herdr_agent_result` or `herdr_agent_question` message, exactly once. A result is delivered only when the child wrote a non-empty result artifact; a question only when it wrote `question.md`. One-shot targets are closed when the result is delivered. If the agent settles with no artifact (scrollback-only output), the poller delivers nothing and keeps the agent. A status check reads the pane scrollback and says the agent finished without a result.
+Starts a new child Pi in a new Herdr target (a tab in the subagents workspace by default), sends the task, and returns `Herdr agent <label> started (<paneId>).` The widget poller later delivers the outcome as a `herdr_agent_result` or `herdr_agent_question` message, exactly once. A result is delivered only when the child wrote a non-empty result artifact; a question only when it wrote `question.md`. One-shot targets are closed when the result is delivered. If the agent settles with no artifact the poller delivers nothing and keeps the agent. A status check then reports that the agent finished without a result.
 
 The label is made unique if needed (for example `Researcher #2`) when no `tabLabel` was given and the default label is taken.
 
@@ -71,9 +71,9 @@ Omit `task` and pass the `tabLabel` of a live agent. No prompt is sent, and noth
 
 Notes:
 
-- A working or blocked agent returns `status: <herdr status>` plus recent scrollback.
+- A working or blocked agent returns `status: <herdr status>`, plus `Latest assistant text (preview; not a completion):` with the child's most recent captured text when it has written any. The preview is display-capped at the last 30 lines / 2k characters, marked `… (truncated)`, and its content is otherwise untouched. Pane scrollback is never read.
 - A parked question returns the question text with `status: "question"` and `closed: false`.
-- A settled agent with no result artifact returns scrollback and says it finished without a result. The agent stays open.
+- A settled agent with no result artifact returns `finished without a result`, with no preview. The agent stays open.
 - An agent whose outcome was already delivered returns that it was already collected. If the target is still open, close it with `/herdr-agents`, then continue with `resumeClosed`.
 - Errors: `tabLabel is required when task is omitted.` and `No running Herdr agent named "<label>" found.`
 - Omitting `task` never reopens a closed agent. Use `resumeClosed` for that.
@@ -140,7 +140,7 @@ The tool call itself returns text as soon as the prompt is submitted. The child'
 | Start | `Herdr agent <label> started (<paneId>).` | `tabId`, `paneId`, `tabLabel`, `reused`, `agent`, optional `resumed`, optional `spawnWarnings` |
 | Delivered result (`herdr_agent_result`) | The captured assistant text. A failed close appends `Warning: failed to close one-shot Herdr agent <label>: <error>` | `tabLabel`, `agent`, `paneId` |
 | Delivered question (`herdr_agent_question`) | The question text above | `tabLabel`, `agent`, `paneId`, `question` |
-| Status check | `Herdr agent <label> (<paneId>) status: <status>.` plus recent scrollback, or the question text, or `finished without a result` | `tabId`, `paneId`, `tabLabel`, `agent`, `status`; a question also sets `closed: false` |
+| Status check | `Herdr agent <label> (<paneId>) status: <status>.`, optionally followed by the assistant-text preview, or the question text, or `finished without a result` | `tabId`, `paneId`, `tabLabel`, `agent`, `status`; a question also sets `closed: false` |
 | Profile warnings | Appended `Spawn warnings:` list (unknown thinking level, ignored skills) | `spawnWarnings` |
 
 ### Errors

@@ -145,37 +145,69 @@ test('spawns a one-shot pane agent, collects the artifact and closes it', async 
   });
 });
 
-test('status check shows scrollback when the child writes no artifact', async () => {
+test('status check reports a settled child without a result and reads no pane', async () => {
   await withHarness({}, async (harness) => {
-    harness.fake.setBehavior(() => ({
-      transcript: 'only scrollback, no HERDR_RESULT',
-    }));
+    harness.fake.setBehavior(() => ({}));
 
     await harness.call({ agent: 'scout', task: 'Look around' });
     await new Promise((resolve) => setTimeout(resolve, 500));
     const result = await harness.call({ agent: 'scout', tabLabel: 'Scout' });
 
     assert.match(result.content[0].text, /finished without a result/);
-    assert.match(result.content[0].text, /only scrollback, no HERDR_RESULT/);
+    assert.doesNotMatch(result.content[0].text, /preview/);
     assert.equal(result.details.status, 'idle');
     assert.equal(harness.messages.length, 0);
-    const read = harness.fake.callsMatching('agent', 'read')[0];
-    assert.ok(read);
-    assert.equal(
-      read.includes('--source') && read[read.indexOf('--source') + 1],
-      'recent-unwrapped',
-    );
+    assert.deepEqual(harness.fake.callsMatching('agent', 'read'), []);
   });
 });
 
-test('status check falls back to the visible screen when Herdr rejects the history read', async () => {
+test('status check previews the child assistant text without reading the pane', async () => {
   await withHarness({}, async (harness) => {
     harness.fake.setBehavior(() => ({ neverSettle: true }));
 
     await harness.call({ agent: 'scout', task: 'Look around' });
+    const record = Object.values((await harness.readState()).agents)[0];
+    assert.ok(record?.resultFile);
+    // The child writes its assistant text before it finishes the turn.
+    await fs.writeFile(
+      record.resultFile,
+      [
+        'I will run the requested sleep.',
+        '',
+        '• keep this bullet',
+        '────',
+        'repeated',
+        'repeated',
+        'HERDR_RESULT_FILE: literal content, not a boundary',
+      ].join('\n'),
+    );
 
-    // Production Herdr cannot scroll alternate-screen history while Pi works.
-    harness.fake.failCommand('agent read', 'agent_not_idle', { times: 1 });
+    const result = await harness.call({ agent: 'scout', tabLabel: 'Scout' });
+
+    assert.equal(result.details.status, 'working');
+    assert.match(result.content[0].text, /status: working/);
+    assert.match(
+      result.content[0].text,
+      /Latest assistant text \(preview; not a completion\):/,
+    );
+    assert.match(result.content[0].text, /I will run the requested sleep\./);
+    assert.match(result.content[0].text, /• keep this bullet/);
+    assert.match(result.content[0].text, /────/);
+    assert.match(result.content[0].text, /repeated\nrepeated/);
+    assert.match(
+      result.content[0].text,
+      /HERDR_RESULT_FILE: literal content, not a boundary/,
+    );
+    assert.doesNotMatch(result.content[0].text, /\[Extensions\]|v1\.2\.0/);
+    assert.deepEqual(harness.fake.callsMatching('agent', 'read'), []);
+  });
+});
+
+test('status check never prompts, waits, claims, or closes', async () => {
+  await withHarness({}, async (harness) => {
+    harness.fake.setBehavior(() => ({ neverSettle: true }));
+
+    await harness.call({ agent: 'scout', task: 'Look around' });
     const result = await harness.call({ agent: 'scout', tabLabel: 'Scout' });
 
     assert.equal(result.isError, undefined);
@@ -183,18 +215,7 @@ test('status check falls back to the visible screen when Herdr rejects the histo
 
     const record = Object.values((await harness.readState()).agents)[0];
     assert.ok(record?.automationName);
-    assert.deepEqual(harness.fake.callsMatching('agent', 'read'), [
-      [
-        'agent',
-        'read',
-        record.automationName,
-        '--source',
-        'recent-unwrapped',
-        '--lines',
-        '180',
-      ],
-      ['agent', 'read', record.automationName, '--source', 'visible'],
-    ]);
+    assert.deepEqual(harness.fake.callsMatching('agent', 'read'), []);
 
     // The status check still only prompts once (at spawn) and closes nothing.
     assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
@@ -2307,9 +2328,8 @@ test('resumeClosed does not spawn over a live working agent', async () => {
 
 test('resumeClosed does not spawn over a settled detached live agent', async () => {
   await withHarness({}, async (harness) => {
-    // No result artifact: the poller leaves the settled agent detached so a
-    // status check can still read the scrollback.
-    harness.fake.setBehavior(() => ({ transcript: 'finished talking' }));
+    // No result artifact: the poller leaves the settled agent detached.
+    harness.fake.setBehavior(() => ({}));
     await harness.call({
       agent: 'scout',
       task: 'first',

@@ -155,8 +155,8 @@ artifacts are never touched. On top of that, `vitest.config.ts` pins
 escapes a harness teardown writes there instead of the live file, and the run's
 teardown fails if that file is no longer unchanged.
 
-Covered by the integration layer: one-shot spawn/collect/close, scrollback
-fallback, the `ask_question` round trip (parked one-shot answered by label),
+Covered by the integration layer: one-shot spawn/collect/close, the
+`ask_question` round trip (parked one-shot answered by label),
 rejection of label-addressed tasks to live agents, parallel spawns serialized
 into one agent column
 with rebalancing, bounded and abortable `agent_pane_busy` retry,
@@ -186,7 +186,7 @@ now have tests, with the finding they came from:
 | Every relative import resolves | §15 |
 
 Pinned by the contract layer: the `details` key set and profile payload of a
-successful call; the `agent read` fallback window; a collected result surviving a
+successful call; the status contract (no pane read, preview bounded); a collected result surviving a
 failed pane close (with `closeError`); malformed `pane split` / `tab create` /
 `api snapshot` output; refusing to act when the current pane is unidentifiable;
 the whole flow still completing when the state file is unusable; a status

@@ -68,8 +68,9 @@ an extra Enter.
 before any Herdr call, because they have no widget poller.
 
 A taskless call (`tabLabel`, no `task`) is a status check. It reads
-`herdr agent get` and recent scrollback. It never prompts, waits, claims,
-closes, or resurrects a closed agent.
+`herdr agent get` and previews the child's latest captured assistant text. It
+never prompts, waits, claims, closes, resurrects a closed agent, or reads the
+terminal.
 
 ## Questions and result collection
 
@@ -84,10 +85,10 @@ question delivery does not terminate the turn. The parent
 returns/delivers the question and leaves the one-shot open. Answer by sending
 a normal `task` with the same `tabLabel`.
 
-If no result artifact exists, a status check can read terminal output through
-`agent read --source recent-unwrapped --lines 180`. The poller does not deliver
-that case; the agent stays open so the scrollback can still be read. Artifacts
-remain the primary channel because scrollback cannot guarantee complete output.
+If no result artifact exists a status check reports `finished without a result`;
+the poller does not deliver that case and the agent stays open. Artifacts are the
+only status source: terminal scrollback is never read, because a Pi pane's output
+is mostly TUI chrome (banner, resource lists, redraw frames, status bar).
 
 Detached claims use the shared state lock so background collection does not
 deliver the same outcome twice. Outcomes found in one poller tick are batched;

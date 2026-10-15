@@ -37,7 +37,7 @@ export function buildHerdrAgentParams(
     task: Type.Optional(
       Type.String({
         description:
-          'Self-contained task to give the Herdr agent. Omit to check a live agent matched by tabLabel: the call returns its status and recent output and does not send a new prompt. A blank task is treated the same way.',
+          'Self-contained task to give the Herdr agent. Omit to check a live agent matched by tabLabel: the call returns its status and a preview of its latest captured assistant text, and does not send a new prompt. A blank task is treated the same way.',
       }),
     ),
     tabLabel: Type.Optional(

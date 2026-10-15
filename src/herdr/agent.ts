@@ -215,29 +215,3 @@ export async function promptAgent(
     mapPromptError(error, target);
   }
 }
-
-export async function readAgent(
-  target: string,
-  signal?: AbortSignal,
-): Promise<string> {
-  try {
-    return await execHerdr(
-      [
-        'agent',
-        'read',
-        target,
-        '--source',
-        'recent-unwrapped',
-        '--lines',
-        '180',
-      ],
-      signal,
-    );
-  } catch (error) {
-    // Herdr cannot scroll alternate-screen history while Pi is working.
-    if (!(error instanceof HerdrCliError) || error.code !== 'agent_not_idle') {
-      throw error;
-    }
-    return execHerdr(['agent', 'read', target, '--source', 'visible'], signal);
-  }
-}

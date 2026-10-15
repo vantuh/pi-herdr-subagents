@@ -197,7 +197,7 @@ export async function deliverDetachedOutcomes(
       readAgentResult(agent.resultFile),
     );
     // Settled without an artifact means the child produced nothing usable.
-    // Leave the claim so a status check can still read the scrollback.
+    // Leave the claim: there is nothing to deliver.
     if (!result) continue;
 
     const claimed = await bestEffort(false, () =>
