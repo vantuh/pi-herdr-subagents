@@ -1,265 +1,158 @@
 # AGENTS.md — pi-herdr-subagents
 
-Actively maintained Pi package for Herdr-backed delegation. Target Pi `1.2.0`,
-Herdr client/server `0.9.4`, and Herdr's official Pi integration `v9`.
-See [README.md](README.md) for loading and usage.
-
-## Purpose
-
-`herdr-agents` gives Pi a `herdr_agent` tool for one-shot delegation through Herdr panes or tabs. Layout is internal configuration and is not part of the tool schema.
-
-The intended model behavior:
-
-- The main Pi session is the Orchestrator.
-- When isolated context helps, the Orchestrator calls `herdr_agent` instead of raw `herdr` CLI commands.
-- `herdr_agent` starts a Pi process in a named Herdr target using an agent profile from `~/.pi/agent/agents/*.md`. Every agent is a one-shot: the target closes after a successful result.
-- Continuation with accumulated context goes through `resumeClosed: true` with the same `tabLabel`: the archived child session is reopened, so the resumed agent keeps the prior conversation. A live agent is never resumed over: working agents are checked by omitting `task`, parked questions are answered in place, and settled results are delivered by the poller before resume.
-- The Orchestrator does not block on the child. The call returns when the prompt is submitted; the poller delivers the result or question as a message, and the Orchestrator synthesizes the answer.
-- Every record is marked `detached`. The widget poller delivers the outcome once the agent settles — a result as `herdr_agent_result`, or a question as `herdr_agent_question` (checked first). One-shot targets close only when they finished with a result artifact. `claimDetachedAgent` clears the flag in one locked read-modify-write, so delivery happens exactly once. Non-TUI sessions (RPC, JSON, print) reject the tool before any Herdr call.
-- A child may instead call `ask_question`, which writes `question.md` beside the result artifact and returns. The child ends its turn and goes idle. The poller delivers the question and leaves the target open — one-shots included. The answer is a normal `task` with the same `tabLabel`; the parked target is reachable by label.
-
-## Delegation policy
-
-The global `~/.pi/agent/AGENTS.md` is authoritative for **when** to delegate. Orchestrator mechanics are in `prompts.ts` (`GLOBAL_INSTRUCTIONS`).
-
-| Situation | `agent` | Delegate? |
-|---|---|:---:|
-| Unknown code / flows / "where-how" | scout | when needed |
-| External docs / APIs / facts | researcher | when needed |
-| Known single-file edit | — | no |
-| Multi-file plan | planner | after scout |
-| Isolated implementation | worker | after plan |
-| Non-trivial / risky diff | reviewer | when needed |
+Pi extension that adds the `herdr_agent` tool: one-shot delegation to child Pi
+agents running in Herdr. Targets Pi `1.2.0`, Herdr client/server `0.9.4`, and
+Herdr's Pi integration `v9`; no compatibility layer for older versions.
+[README.md](README.md) covers usage; `docs/` covers the tool contract, runtime
+flow, config and profiles. Keep those in sync when behavior changes.
 
 ## Files
 
-- `src/index.ts` — Pi extension wiring: `pi.on`, `registerCommand`, `registerTool`.
-- `src/agents.ts` — loads agent profiles from user/project Pi agent directories.
-- `src/config.ts` — layout config loading.
-- `src/run.ts` — `/run` arg parsing and injected user messages.
-- `src/herdr/cli.ts` — Herdr CLI/API process wrappers, argument redaction, and CLI error parsing.
-- `src/herdr/snapshot.ts` — session snapshot, pane/tab/workspace discovery, and Agents workspace resolution.
-- `src/herdr/placement.ts` — label uniqueness, reusable-tab/pane lookup, managed-agent listing, and split-ratio layout helpers.
-- `src/herdr/agent.ts` — named-agent start, prompt, and read wrappers with their snapshot parsers.
-- `src/tool/schema.ts` — TypeBox schema for tool parameters.
-- `src/tool/result.ts` — single-text tool result helper (`textResult`).
-- `src/tool/execute.ts` — the `herdr_agent` execute body: profile resolution, spawn/reuse, prompt, and immediate return.
-- `src/prompts.ts` — injected Orchestrator instructions and child-agent protocol.
-- `src/tool/one-shot.ts` — one-shot close/staging, pane-placement lock, collected-output formatting, and best-effort state cleanup helpers.
-- `src/tool/status.ts` — read-only status check and the resume-closed live-agent decision.
-- `src/tool/child-args.ts` — child Pi argv/env construction, the child tool allowlist, and the orchestrator identity.
-- `src/artifacts.ts` — result/question/session-meta file IO and child protocol constants.
-- `src/utils.ts` — agent-name generation, title casing, tool-name normalization, and output formatting helpers.
-- `src/types.ts` — shared TypeScript interfaces.
-- `src/json.ts` — `parseJson`: parse and validate JSON against a TypeBox schema at parse boundaries.
-- `src/state/store.ts` — managed-agent lifecycle records, state lock, load/save/migrate/prune, and the pure closed-history parser/reconciler.
-- `src/state/closed-history.ts` — closed one-shot archive/stage/finalize/claim/release/find.
-- `src/ui/widget.ts` — agents widget rendering.
-- `src/ui/poller.ts` — the per-second widget poller and detached result/question delivery.
-- `src/ui/manager.ts` — the `/herdr-agents` dialog.
-- `src/ui/renderers.ts` — result/question message renderers and their message type constants.
-- `src/child.ts` — child-mode `ask_question` and result writer.
-- `test-support/` — test harnesses: `mock-extension.ts` (shared mock `ExtensionAPI` host, env and profile fixtures), `fake-herdr.ts` (in-process Herdr simulator), `herdr-shim.mjs` (executable `herdr` stand-in), `harness.ts` (integration harness), `mock-llm.ts` (scripted `openai-completions` server), `e2e-harness.ts` (hermetic real Herdr server), `state-path-guard.ts` (per-run state-path pin and its sentinel teardown).
-- `e2e/` — end-to-end scenarios against a real Herdr server and real Pi children.
-- `docs/` — detailed implementation and session notes.
+- `src/index.ts` — extension wiring: events, commands, tool registration, config load.
+- `src/agents.ts` — profile discovery from user and project agent directories.
+- `src/config.ts` — `herdr-agents.json` loading.
+- `src/run.ts` — `/run` argument parsing and the injected user message.
+- `src/prompts.ts` — Orchestrator instructions and the child-agent protocol.
+- `src/json.ts` — `parseJson`: JSON parsing validated against a TypeBox schema.
+- `src/artifacts.ts` — result, question and session-meta file IO.
+- `src/child.ts` — child mode: `ask_question` and the result writer.
+- `src/utils.ts`, `src/types.ts` — shared helpers and types.
+- `src/herdr/cli.ts` — Herdr CLI/API process wrappers, argument redaction, error parsing.
+- `src/herdr/snapshot.ts` — session snapshot, pane/tab/workspace discovery, subagents-workspace resolution.
+- `src/herdr/placement.ts` — label uniqueness, reusable tab/pane lookup, managed-agent listing, split ratios.
+- `src/herdr/agent.ts` — `herdr agent start`, `prompt` and `read` wrappers.
+- `src/tool/schema.ts` — tool parameter schema.
+- `src/tool/execute.ts` — the `herdr_agent` body: profile resolution, spawn, prompt, immediate return.
+- `src/tool/status.ts` — taskless status check and the resume-over-live-agent decision.
+- `src/tool/one-shot.ts` — one-shot close, placement lock, output formatting, state cleanup.
+- `src/tool/child-args.ts` — child Pi argv/env and tool allowlist.
+- `src/tool/result.ts` — `textResult` helper.
+- `src/state/store.ts` — managed-agent records, state lock, load/save/migrate/prune.
+- `src/state/closed-history.ts` — archive and claim of closed one-shots for `resumeClosed`.
+- `src/ui/poller.ts` — per-second poller: delivers results and questions, closes finished one-shots.
+- `src/ui/widget.ts`, `src/ui/manager.ts`, `src/ui/renderers.ts` — widget, `/herdr-agents` overlay, message renderers.
+- `test-support/` — test harnesses (see Tests).
+
+## Invariants
+
+Easy to break and not obvious from one file:
+
+- Every call returns once the prompt is submitted. Prompts use
+  `herdr agent prompt` without `--wait`, and the extension never calls
+  `herdr agent wait`: Herdr's fixed 5s `agent_prompt_stalled` gate would fail
+  long tasks.
+- The poller delivers each outcome exactly once: `claimDetachedAgent` clears the
+  `detached` flag in one locked read-modify-write. A question is checked before
+  a result. A one-shot closes only after it wrote a result artifact; a child that
+  asked a question stays open.
+- Status checks read the result artifact, never the pane.
+- `herdr_agent` refuses to run outside TUI mode before any Herdr call, because
+  only the TUI poller delivers outcomes.
+- `HERDR_PANE_ID` identifies the Orchestrator pane, not the focused pane: focus
+  can move while a tool runs.
+- Children start with `HERDR_AGENT_CHILD=1`, which registers only
+  `ask_question` and the result writer, so children cannot delegate. They also
+  get `PROCESS_LAUNCHED_BY_Q=1`, so Kiro's terminal wrapper does not hide the
+  real shell from `herdr agent start`.
+- An agent's logical label comes from managed state, never from a tab title the
+  user may rename. A task sent to the label of a live agent is rejected.
+- In pane layout, the placement lock is held through `agent start`, the state
+  write and rebalancing, so parallel calls cannot build competing right columns.
+- `herdr-agents.json` is read once at extension load; edits apply on `/reload`.
+- `session_shutdown` stops the poller and awaits the tick in flight, so no tick
+  writes state after shutdown.
+- Stored `persistent` records from older versions are kept but never reused,
+  claimed or closed.
 
 ## Plans
 
-Write each plan to `docs/plans/<short-task-name>.md`. The filename names the work, as in `herdr-0.7-agent-api-migration.md`. Do not use `PLAN.md` or any other generic name: a later plan would overwrite it. Revisions of one plan stay in that same file so Plan Diff keeps the history.
+Write each plan to `docs/plans/<short-task-name>.md`, never a generic name like
+`PLAN.md`. Revise a plan in the same file. When it is finished, move it to
+`docs/plans/done/`. Files in `docs/plans/done/` are history: do not implement
+them unless the user names the file.
 
-When a plan is finished, move that file to `docs/plans/done/`. Do not open `docs/plans/done/` and do not implement anything there unless the user names the file. Active work is only the files directly in `docs/plans/`.
+## Commands
 
-## Important behavior
+```bash
+npm ci --ignore-scripts   # install locked dev dependencies
+npm run typecheck         # tsc over src/ only; tests are not type-checked
+npm run lint              # oxlint
+npm run format            # oxfmt (Markdown is excluded)
+npm run test:unit         # pure helpers, ~3s
+npm run test:integration  # extension against a fake Herdr, ~2min
+npm run test:e2e          # real Herdr server and real Pi children; needs pi and herdr on PATH
+npx vitest run test/herdr.test.ts  # one file
+```
 
-- Child panes start with `HERDR_AGENT_CHILD=1` and `PROCESS_LAUNCHED_BY_Q=1`: delegation tools stay disabled, final responses are persisted, zsh selects `HISTFILE=/dev/null` from the child marker, and Kiro's terminal wrapper cannot hide the real shell from `herdr agent start`.
-- `HERDR_PANE_ID` is preferred over focused pane detection. Focus can move while a tool is running.
-- New agents start through `herdr agent start`; prompts use atomic `herdr agent prompt` (no `--wait`) and return immediately. The extension does not poll for prompt acceptance and does not call `herdr agent wait`. This avoids Herdr's hardcoded 5s `agent_prompt_stalled` gate.
-- `herdr_agent` requires TUI mode. RPC, JSON, and print sessions are rejected before any Herdr call, including taskless status checks. The TUI poller delivers outcomes and closes completed one-shots.
-- `session_shutdown` stops the widget interval and then awaits the tick already in flight, so shutdown resolves only once nothing of that instance is still pruning the state file or calling Herdr. A tick that outlived the session was how a test process reached the real state file after the harness restored the env.
-- Layout defaults to `workspace`, configured via `herdr-agents.json` in the Pi agent dir (`layout: "pane"` or `"tab"` for the legacy layouts); the model receives no layout parameter. The file is read once at extension load, refreshed only on `/reload`, so an edit mid-session has no effect.
-- Workspace mode keeps every agent tab in a dedicated subagents workspace (label from `herdr-agents.json` → `workspace.label`, default `subagents`), so the Orchestrator's screen never gains splits or tabs. The workspace is re-resolved from `herdr workspace list` on every spawn and recreated if the user closed it. `/herdr-agents` lists agents across workspaces and focuses them via `tab focus` (workspace-qualified ids). A detached agent that finishes unseen also raises a native `herdr notification show`.
-- Pane mode splits the Orchestrator 60/40 on the first spawn and stacks additional agents down the right column. The placement lock is held through `agent start`, managed-state recording, and rebalancing so parallel calls cannot create competing right columns; in workspace mode the same lock serializes the subagents-workspace lookup within one Orchestrator process and is released once the agent's tab is visible to the next `listTabs` (label uniqueness is computed client-side by `uniqueLabel`). Across separate Orchestrator processes a duplicate workspace creation degrades gracefully: lookups take the first label match and managed records stay ownership-scoped. Changing `layout` in `herdr-agents.json` while agents are live orphans them once the reload picks up the new value (they stay visible/closable via `/herdr-agents`); close live agents before switching.
-- Historical `persistent` records stay stored but unmanaged: no reuse, detached claim, conversion, or automatic closing.
-- Parked one-shot reuse is label-based: the default label is the title-cased agent profile name unless `tabLabel` is provided. Reuse requires an exact managed-agent label match. The logical label comes from managed state, never an externally renamed tab title; tab/workspace spawns reserve live managed labels as well as visible tab labels. Managed agents also receive a short unique Herdr automation name; legacy panes fall back to pane IDs.
-## Loading
+There is no aggregate `npm test`; each project runs on its own.
 
-The package manifest loads `src/index.ts`. For development, run
-`pi -e ./src/index.ts` inside Herdr. For persistent loading, install this local
-package with `pi install .` and reload Pi.
+- While iterating: `typecheck`, `lint`, `test:unit`.
+- Before committing a change to behavior, Herdr argv, tool `details` or flow:
+  also `test:integration`.
+- When the change touches spawning, delivery or layout: also `test:e2e`.
 
-A global `/parallel-review` Pi prompt historically used this extension's
-`herdr_agent` tool; the prompt itself was maintained outside this extension.
+To check that a real Pi loads the working copy and exposes the tool (calls the
+configured model):
+
+```bash
+pi -e ./src/index.ts --no-context-files --no-skills --no-prompt-templates --no-themes \
+  -p 'List exact tool names available. Do not use tools.'
+```
 
 ## Tests
 
-```bash
-npm ci --ignore-scripts
-npm run test:unit         # unit project: pure helpers (~3s)
-npm run test:integration  # integration project: extension against a fake Herdr (~2min)
-npm run test:e2e          # e2e project: real Herdr server + real Pi children (~50s)
-npx vitest run test/herdr.test.ts  # one file
-npm run typecheck         # tsc over src/**/*.ts: no emit, strict, NodeNext
-```
+Three Vitest projects in `vitest.config.ts`:
 
-`npm run typecheck` runs `tsc` from the repo root against `tsconfig.json`
-(`strict`, `noEmit`, `module: nodenext`, `.ts` import extensions allowed) over
-`src/**/*.ts` only; test harnesses and e2e are not covered. `skipLibCheck`
-excludes incompatible external peer declarations, not source files. Node types
-match the local Node 24 runtime; this is not a minimum-runtime compatibility check.
+- **unit** — `test/*.test.ts` except the files below. Pure helpers, schemas,
+  state records, widget rendering, profile discovery, child mode, and the Pi SDK
+  boundary. `imports.test.ts` catches a dangling relative import, which breaks
+  Pi at load time and fails nothing else.
+- **integration** — `integration.test.ts` (user-facing flows),
+  `contract.test.ts` (exact `details` keys, Herdr argv, failure paths, file
+  permissions) and `ui-boundary.test.ts`. The real extension runs through a mock
+  `ExtensionAPI` against `FakeHerdr`: `HERDR_BIN_PATH` points at
+  `test-support/herdr-shim.mjs`, which forwards each `herdr` call over a socket to
+  the fake server inside the test. Simulated children write the same
+  `result.md` / `question.md` artifacts as real ones. Start here when
+  refactoring: if `contract.test.ts` stays green, callers keep working.
+- **e2e** — `e2e/flow.test.ts`: a real `herdr server` and real Pi children. Only
+  the model (`MockLlm`, an `openai-completions` server) and the Orchestrator's
+  own Pi process are simulated.
 
-There is no aggregate `npm test`: run each project on its own. While iterating,
-and for import-only moves, run `npm run test:unit` plus the rolldown bundle check
-(Validation). Run `npm run test:integration` once before
-committing any change to behavior, Herdr argv, `details`, or tool flow; run
-`npm run test:e2e` only when the change touches spawning, waiting, or layout.
+Isolation: the harnesses redirect `TMPDIR`, `HERDR_AGENTS_STATE_PATH` and
+`PI_CODING_AGENT_DIR` per test. `test-support/state-path-guard.ts` also pins the
+state path to a sentinel file for the whole run and fails the run if anything
+wrote to it.
 
-Run `npm ci --ignore-scripts` once to install local development dependencies
-from `package-lock.json`. Pi supplies the host peers when loading the extension;
-unit and integration tests use the local packages. E2E additionally requires
-`pi` and `herdr` on `PATH`.
-
-Three Vitest projects, defined in `vitest.config.ts`:
-
-- **Unit** (`test/*.test.ts` except the integration files below) — pure helpers: arg builders,
-  snapshot parsing, layout ratios, state records, widget rendering, profile
-  discovery precedence, and the child-mode contract. `imports.test.ts` walks
-  every module's relative imports, which is the one failure (a dangling sibling
-  import) that breaks Pi at load time without failing any other test.
-- **Integration** (`integration.test.ts`, `ui-boundary.test.ts`) — the real extension, loaded through a
-  mock `ExtensionAPI`, driving a fake Herdr. `HERDR_BIN_PATH` points at
-  `test-support/herdr-shim.mjs`, which forwards argv over a socket to the
-  `FakeHerdr` instance inside the test, so every `herdr` call is a real
-  subprocess against a simulated server with a real pane/tab/layout tree.
-  `HERDR_SOCKET_PATH` serves `layout.export` / `layout.set_split_ratio`.
-  Simulated children write the same `result.md` / `question.md` artifacts a real
-  Pi child would.
-- **Contract** (`contract.test.ts` in the integration project; `schema.test.ts`
-  in the unit project) — the behavior lock for rewrites. Same harness as the integration layer, but instead of the flows an
-  Orchestrator normally drives it pins the rest of the observable surface: the
-  `details` keys, the exact Herdr argv, every failure path, the widget and
-  command behavior, artifact permissions, and the model-facing parameter schema.
-  Start here when refactoring: if these stay green, callers keep working.
-- **E2E** (`e2e/flow.test.ts`) — a real `herdr server`, real pane splits, and
-  real `pi` child processes that load this extension in child mode. Only the
-  model and the Orchestrator's own Pi process are simulated: `MockLlm` serves
-  `openai-completions` from a hermetic `models.json`, and the extension is
-  driven through the same mock `ExtensionAPI`. The server runs with its own
-  `HOME` and `HERDR_SOCKET_PATH`, and children inherit its hermetic
-  `PI_CODING_AGENT_DIR` / `TMPDIR`, so the live session is untouched.
-
-Both harnesses redirect `TMPDIR`, `HERDR_AGENTS_STATE_PATH` and
-`PI_CODING_AGENT_DIR` per test, so the live session, its state file and its temp
-artifacts are never touched. On top of that, `vitest.config.ts` pins
-`HERDR_AGENTS_STATE_PATH` to a throwaway file for the whole run
-(`test-support/state-path-guard.ts`), seeded with a sentinel record: work that
-escapes a harness teardown writes there instead of the live file, and the run's
-teardown fails if that file is no longer unchanged.
-
-Covered by the integration layer: one-shot spawn/collect/close, the
-`ask_question` round trip (parked one-shot answered by label),
-rejection of label-addressed tasks to live agents, parallel spawns serialized
-into one agent column
-with rebalancing, bounded and abortable `agent_pane_busy` retry,
-`agent_kind_mismatch` recovery, the
-delayed and fast prompt submission without duplicate Enter, status checks,
-detached result and question delivery through the widget poller
-(exactly once), the tab layout, the injected Orchestrator / `/run`
-instructions, and closed one-shot archive/resume (`resumeClosed`, session
-JSONL, ownership, concurrent claim, question after resurrection).
-
-Regressions from `docs/plans/done/session-findings.md` that used to be checked by hand and
-now have tests, with the finding they came from:
-
-| Behavior | Finding |
-|---|---|
-| Child mode registers `ask_question` only — never `herdr_agent`, commands, renderers or instruction injection | §4 |
-| Child persists each finalized assistant message to the artifact; ignores blank and non-assistant messages | §4, §9 |
-| `ask_question` refuses to strand the child when no channel exists | §4 |
-| Project profile overrides a user profile of the same name; unusable files are skipped | §2 |
-| Split targets `HERDR_PANE_ID`, not the pane Herdr reports as focused | §5 |
-| A reused agent's previous settled state is not accepted as this turn's result | §8 |
-| A child that finishes as `done` rather than `idle` is still collected | §8 |
-| One-shot cleanup removes the managed temp dir; a running detached agent keeps it | §9 |
-| Busy child shells retry for up to 5s; other startup CLI failures propagate without retrying or closing the pane | §12 |
-| `/herdr-agents` focuses, closes (with temp cleanup), and reports an empty workspace | §9 |
-| Two detached outcomes in one poller tick arrive as one batch, only the last triggering a turn | index.ts |
-| Every relative import resolves | §15 |
-
-Pinned by the contract layer: the `details` key set and profile payload of a
-successful call; the status contract (no pane read, preview bounded); a collected result surviving a
-failed pane close (with `closeError`); malformed `pane split` / `tab create` /
-`api snapshot` output; refusing to act when the current pane is unidentifiable;
-the whole flow still completing when the state file is unusable; a status
-check that does not prompt, wait, or close; detached one-shot delivery closing
-the agent; a settled agent
-with no artifact keeping its claim; logical labels staying unique after tab
-renames; pane-ID lookup when `tab create` omits the tab id; widget
-appear/hide/clear including the
-poller stopping; `/run` busy, empty and completion behavior; `/herdr-agents`
-non-TUI and failure notifications; both message renderers; no layout churn for a
-lone agent; state pruning; a mid-session rewrite of `herdr-agents.json` having
-no effect (it is read once at extension load); and `0600` on the state file and
-artifacts.
-
-Covered by the e2e layer: a real child produces a real result artifact and its
-pane is really closed; a resumed one-shot keeps its context across tasks
-(asserted on the model's request history); a closed one-shot can be resumed
-with `resumeClosed` and still sees prior context; a real `ask_question` tool call
-travels from a tools-restricted child back to the Orchestrator and the answer
-finishes it; two real agent panes stack into one right column with the
-Orchestrator held at 60%; a detached real child is delivered and closed by the
-poller with nobody waiting; real result/question batching uses one turn trigger.
-The SDK boundary test verifies both custom messages reach one real Pi model
-request with orchestration guidance.
-
-Not covered: the Orchestrator's own Pi process (the extension is driven
-directly, not through a real model emitting `herdr_agent` tool calls), and the zsh
-`HISTFILE` child guard (§14, it lives in the `zsh` package).
-
-`MockLlm` defaults to a 1.5s response delay so live-pane assertions can run
-before detached completion. Fast-completion scenarios explicitly use zero
-delay and rely on authoritative `completion_seq`. The E2E harness installs
-official Pi integration v9 into its isolated HOME.
-
-Writing a scenario:
+Writing an integration test: `test/integration.test.ts` and
+`test/contract.test.ts` each define a local `withHarness` around
+`createHarness` from `test-support/harness.ts`.
 
 ```ts
 await withHarness({}, async (harness) => {
   harness.fake.setBehavior((turn) => ({ result: `done ${turn.turn}` }));
-  const result = await harness.call({ agent: "scout", task: "..." });
+  const result = await harness.call({ agent: 'scout', task: '...' });
   assert.equal(result.details.closed, true);
-  harness.fake.callsMatching("pane", "split"); // recorded argv
+  harness.fake.callsMatching('pane', 'split'); // recorded argv
 });
 ```
 
-`FakeHerdr` hooks: `setBehavior` (per-prompt child outcome — `result`,
-`question`, `transcript`, `delayMs`, `stalled`, `neverSettle`, `settleStatus`,
-`staleWindowMs`), `queueStartFailures` / `failEveryStart` (fail `agent start`
-with a Herdr error code), `failCommand` / `malformCommand` (fail or corrupt any
-`herdr <group> <command>`), `omitCreatedTabId`, `holdChildren` /
-`releaseChildren` (settle several children at once, for one-tick batching),
-`focusedPaneId`, `completeAgent`, `callsMatching`, `layoutFor`, `ratioUpdates`.
+`FakeHerdr` hooks:
 
-The `/herdr-agents` overlay is driven with `dialogInputs`: keystrokes per
-`ctx.ui.custom` call (`"\r"` selects, `"d"` closes), and a call with no entry
-left cancels, which ends the manager loop.
+- `setBehavior`: per-prompt child outcome (`result`, `question`, `delayMs`,
+  `stalled`, `neverSettle`, `settleStatus`, `staleWindowMs`).
+- `queueStartFailures`, `failEveryStart`: fail `agent start` with a Herdr error code.
+- `failCommand`, `malformCommand`: fail or corrupt any `herdr <group> <command>`.
+- `holdChildren`, `releaseChildren`: settle several children in one poller tick.
+- `omitCreatedTabId`, `focusedPaneId`, `completeAgent`.
+- Inspection: `callsMatching`, `layoutFor`, `ratioUpdates`.
 
-## Validation
+The `/herdr-agents` overlay is driven by `dialogInputs`: keystrokes per
+`ctx.ui.custom` call (`"\r"` focuses, `"d"` closes); running out of entries
+cancels.
 
-Useful smoke checks:
+`MockLlm` waits 1.5s per response by default, so e2e tests can observe a live
+pane before the child finishes. Fast-completion scenarios set the delay to zero.
 
-```bash
-# Parse/bundle the extension modules.
-npx rolldown src/index.ts \
-  --file /tmp/herdr-agents-check.js \
-  --platform node \
-  --external @earendil-works/pi-coding-agent,@earendil-works/pi-tui,typebox \
-  --no-codeSplitting
-
-# Confirm the tool is visible to a fresh Pi model.
-PI_OFFLINE=1 pi --no-context-files --no-skills --no-prompt-templates --no-themes \
-  -p 'List exact tool names available. Do not use tools.'
-```
-
-Run checks from the repository root. When this package is loaded in Pi,
-`/reload` refreshes the extension runtime.
+Not covered: the Orchestrator's own Pi process driven by a real model, and the
+zsh `HISTFILE` guard for children (it lives in the user's zsh config).

@@ -29,7 +29,7 @@ Only `agent` is required by the schema. Some modes require more fields at runtim
 
 | Parameter | Type | Required | Default | Meaning |
 |---|---|---|---|---|
-| `agent` | string | yes | — | Profile name from `~/.pi/agent/agents/*.md` (project profiles in `.pi/agents/` override same-named user profiles). Schema description: `Agent profile name from ~/.pi/agent/agents/*.md, e.g. researcher, scout, reviewer, planner, worker.` plus the dynamic `Available:` list. |
+| `agent` | string | yes | — | Profile name from `~/.pi/agent/agents/*.md` (project profiles in `.pi/agents/` override same-named user profiles). Schema description: `Agent profile name from ~/.pi/agent/agents/*.md, e.g. researcher, scout, reviewer, worker.` plus the dynamic `Available:` list. |
 | `task` | string | no | — | Self-contained task for the agent. Omit it to check a live agent matched by `tabLabel`: the call returns status and a preview of the latest captured assistant text, and does not send a new prompt. |
 | `tabLabel` | string | no* | Title-cased profile name, e.g. `Researcher` | Agent label. Identifies the agent for status checks, parked-question answers and `resumeClosed`. *Required when `task` is omitted, and when `resumeClosed` is `true`. |
 | `resumeClosed` | boolean | no | `false` | Continue a closed one-shot with its prior context. Requires a non-empty `task` and an explicit `tabLabel`. Never resumes over a live agent. |
@@ -169,7 +169,7 @@ Herdr CLI failures and malformed Herdr output are thrown as tool errors with the
 On every Orchestrator turn the extension appends `GLOBAL_INSTRUCTIONS` (`src/prompts.ts`) to the system prompt through `before_agent_start`. It repeats the usage rules above and adds policy that is not enforced by the schema:
 
 - Use `herdr_agent` for delegation instead of raw Herdr CLI commands.
-- Pick the smallest suitable profile: `scout`, `researcher`, `planner`, `worker`, `reviewer`.
+- Pick the smallest suitable profile: `scout`, `researcher`, `worker`, `reviewer`.
 - Do not duplicate delegated work. Do not recurse.
 - Run parallel calls only for independent reads or disjoint write slices (4–5 at most).
 - Make each task self-contained: goal, scope, paths or links, constraints, expected output, read-only vs edit permission.

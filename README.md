@@ -1,54 +1,56 @@
 # pi-herdr-subagents
 
-A Pi coding-agent extension (package
-`@vantuh/pi-herdr-subagents`) that delegates one-shot tasks to child Pi agents
-running in [Herdr](https://herdr.dev) panes or tabs.
+A [Pi](https://github.com/earendil-works/pi) extension that lets a Pi session
+delegate tasks to child Pi agents running in [Herdr](https://herdr.dev).
 
-It registers a `herdr_agent` tool. The orchestrating Pi session calls it with an
-agent profile and a self-contained task. The extension starts a child Pi process
-through Herdr's agent automation API, returns once the prompt is submitted,
-and the poller delivers the result and closes the target.
+The extension adds a `herdr_agent` tool. The main session (the Orchestrator)
+calls it with an agent profile and a task. The extension starts a child Pi in its
+own Herdr tab or pane, returns at once, and delivers the child's result back to
+the Orchestrator as a message when the child finishes.
 
-## Capabilities
+## Features
 
-- `herdr_agent` tool: spawn a child Pi agent from a markdown profile, then
-  collect its result.
-- One-shot agents with fresh context. A closed agent can be continued with its
-  prior context through `resumeClosed`.
-- A question channel: a child can call `ask_question` and the orchestrator
-  answers it with a normal follow-up task.
-- Async delivery: results and questions are delivered by the TUI widget
-  poller once the agent settles. RPC, JSON, and print sessions are rejected.
-- Result artifacts, so large outputs do not depend on terminal scrollback.
-- Commands: `/run`, `/herdr-agents`.
-- Layouts: a dedicated subagents workspace (default), split panes, or tabs.
+- **One-shot agents.** Each child starts with a fresh context and closes after it
+  delivers a result. `resumeClosed` reopens a closed agent with its prior
+  conversation.
+- **Questions.** A child can call `ask_question`. The question reaches the
+  Orchestrator, and the answer goes back as a normal task with the same label.
+- **Non-blocking.** The Orchestrator keeps working while children run. Results
+  and questions arrive exactly once.
+- **File-based results.** Results are written to artifact files, so long output
+  does not depend on terminal scrollback.
+- **Layouts.** Agents open in a dedicated Herdr workspace (default), as split
+  panes, or as tabs in the current workspace.
+- **Commands.** `/run` delegates a task explicitly. `/herdr-agents` lists, focuses
+  and closes running agents.
 
-## Prerequisites
+## Requirements
 
-- Pi `1.2.0` and [Herdr](https://herdr.dev) client/server `0.9.4`.
-  Only current APIs are supported; no older-version compatibility layer.
-- Herdr's official Pi integration `v9`, installed with
-  `herdr integration install pi`. It supplies authoritative lifecycle and
-  session reporting. Install it yourself; tests use an isolated agent directory.
-- The orchestrating Pi session must run inside a Herdr pane.
+- Pi `1.2.0`.
+- Herdr client and server `0.9.4`.
+- Herdr's Pi integration `v9`: `herdr integration install pi`.
+- The Orchestrator Pi session runs inside a Herdr pane, in interactive (TUI)
+  mode. RPC, JSON and print modes are not supported.
 
-## Loading
+## Installation
 
-The package manifest declares `./src/index.ts` as its Pi extension entrypoint.
-Try it inside Herdr with `pi -e ./src/index.ts`. For persistent loading, run
-`pi install .` from this repository, then `/reload` in Pi.
-Pi supplies the peer dependencies when loading the extension. For local
-development, run `npm ci --ignore-scripts` to install the locked dependencies.
+From a clone of this repository:
 
-Child agents set `HERDR_AGENT_CHILD=1`. In that mode only `ask_question` and the
-result writer are registered, so children cannot delegate through this extension.
+```bash
+pi install .
+```
 
-## Agent profile
+Then run `/reload` in Pi. To try the extension without installing it, start Pi
+inside Herdr with `pi -e ./src/index.ts`.
 
-A profile is a markdown file with YAML frontmatter, selected by the `agent`
-parameter. Profiles are read on every call from `<pi agent dir>/agents/*.md`
-(`~/.pi/agent/agents` by default) and from the nearest `.pi/agents` above the
-working directory. A project profile overrides a user profile of the same name.
+## Agent profiles
+
+`herdr_agent` runs a child from a profile: a markdown file with YAML
+frontmatter. Profiles are read on every call from:
+
+- `~/.pi/agent/agents/*.md` (user profiles);
+- the nearest `.pi/agents/` directory above the working directory (project
+  profiles). A project profile overrides a user profile with the same name.
 
 ```md
 ---
@@ -62,52 +64,58 @@ You are a disciplined senior code reviewer.
 Report Critical / Warnings / Suggestions with file and line evidence.
 ```
 
-Replace `provider/model-id` with a model available in your Pi configuration, or
-omit `model` to use Pi's default. `name` and `description` are required; the body
-is appended to the child's system prompt. See
-[docs/agent-profiles.md](docs/agent-profiles.md) for every field.
+`name` and `description` are required. Omit `model` to use Pi's default model.
+The body is appended to the child's system prompt. All fields are listed in
+[docs/agent-profiles.md](docs/agent-profiles.md).
 
 ## Usage
 
-Fields of the `herdr_agent` tool:
+The Orchestrator calls `herdr_agent` on its own when delegation helps. You can
+also ask for it explicitly:
 
-| Field | Description |
-|---|---|
-| `agent` | Profile name. |
-| `task` | Self-contained task. Omit it to check a live agent's status by `tabLabel`. |
-| `tabLabel` | Agent label; defaults to the title-cased profile name. Identifies the agent for status checks, answers and resume. |
-| `resumeClosed` | Continue a closed one-shot, matched by exact `tabLabel`, with its prior context. Requires `task`. |
-
-```json
-{ "agent": "reviewer", "tabLabel": "Diff review", "task": "Review the current diff for regressions." }
+```text
+/run reviewer review the current diff for regressions
 ```
 
-Lifecycle:
+Tool parameters:
 
-- Every agent is a one-shot. The call returns when the prompt is submitted.
-  The widget poller delivers the result and then closes the target. A child
-  that settles without a result artifact stays open; a status check shows its
-  scrollback, and `/herdr-agents` can close it.
-- `herdr_agent` requires TUI mode. RPC, JSON, and print sessions are rejected
-  before any Herdr call.
-- A child that calls `ask_question` stays open. The question arrives as a
-  message. Answer with a normal `task` and the same `tabLabel`.
-- A task sent by `tabLabel` to a live agent is rejected rather than spawning a
-  duplicate. Check its status, answer the question, or use `resumeClosed` after
-  it closes.
-- Results and questions are delivered exactly once.
+| Parameter      | Description                                                                                        |
+| -------------- | -------------------------------------------------------------------------------------------------- |
+| `agent`        | Profile name.                                                                                      |
+| `task`         | Self-contained task. Omit it to check the status of a live agent by `tabLabel`.                    |
+| `tabLabel`     | Agent label. Defaults to the title-cased profile name. Used for status checks, answers and resume. |
+| `resumeClosed` | Reopen a closed agent, matched by `tabLabel`, with its prior conversation. Requires `task`.        |
 
-### Commands
+```json
+{
+  "agent": "reviewer",
+  "tabLabel": "Diff review",
+  "task": "Review the current diff for regressions."
+}
+```
 
-- `/run [agent] <task>` — explicitly delegate a task, for example
-  `/run scout find where auth is handled`.
-- `/herdr-agents` — TUI-only overlay to list managed agents across workspaces, focus or close them.
+How an agent runs:
+
+1. The call returns as soon as the task is sent to the child.
+2. When the child finishes, its result arrives in the Orchestrator as a message
+   and the child closes.
+3. If the child asks a question, it stays open. Answer it with `task` set to the
+   answer and the same `tabLabel`.
+4. A child that stops without writing a result stays open. Inspect it or close
+   it with `/herdr-agents`.
+
+A new task sent to the label of a live agent is rejected, so work is never
+duplicated. Check its status, answer its question, or wait until it closes and
+use `resumeClosed`.
+
+`/herdr-agents` opens a list of managed agents across workspaces: `Enter`
+focuses an agent, `d` closes it.
 
 ## Configuration
 
-Layout is set in `herdr-agents.json` in the Pi agent dir. It is not part of the
-tool schema. Field rules are in [docs/config.md](docs/config.md). A missing or
-invalid file falls back to the defaults:
+Optional settings live in `~/.pi/agent/herdr-agents.json`. The file is read
+once when the extension loads; run `/reload` after editing it. A missing or
+invalid file uses the defaults:
 
 ```json
 {
@@ -116,36 +124,35 @@ invalid file falls back to the defaults:
 }
 ```
 
-| `layout` | Behavior |
-|---|---|
-| `workspace` (default) | One tab per agent in a dedicated workspace, created again if you close it. Your own workspace gains no splits or tabs. |
-| `pane` | The first agent splits the orchestrator pane 60/40; further agents stack in the right column. |
-| `tab` | One tab per agent in the current workspace. |
+| `layout`              | Where agents open                                                                          |
+| --------------------- | ------------------------------------------------------------------------------------------ |
+| `workspace` (default) | One tab per agent in a dedicated workspace, recreated if you close it.                     |
+| `pane`                | The first agent splits your pane 60/40. Later agents stack in the right column.            |
+| `tab`                 | One tab per agent in your current workspace.                                               |
 
-The file is read once when the extension is loaded, not on every spawn.
-Config changes only take effect on `/reload` (or after restarting Pi); editing it
-mid-session has no effect. **Do not change `layout` while agents are
-live:** the running session keeps the old layout until reload, and after the
-reload the agents of the previous layout become orphaned. They stay visible and
-closable through `/herdr-agents`, but status checks and reuse only find agents of
-the configured layout.
+Close running agents before you change `layout`. Agents started with the old
+layout stay visible in `/herdr-agents`, but status checks and reuse no longer
+find them. See [docs/config.md](docs/config.md).
 
 ## Development
 
 ```bash
-npm ci --ignore-scripts   # install locked development dependencies
-npm run test:unit         # pure helpers; seconds
-npm run test:integration  # extension against a simulated Herdr; minutes
+npm ci --ignore-scripts   # install locked dependencies
+npm run typecheck         # tsc over src/
+npm run lint              # oxlint
+npm run format            # oxfmt
+npm run test:unit         # pure helpers, seconds
+npm run test:integration  # extension against a simulated Herdr, about 2 minutes
 npm run test:e2e          # real Herdr server and real Pi children
 ```
 
-Tests use local dependencies from `package-lock.json`. E2E also requires `pi`
-and `herdr` on `PATH`. Tests redirect `TMPDIR`, state and the Pi agent dir,
-so a live session is not touched.
+E2E tests need `pi` and `herdr` on `PATH`. All tests use temporary directories
+and state files, so a running Pi or Herdr session is not affected.
 
 ## Documentation
 
-- [docs/config.md](docs/config.md) — `herdr-agents.json` fields and defaults.
-- [docs/agent-profiles.md](docs/agent-profiles.md) — profile fields and discovery.
-- [docs/flow.md](docs/flow.md) — runtime lifecycle of `herdr_agent`.
-- [docs/tool.md](docs/tool.md) — exposed tool contract and injected instructions.
+- [docs/config.md](docs/config.md): `herdr-agents.json` fields and defaults.
+- [docs/agent-profiles.md](docs/agent-profiles.md): profile fields and discovery.
+- [docs/tool.md](docs/tool.md): the `herdr_agent` tool contract and the
+  instructions injected into the Orchestrator.
+- [docs/flow.md](docs/flow.md): the runtime lifecycle of an agent call.
