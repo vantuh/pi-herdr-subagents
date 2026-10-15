@@ -33,6 +33,14 @@ flow, config and profiles. Keep those in sync when behavior changes.
 - `src/ui/widget.ts`, `src/ui/manager.ts`, `src/ui/renderers.ts` — widget, `/herdr-agents` overlay, message renderers.
 - `test-support/` — test harnesses (see Tests).
 
+## Structure
+
+- Organize types, schemas and helpers by their owning feature, not in global buckets.
+- Prefer composition of shared TypeBox fields and types derived with `Static` over
+  repeated declarations or schema inheritance. Keep each schema with its derived type.
+- Keep raw, legacy and normalized schemas separate when their validation rules differ.
+- Split modules at responsibility boundaries; line count is a signal, not a hard limit.
+
 ## Invariants
 
 Easy to break and not obvious from one file:
