@@ -31,10 +31,12 @@ async function buildData(ctx: ExtensionCommandContext): Promise<PickerData> {
       .filter(Boolean)
       .join(' · '),
   });
+  const scopedModelItems = scoped.map((model) => toItem(model, true));
   return {
     agents,
+    scopedModelItems,
     modelItems: [
-      ...scoped.map((model) => toItem(model, true)),
+      ...scopedModelItems,
       ...available.map((model) => toItem(model, false)),
     ],
   };

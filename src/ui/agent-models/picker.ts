@@ -22,12 +22,14 @@ export interface PickerResult {
 export interface PickerData {
   readonly agents: readonly AgentProfile[];
   readonly modelItems: readonly SelectItem[];
+  readonly scopedModelItems: readonly SelectItem[];
 }
 
 const CLEAR_VALUE = '__clear__';
 
 export class AgentModelPicker extends Container {
   private step: 'agent' | 'model' = 'agent';
+  private modelScope: 'scoped' | 'all';
   private searchInput: Input | undefined;
   private selectList: SelectList | undefined;
   private statusLine = new Text('', 0, 0);
@@ -56,6 +58,7 @@ export class AgentModelPicker extends Container {
     private readonly done: () => void,
   ) {
     super();
+    this.modelScope = data.scopedModelItems.length > 0 ? 'scoped' : 'all';
     this.showStep('agent');
   }
 
@@ -77,7 +80,9 @@ export class AgentModelPicker extends Container {
               .join(' · '),
           }))
         : [
-            ...this.data.modelItems,
+            ...(this.modelScope === 'scoped'
+              ? this.data.scopedModelItems
+              : this.data.modelItems),
             ...(this.agent?.model !== undefined
               ? [
                   {
@@ -107,6 +112,21 @@ export class AgentModelPicker extends Container {
         ),
       ),
     );
+    if (step === 'model') {
+      this.addChild(
+        new Text(
+          (['scoped', 'all'] as const)
+            .map((scope) => {
+              const label = scope === 'scoped' ? 'Scoped' : 'All';
+              return this.theme.fg(
+                scope === this.modelScope ? 'accent' : 'dim',
+                scope === this.modelScope ? `[${label}]` : label,
+              );
+            })
+            .join('  '),
+        ),
+      );
+    }
     this.statusLine = new Text('', 0, 0);
     this.updateStatus();
     this.addChild(this.statusLine);
@@ -123,7 +143,7 @@ export class AgentModelPicker extends Container {
           'dim',
           step === 'agent'
             ? 'type to filter · ↑↓ move · enter select · esc close'
-            : 'type to filter · ↑↓ move · enter save · esc back',
+            : 'type to filter · ↑↓ move · enter save · tab scope · esc back',
         ),
       ),
     );
@@ -222,6 +242,17 @@ export class AgentModelPicker extends Container {
     if (this.busy) return;
     if (this.keybindings.matches(data, 'tui.select.cancel')) {
       this.onCancel();
+      return;
+    }
+    if (this.keybindings.matches(data, 'tui.input.tab')) {
+      if (this.step === 'model') {
+        const query = this.searchInput?.getValue() ?? '';
+        this.modelScope = this.modelScope === 'scoped' ? 'all' : 'scoped';
+        this.showStep('model');
+        this.searchInput?.setValue(query);
+        this.applyFilter();
+        this.tui.requestRender();
+      }
       return;
     }
     const isNavigation = (
