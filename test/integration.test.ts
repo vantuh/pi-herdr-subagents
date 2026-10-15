@@ -161,7 +161,52 @@ test('status check shows scrollback when the child writes no artifact', async ()
     assert.equal(harness.messages.length, 0);
     const read = harness.fake.callsMatching('agent', 'read')[0];
     assert.ok(read);
-    assert.equal(read.includes('--source') && read[read.indexOf('--source') + 1], 'recent-unwrapped');
+    assert.equal(
+      read.includes('--source') && read[read.indexOf('--source') + 1],
+      'recent-unwrapped',
+    );
+  });
+});
+
+test('status check falls back to the visible screen when Herdr rejects the history read', async () => {
+  await withHarness({}, async (harness) => {
+    harness.fake.setBehavior(() => ({ neverSettle: true }));
+
+    await harness.call({ agent: 'scout', task: 'Look around' });
+
+    // Production Herdr cannot scroll alternate-screen history while Pi works.
+    harness.fake.failCommand('agent read', 'agent_not_idle', { times: 1 });
+    const result = await harness.call({ agent: 'scout', tabLabel: 'Scout' });
+
+    assert.equal(result.isError, undefined);
+    assert.equal(result.details.status, 'working');
+
+    const record = Object.values((await harness.readState()).agents)[0];
+    assert.ok(record?.automationName);
+    assert.deepEqual(harness.fake.callsMatching('agent', 'read'), [
+      [
+        'agent',
+        'read',
+        record.automationName,
+        '--source',
+        'recent-unwrapped',
+        '--lines',
+        '180',
+      ],
+      ['agent', 'read', record.automationName, '--source', 'visible'],
+    ]);
+
+    // The status check still only prompts once (at spawn) and closes nothing.
+    assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
+    assert.equal(harness.fake.callsMatching('agent', 'wait').length, 0);
+    assert.equal(harness.fake.callsMatching('pane', 'close').length, 0);
+    assert.equal(record.detached, true);
+    assert.equal(record.collected, undefined);
+    assert.ok(
+      harness.fake.panes.some((pane) => pane.pane_id === record.paneId),
+      'the detached agent pane must stay open',
+    );
+    assert.equal(harness.messages.length, 0);
   });
 });
 
@@ -2310,7 +2355,7 @@ test('resumeClosed resolves project skills from the archived cwd', async () => {
         task: 'first',
         tabLabel: 'Scout Cwd',
       });
-    await harness.collect('Scout Cwd');
+      await harness.collect('Scout Cwd');
       const statePath = harness.statePath;
       const state = JSON.parse(await fs.readFile(statePath, 'utf8'));
       const record = state.closedHistory[0];
@@ -2332,7 +2377,7 @@ test('resumeClosed resolves project skills from the archived cwd', async () => {
         tabLabel: 'Scout Cwd',
         resumeClosed: true,
       });
-    await harness.collect('Scout Cwd');
+      await harness.collect('Scout Cwd');
       if (resumed.isError) {
         throw new Error(`resume failed: ${resumed.content[0].text}`);
       }
