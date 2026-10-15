@@ -6,9 +6,9 @@
     "lint": "oxlint",
     "format": "oxfmt",
     "typecheck": "tsc",
-    "test": "vitest run --project unit",
-    "test:e2e": "vitest run --project e2e",
-    "test:all": "vitest run"
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:e2e": "vitest run --project e2e"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

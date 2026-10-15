@@ -20,7 +20,7 @@ The intended model behavior:
 
 ## Delegation policy
 
-Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Role matrix, continuation examples, and negative policy live in `README.md`. Orchestrator mechanics are in `prompts.ts` (`GLOBAL_INSTRUCTIONS`).
+The global `~/.pi/agent/AGENTS.md` is authoritative for **when** to delegate. Orchestrator mechanics are in `prompts.ts` (`GLOBAL_INSTRUCTIONS`).
 
 | Situation | `agent` | Delegate? |
 |---|---|:---:|
@@ -51,6 +51,7 @@ Global `agents/.agents/AGENTS.md` is authoritative for **when** to delegate. Rol
 - `src/artifacts.ts` — result/question/session-meta file IO and child protocol constants.
 - `src/utils.ts` — agent-name generation, title casing, tool-name normalization, and output formatting helpers.
 - `src/types.ts` — shared TypeScript interfaces.
+- `src/json.ts` — `parseJson`: parse and validate JSON against a TypeBox schema at parse boundaries.
 - `src/state/store.ts` — managed-agent lifecycle records, state lock, load/save/migrate/prune, and the pure closed-history parser/reconciler.
 - `src/state/closed-history.ts` — closed one-shot archive/stage/finalize/claim/release/find.
 - `src/ui/widget.ts` — agents widget rendering.
@@ -93,12 +94,11 @@ A global `/parallel-review` Pi prompt historically used this extension's
 
 ```bash
 npm ci --ignore-scripts
-npm test                  # unit project: helpers, integration, contract (no real Herdr, ~60s)
-npx vitest run --project unit --exclude test/integration.test.ts --exclude test/contract.test.ts  # fast subset (~3s)
+npm run test:unit         # unit project: pure helpers (~3s)
+npm run test:integration  # integration project: extension against a fake Herdr (~2min)
+npm run test:e2e          # e2e project: real Herdr server + real Pi children (~50s)
 npx vitest run test/herdr.test.ts  # one file
 npm run typecheck         # tsc over src/**/*.ts: no emit, strict, NodeNext
-npm run test:e2e          # e2e project: real Herdr server + real Pi children (~50s)
-npm run test:all          # both projects
 ```
 
 `npm run typecheck` runs `tsc` from the repo root against `tsconfig.json`
@@ -107,9 +107,9 @@ npm run test:all          # both projects
 excludes incompatible external peer declarations, not source files. Node types
 match the local Node 24 runtime; this is not a minimum-runtime compatibility check.
 
-`integration.test.ts` (~57s) and `contract.test.ts` (~19s) take nearly all of
-`npm test`. While iterating, and for import-only moves, run the fast subset plus
-the rolldown bundle check (Validation). Run the full `npm test` once before
+There is no aggregate `npm test`: run each project on its own. While iterating,
+and for import-only moves, run `npm run test:unit` plus the rolldown bundle check
+(Validation). Run `npm run test:integration` once before
 committing any change to behavior, Herdr argv, `details`, or tool flow; run
 `npm run test:e2e` only when the change touches spawning, waiting, or layout.
 
@@ -118,14 +118,14 @@ from `package-lock.json`. Pi supplies the host peers when loading the extension;
 unit and integration tests use the local packages. E2E additionally requires
 `pi` and `herdr` on `PATH`.
 
-The unit project runs the helper, integration, and contract files together. E2E is the other project:
+Three Vitest projects, defined in `vitest.config.ts`:
 
-- **Unit** (`test/*.test.ts`) — pure helpers: arg builders,
+- **Unit** (`test/*.test.ts` except the integration files below) — pure helpers: arg builders,
   snapshot parsing, layout ratios, state records, widget rendering, profile
   discovery precedence, and the child-mode contract. `imports.test.ts` walks
   every module's relative imports, which is the one failure (a dangling sibling
   import) that breaks Pi at load time without failing any other test.
-- **Integration** (`integration.test.ts`) — the real extension, loaded through a
+- **Integration** (`integration.test.ts`, `ui-boundary.test.ts`) — the real extension, loaded through a
   mock `ExtensionAPI`, driving a fake Herdr. `HERDR_BIN_PATH` points at
   `test-support/herdr-shim.mjs`, which forwards argv over a socket to the
   `FakeHerdr` instance inside the test, so every `herdr` call is a real
@@ -133,8 +133,8 @@ The unit project runs the helper, integration, and contract files together. E2E 
   `HERDR_SOCKET_PATH` serves `layout.export` / `layout.set_split_ratio`.
   Simulated children write the same `result.md` / `question.md` artifacts a real
   Pi child would.
-- **Contract** (`contract.test.ts`, `schema.test.ts`) — the behavior lock for
-  rewrites. Same harness as the integration layer, but instead of the flows an
+- **Contract** (`contract.test.ts` in the integration project; `schema.test.ts`
+  in the unit project) — the behavior lock for rewrites. Same harness as the integration layer, but instead of the flows an
   Orchestrator normally drives it pins the rest of the observable surface: the
   `details` keys, the exact Herdr argv, every failure path, the widget and
   command behavior, artifact permissions, and the model-facing parameter schema.

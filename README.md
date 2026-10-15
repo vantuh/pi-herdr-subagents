@@ -130,9 +130,9 @@ live:** they become orphaned. They stay visible and closable through
 
 ```bash
 npm ci --ignore-scripts   # install locked development dependencies
-npm test                  # unit project: helpers, integration, contract; no real Herdr
-npm run test:e2e          # e2e project: real Herdr server and real Pi children
-npm run test:all          # both projects
+npm run test:unit         # pure helpers; seconds
+npm run test:integration  # extension against a simulated Herdr; minutes
+npm run test:e2e          # real Herdr server and real Pi children
 ```
 
 Tests use local dependencies from `package-lock.json`. E2E also requires `pi`
