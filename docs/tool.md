@@ -93,7 +93,7 @@ with tabLabel "<label>" and task set to your answer.
 Answer from your own context, or ask the user if the decision is theirs.
 ```
 
-Answer with a normal task call using the same label. The answer goes into the same pane, so the agent keeps its context. `resumeClosed` is not needed.
+Answer with a normal task call using the same label. The answer goes into the same pane, so the agent keeps its context, and the call returns `Answer sent to Herdr agent <label> (<paneId>).` plus the no-wait hint. `resumeClosed` is not needed.
 
 ```json
 { "agent": "scout", "tabLabel": "Scout", "task": "Use the v2 API only." }
@@ -138,7 +138,7 @@ The tool call itself returns text as soon as the prompt is submitted. The child'
 
 | Outcome | Text | Notable `details` |
 |---|---|---|
-| Start | `Herdr agent <label> started (<paneId>).` plus the no-wait hint | `tabId`, `paneId`, `tabLabel`, `reused`, `agent`, optional `resumed`, optional `spawnWarnings` |
+| Start | `Herdr agent <label> started (<paneId>).` (an answer: `Answer sent to Herdr agent <label> (<paneId>).`) plus the no-wait hint | `tabId`, `paneId`, `tabLabel`, `reused`, `agent`, optional `resumed`, optional `spawnWarnings` |
 | Delivered result (`herdr_agent_result`) | The captured assistant text. A failed close appends `Warning: failed to close one-shot Herdr agent <label>: <error>` | `tabLabel`, `agent`, `paneId` |
 | Delivered question (`herdr_agent_question`) | The question text above | `tabLabel`, `agent`, `paneId`, `question` |
 | Status check | `Herdr agent <label> (<paneId>) status: <status>.` (plus the no-wait hint while not settled), optionally followed by the assistant-text preview, or the question text, or `finished without a result` | `tabId`, `paneId`, `tabLabel`, `agent`, `status`; a question also sets `closed: false` |

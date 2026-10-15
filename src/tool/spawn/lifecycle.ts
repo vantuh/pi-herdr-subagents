@@ -175,7 +175,7 @@ export async function runAgentTurn(
 
   return textResult(
     formatSpawnWarnings(
-      `Herdr agent ${tabLabel} started (${paneId}). ${NO_WAIT_HINT}`,
+      `${spawn.reused ? `Answer sent to Herdr agent ${tabLabel}` : `Herdr agent ${tabLabel} started`} (${paneId}). ${NO_WAIT_HINT}`,
       spawn.spawnWarnings,
     ),
     turnDetails(spawn, target),

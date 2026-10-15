@@ -106,7 +106,7 @@ test("does not accept a reused agent's previous settled state as this turn's res
     });
 
     assert.equal(second.details.reused, true);
-    assert.match(second.content[0].text, /started/);
+    assert.match(second.content[0].text, /^Answer sent to Herdr agent Scout /);
     assert.doesNotMatch(second.content[0].text, /Which approach?/);
     const secondDelivery = await harness.collect('Scout');
     assert.match(secondDelivery.content, /SECOND TURN RESULT/);
