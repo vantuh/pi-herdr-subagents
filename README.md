@@ -177,3 +177,7 @@ and state files, so a running Pi or Herdr session is not affected.
 - [docs/tool.md](docs/tool.md): the `herdr_agent` tool contract and the
   instructions injected into the Orchestrator.
 - [docs/flow.md](docs/flow.md): the runtime lifecycle of an agent call.
+
+## License
+
+[MIT](LICENSE)
