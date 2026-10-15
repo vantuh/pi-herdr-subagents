@@ -10,20 +10,13 @@ import {
 
 describe('prompts', () => {
   it('CHILD_PROTOCOL prohibits recursive delegation', () => {
-    assert.ok(
-      CHILD_PROTOCOL.includes(
-        'Do not spawn additional agents unless explicitly asked',
-      ),
-    );
+    assert.ok(CHILD_PROTOCOL.includes('Do not start other agents'));
   });
 
   it('GLOBAL_INSTRUCTIONS names herdr_agent and the one-shot contract', () => {
     assert.ok(GLOBAL_INSTRUCTIONS.includes('herdr_agent'));
-    assert.ok(GLOBAL_INSTRUCTIONS.includes('Subagents are one-shot'));
     assert.ok(
-      GLOBAL_INSTRUCTIONS.includes(
-        'an agent closes after delivering its result',
-      ),
+      GLOBAL_INSTRUCTIONS.includes('Agents close after delivering a result'),
     );
     assert.ok(GLOBAL_INSTRUCTIONS.includes('resumeClosed: true'));
     // Profiles are user-defined: the prompt must not name any of them.
@@ -43,9 +36,8 @@ describe('prompts', () => {
 
   it('GLOBAL_INSTRUCTIONS covers delivery without blocking', () => {
     assert.ok(
-      GLOBAL_INSTRUCTIONS.includes('as soon as the prompt is submitted'),
+      GLOBAL_INSTRUCTIONS.includes('returns once the task is submitted'),
     );
-    assert.ok(GLOBAL_INSTRUCTIONS.includes('requires TUI mode'));
   });
 
   it('GLOBAL_INSTRUCTIONS does not use proactive delegation', () => {
@@ -55,14 +47,7 @@ describe('prompts', () => {
 
   it('GLOBAL_INSTRUCTIONS covers status checks', () => {
     assert.ok(GLOBAL_INSTRUCTIONS.includes('no `task`'));
-    assert.ok(GLOBAL_INSTRUCTIONS.includes('latest assistant text'));
-    assert.ok(GLOBAL_INSTRUCTIONS.includes('Never wait for an agent'));
-  });
-
-  it('GLOBAL_INSTRUCTIONS covers closed one-shot resume and duplicate guard', () => {
-    assert.ok(GLOBAL_INSTRUCTIONS.includes('resumeClosed: true'));
-    assert.ok(GLOBAL_INSTRUCTIONS.includes('never resurrects a closed agent'));
-    assert.ok(GLOBAL_INSTRUCTIONS.includes('do not spawn a duplicate over it'));
+    assert.ok(GLOBAL_INSTRUCTIONS.includes('Never wait for it'));
   });
 
   it('buildRunTurnInstructions names agent when provided', () => {

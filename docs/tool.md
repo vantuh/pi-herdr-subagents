@@ -171,12 +171,12 @@ On every Orchestrator turn the extension appends `GLOBAL_INSTRUCTIONS` (`src/pro
 
 - Use `herdr_agent` for delegation instead of raw Herdr CLI commands.
 - Pick the smallest suitable profile from the `Available:` list; the instructions name no profiles.
-- Do not duplicate delegated work. Do not recurse.
-- Run parallel calls only for independent reads or disjoint write slices (4–5 at most).
-- Make each task self-contained: goal, scope, paths or links, constraints, expected output, read-only vs edit permission, and, for edits, the check to run.
-- Synthesize results yourself; do not forward raw pane output.
-- Every call returns when the prompt is submitted. Do not start the delegated work yourself meanwhile; end the turn or do unrelated work. The result or question arrives as a message. `herdr_agent` requires TUI mode.
+- Agents do not see the conversation, so each task is self-contained: goal, scope, paths or links, constraints, expected output, read-only vs edit permission, and, for edits, the check to run.
+- Run parallel calls only for independent reads or disjoint write slices (at most 4), each with a distinct `tabLabel`.
+- Every call returns when the task is submitted; the result or question arrives as a message. Never wait with status checks or `sleep`, and do not redo delegated work; end the turn or do unrelated work.
+- Treat a result as a report: verify claims before acting on them and synthesize it for the user. A `blocked` result needs a decision: continue the agent or handle it yourself.
+- Check a live agent's status only when the user asks or a decision depends on its progress.
 
 For the user message that `/run` sends, `buildRunTurnInstructions` adds a one-turn note that authorizes delegation for the user's task.
 
-The child receives its own protocol (`CHILD_PROTOCOL`): finish with a `HERDR_RESULT:` block (`status`, `summary`, `evidence`, `changes`, `next`), or call `ask_question` once when requirements are genuinely ambiguous. The `HERDR_RESULT:` format is only requested; the extension does not validate it, so a result may lack it.
+The child receives its own protocol (`CHILD_PROTOCOL`): do not close its pane or start other agents, call `ask_question` when requirements are genuinely ambiguous, and otherwise answer in its profile's output format, ending with one line `HERDR_RESULT: done | blocked — <summary>`. The line is only requested; the extension does not validate it, so a result may lack it.
