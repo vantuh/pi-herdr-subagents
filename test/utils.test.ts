@@ -21,7 +21,7 @@ import {
   sessionMetaFileFor,
   validateResumableSessionFile,
   writeAgentQuestion,
-  writeAgentResult,
+  appendAgentResult,
   writeAgentSessionMeta,
 } from '../src/artifacts.ts';
 import { buildChildToolAllowlist } from '../src/tool/child-args.ts';
@@ -75,7 +75,7 @@ test('generates valid unique Herdr automation names', () => {
 
 test('writes and reads a managed result artifact', async () => {
   const filePath = await createResultFile();
-  await writeAgentResult(filePath, 'HERDR_RESULT:\n- status: done\n');
+  await appendAgentResult(filePath, 'HERDR_RESULT:\n- status: done\n');
 
   assert.equal(
     await readAgentResult(filePath),
@@ -99,7 +99,7 @@ test('keeps system and result files in one managed temp directory', async () => 
 
 test('clears stale result content before a reused-agent prompt', async () => {
   const filePath = await createResultFile();
-  await writeAgentResult(filePath, 'old result');
+  await appendAgentResult(filePath, 'old result');
 
   await clearAgentResult(filePath);
 
@@ -192,7 +192,7 @@ test('treats a whitespace-only question file as no question', async () => {
 test('keeps question and result independent', async () => {
   const resultFile = await createResultFile();
 
-  await writeAgentResult(resultFile, 'done text');
+  await appendAgentResult(resultFile, 'done text');
   await writeAgentQuestion(resultFile, 'a question');
 
   await clearAgentResult(resultFile);

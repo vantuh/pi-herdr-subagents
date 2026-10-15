@@ -46,6 +46,9 @@ Easy to break and not obvious from one file:
   a result. A one-shot closes only after it wrote a result artifact; a child that
   asked a question stays open.
 - Status checks read the result artifact, never the pane.
+- A child appends every assistant message of a task to `result.md`; the parent
+  clears it before each prompt. Overwriting lost answers that a model split
+  across messages.
 - `herdr_agent` refuses to run outside TUI mode before any Herdr call, because
   only the TUI poller delivers outcomes.
 - `HERDR_PANE_ID` identifies the Orchestrator pane, not the focused pane: focus

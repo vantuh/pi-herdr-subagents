@@ -10,7 +10,7 @@ import {
   findResultFileMarker,
   SESSION_META_ENV,
   writeAgentQuestion,
-  writeAgentResult,
+  appendAgentResult,
   writeAgentSessionMeta,
 } from './artifacts.ts';
 import { getCurrentContext } from './herdr/snapshot.ts';
@@ -79,7 +79,7 @@ export function registerChildMode(pi: ExtensionAPI): void {
   pi.on('message_end', async (event, ctx) => {
     if (!resultFile || event.message.role !== 'assistant') return;
     const output = assistantText(event.message);
-    if (output.trim()) await writeAgentResult(resultFile, output);
+    if (output.trim()) await appendAgentResult(resultFile, output);
     await captureChildSessionMeta(ctx);
   });
 

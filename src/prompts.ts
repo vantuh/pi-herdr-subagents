@@ -39,6 +39,9 @@ No other tool calls and no HERDR_RESULT. Do not guess and proceed anyway.
 The Orchestrator's answer arrives as your next prompt, and you continue from
 there. Do not ask about trivia you can settle by reading the repo.
 
+Everything you write as text for this task is delivered to the Orchestrator.
+Give the complete answer as text, and keep progress narration short.
+
 When finished, end with this exact format:
 
 HERDR_RESULT:

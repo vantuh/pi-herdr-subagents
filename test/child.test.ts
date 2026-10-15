@@ -53,7 +53,7 @@ test('a child registers the question channel but never delegation', async () => 
   });
 });
 
-test('a child persists its final assistant message to the result artifact', async () => {
+test('a child appends every assistant message to the result artifact', async () => {
   await withChildHost(async (host, tmp) => {
     const resultFile = await managedResultFile(tmp);
     await host.fire('before_agent_start', {
@@ -72,14 +72,15 @@ test('a child persists its final assistant message to the result artifact', asyn
       'HERDR_RESULT:\n- status: done',
     );
 
-    // Each finalized message overwrites, so the last answer wins.
+    // A report followed by a separate summary message must keep both.
     await host.fire('message_end', {
       message: {
         role: 'assistant',
         content: [{ type: 'text', text: 'final' }],
       },
     });
-    assert.equal(await fs.readFile(resultFile, 'utf8'), 'final');
+    const both = 'HERDR_RESULT:\n- status: done\n\nfinal';
+    assert.equal(await fs.readFile(resultFile, 'utf8'), both);
 
     // A user message and a blank answer must not touch the artifact.
     await host.fire('message_end', {
@@ -88,7 +89,7 @@ test('a child persists its final assistant message to the result artifact', asyn
     await host.fire('message_end', {
       message: { role: 'assistant', content: [{ type: 'text', text: '   ' }] },
     });
-    assert.equal(await fs.readFile(resultFile, 'utf8'), 'final');
+    assert.equal(await fs.readFile(resultFile, 'utf8'), both);
   });
 });
 

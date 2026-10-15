@@ -74,8 +74,9 @@ terminal.
 
 ## Questions and result collection
 
-Child `message_end` overwrites `result.md` with each non-empty finalized
-assistant response, so only the last one is delivered. Before a new task, the parent clears old result/question files.
+Child `message_end` appends each non-empty finalized assistant response to
+`result.md`, separated by a blank line, so an answer split across several
+messages is delivered whole. Before a new task, the parent clears old result/question files.
 Session metadata is stored beside the result for durable resume.
 
 Collection checks `question.md` before `result.md`. `ask_question` writes the

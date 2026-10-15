@@ -275,12 +275,21 @@ export function assistantText(message: unknown): string {
     .join('\n');
 }
 
-export async function writeAgentResult(
+/** Appends so an answer split across several assistant messages is not lost. */
+export async function appendAgentResult(
   filePath: string,
   output: string,
 ): Promise<void> {
   if (!isManagedResultFile(filePath)) return;
-  await writePrivateFile(filePath, output);
+  const size = await fs.stat(filePath).then(
+    (stat) => stat.size,
+    () => 0,
+  );
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.appendFile(filePath, size > 0 ? `\n\n${output}` : output, {
+    encoding: 'utf8',
+    mode: 0o600,
+  });
 }
 
 export async function clearAgentResult(

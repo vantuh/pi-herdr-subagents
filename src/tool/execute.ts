@@ -856,7 +856,7 @@ async function runAgentTurn(
     'Task from Orchestrator:',
     task,
     '',
-    'Your final assistant response is captured as the structured result artifact.',
+    'All assistant text you write for this task is captured as the result artifact.',
     `${RESULT_FILE_MARKER} ${spawn.resultFile}`,
   ].join('\n');
 

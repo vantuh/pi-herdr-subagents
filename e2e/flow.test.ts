@@ -451,13 +451,10 @@ test('does not deliver a real intermediate assistant artifact while a detached t
         'final tool-turn delivery',
         60000,
       );
+      // The whole turn is delivered once: intermediate text, then the report.
       assert.match(
         harness.messages[0]?.content ?? '',
-        /FINAL_TOOL_TURN_REPORT/,
-      );
-      assert.doesNotMatch(
-        harness.messages[0]?.content ?? '',
-        /Now the test file imports/,
+        /Now the test file imports\.\n\nFINAL_TOOL_TURN_REPORT/,
       );
       assert.equal((await harness.snapshot()).panes.length, 1);
       assert.equal(harness.llm.requests.length, 2);
