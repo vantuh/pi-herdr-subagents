@@ -43,8 +43,12 @@ test('a profile with non-string tools or skills items is skipped', async () => {
       '---\nname: scout\ndescription: valid scout\n---\n\nBODY\n',
     );
     await fs.writeFile(
-      path.join(userAgents, 'numeric.md'),
-      '---\nname: numeric\ndescription: numeric tools\ntools: [1, 2]\n---\n\nBODY\n',
+      path.join(userAgents, 'numeric-tools.md'),
+      '---\nname: numeric-tools\ndescription: numeric tools\ntools: [1, 2]\n---\n\nBODY\n',
+    );
+    await fs.writeFile(
+      path.join(userAgents, 'numeric-skills.md'),
+      '---\nname: numeric-skills\ndescription: numeric skills\nskills: [3]\n---\n\nBODY\n',
     );
 
     const agents = await discoverAgents(projectRoot);

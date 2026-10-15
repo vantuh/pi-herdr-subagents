@@ -115,6 +115,21 @@ test('returns an empty config for a non-object file', async () => {
   );
 });
 
+test('a malformed workspace value keeps the layout setting', async () => {
+  assert.deepEqual(
+    await loadHerdrAgentsConfig(
+      await writeConfigFile('{"layout":"pane","workspace":null}'),
+    ),
+    { layout: 'pane' },
+  );
+  assert.deepEqual(
+    await loadHerdrAgentsConfig(
+      await writeConfigFile('{"layout":"pane","workspace":{"label":42}}'),
+    ),
+    { layout: 'pane' },
+  );
+});
+
 test('drops unknown layout values but keeps the rest', async () => {
   const config = await loadHerdrAgentsConfig(
     await writeConfigFile(

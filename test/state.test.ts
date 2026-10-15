@@ -846,7 +846,7 @@ test('quarantines malformed versions instead of migrating them', async () => {
   await fs.access(`${filePath}.quarantine.vtwo`);
 });
 
-test('a record missing defaultable fields keeps its siblings and gets defaults', async () => {
+test('a record missing defaultable fields gets defaults and keeps its siblings', async () => {
   const filePath = await tempStatePath();
   const now = new Date().toISOString();
   await fs.writeFile(
@@ -855,6 +855,11 @@ test('a record missing defaultable fields keeps its siblings and gets defaults',
       version: 2,
       agents: {
         'terminal:undated': { lifecycle: 'oneshot', tabLabel: 'Undated' },
+        'terminal:dated': {
+          lifecycle: 'oneshot',
+          tabLabel: 'Dated',
+          updatedAt: now,
+        },
       },
       closedHistory: [
         {
@@ -874,6 +879,10 @@ test('a record missing defaultable fields keeps its siblings and gets defaults',
     })}\n`,
   );
   const loaded = await loadHerdrAgentsState(filePath);
+  assert.deepEqual(Object.keys(loaded.agents), [
+    'terminal:undated',
+    'terminal:dated',
+  ]);
   assert.equal(
     loaded.agents['terminal:undated']?.updatedAt,
     new Date(0).toISOString(),
