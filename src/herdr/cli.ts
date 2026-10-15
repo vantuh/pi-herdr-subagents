@@ -1,7 +1,10 @@
 import { execFile } from 'node:child_process';
 import { createConnection } from 'node:net';
 
+import { Type } from 'typebox';
+
 import { isManagedHerdrTempPath, SESSION_META_ENV } from '../artifacts.ts';
+import { parseJson } from '../json.ts';
 
 export class HerdrCliError extends Error {
   constructor(
@@ -119,6 +122,13 @@ export function sanitizeHerdrOutput(
   return result;
 }
 
+const HerdrErrorEnvelope = Type.Object({
+  error: Type.Object({
+    code: Type.Optional(Type.String()),
+    message: Type.String(),
+  }),
+});
+
 function parseHerdrError(
   stderr: string,
   fallback: string,
@@ -126,16 +136,11 @@ function parseHerdrError(
   code?: string;
   message: string;
 } {
-  try {
-    const parsed = JSON.parse(stderr) as {
-      error?: { code?: string; message?: string };
-    };
-    if (parsed.error?.message) {
-      return { code: parsed.error.code, message: parsed.error.message };
-    }
-  } catch {
-    // Herdr may also emit a human-readable CLI validation error.
+  const parsed = parseJson(HerdrErrorEnvelope, stderr);
+  if (parsed?.error?.message) {
+    return { code: parsed.error.code, message: parsed.error.message };
   }
+  // Herdr may also emit a human-readable CLI validation error.
   return { message: stderr || fallback };
 }
 
@@ -190,6 +195,12 @@ export function execHerdr(
   });
 }
 
+const HerdrSocketResponse = Type.Object({
+  id: Type.Optional(Type.String()),
+  result: Type.Optional(Type.Unknown()),
+  error: Type.Optional(Type.Object({ message: Type.Optional(Type.String()) })),
+});
+
 export function execHerdrApi(
   method: string,
   params: Record<string, unknown>,
@@ -226,15 +237,9 @@ export function execHerdrApi(
       const newline = buffer.indexOf('\n');
       if (newline < 0) return;
 
-      let response: {
-        id?: string;
-        result?: unknown;
-        error?: { message?: string };
-      };
-      try {
-        response = JSON.parse(buffer.slice(0, newline));
-      } catch (error) {
-        finish(error instanceof Error ? error : new Error(String(error)));
+      const response = parseJson(HerdrSocketResponse, buffer.slice(0, newline));
+      if (!response) {
+        finish(new Error(`Malformed Herdr ${method} socket response.`));
         return;
       }
       if (response.id !== requestId) return;

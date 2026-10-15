@@ -1,3 +1,14 @@
+import { Type } from 'typebox';
+import type { Static } from 'typebox';
+import { Value } from 'typebox/value';
+
+/**
+ * Shapes of everything read from JSON (Herdr CLI output, the state file).
+ * Each schema is exported twice: the value validates, the type alias names the
+ * validated shape, so `import type { PaneInfo }` keeps working unchanged.
+ * Unknown extra fields stay allowed, so new Herdr fields never break parsing.
+ */
+
 export interface AgentProfile {
   name: string;
   description: string;
@@ -13,69 +24,107 @@ export interface AgentProfile {
   filePath: string;
 }
 
-export interface PaneInfo {
-  pane_id: string;
-  tab_id: string;
-  workspace_id: string;
-  terminal_id?: string;
-  label?: string;
-  focused?: boolean;
-  agent?: string;
-  agent_status?: string;
-  cwd?: string;
-  foreground_cwd?: string;
-}
+const paneFields = {
+  pane_id: Type.String(),
+  tab_id: Type.String(),
+  workspace_id: Type.String(),
+  terminal_id: Type.Optional(Type.String()),
+  label: Type.Optional(Type.String()),
+  focused: Type.Optional(Type.Boolean()),
+  agent: Type.Optional(Type.String()),
+  agent_status: Type.Optional(Type.String()),
+  cwd: Type.Optional(Type.String()),
+  foreground_cwd: Type.Optional(Type.String()),
+};
 
-export interface TabInfo {
-  tab_id: string;
-  label: string;
-}
+export const PaneInfo = Type.Object(paneFields);
+export type PaneInfo = Static<typeof PaneInfo>;
+
+/** `tab create` / `pane split` report a pane whose `tab_id` may be absent. */
+export const CreatedPane = Type.Object({
+  ...paneFields,
+  tab_id: Type.Optional(Type.String()),
+});
+export type CreatedPane = Static<typeof CreatedPane>;
+
+export const TabInfo = Type.Object({
+  tab_id: Type.String(),
+  label: Type.String(),
+});
+export type TabInfo = Static<typeof TabInfo>;
+
+export const WorkspaceInfo = Type.Object({
+  workspace_id: Type.String(),
+  label: Type.Optional(Type.String()),
+});
+export type WorkspaceInfo = Static<typeof WorkspaceInfo>;
+
+export const HerdrNamedAgent = Type.Object({
+  ...paneFields,
+  name: Type.Optional(Type.String()),
+});
+export type HerdrNamedAgent = Static<typeof HerdrNamedAgent>;
+
+export const HerdrSessionSnapshot = Type.Object({
+  panes: Type.Array(PaneInfo),
+  tabs: Type.Array(TabInfo),
+  agents: Type.Optional(Type.Array(HerdrNamedAgent)),
+  focused_pane_id: Type.Optional(Type.String()),
+});
+export type HerdrSessionSnapshot = Static<typeof HerdrSessionSnapshot>;
 
 /** "workspace" keeps every agent tab in a dedicated Agents workspace. */
-export type HerdrAgentLayout = 'pane' | 'tab' | 'workspace';
+export const HerdrAgentLayout = Type.Union([
+  Type.Literal('pane'),
+  Type.Literal('tab'),
+  Type.Literal('workspace'),
+]);
+export type HerdrAgentLayout = Static<typeof HerdrAgentLayout>;
 
 export function isHerdrAgentLayout(value: unknown): value is HerdrAgentLayout {
-  return value === 'pane' || value === 'tab' || value === 'workspace';
+  return Value.Check(HerdrAgentLayout, value);
 }
 
-export interface WorkspaceInfo {
-  workspace_id: string;
-  label?: string;
-}
-
-export interface HerdrAgentStateRecord {
-  lifecycle: 'oneshot' | 'persistent';
-  serverSocketPath?: string;
-  paneId?: string;
-  ownerPaneId?: string;
-  tabLabel?: string;
-  agent?: string;
-  automationName?: string;
-  resultFile?: string;
-  layout?: HerdrAgentLayout;
+const agentRecordFields = {
+  lifecycle: Type.Union([Type.Literal('oneshot'), Type.Literal('persistent')]),
+  serverSocketPath: Type.Optional(Type.String()),
+  paneId: Type.Optional(Type.String()),
+  ownerPaneId: Type.Optional(Type.String()),
+  tabLabel: Type.Optional(Type.String()),
+  agent: Type.Optional(Type.String()),
+  automationName: Type.Optional(Type.String()),
+  resultFile: Type.Optional(Type.String()),
+  layout: Type.Optional(HerdrAgentLayout),
   /** Spawn-time profile values Pi ignored; retained until the outcome is delivered. */
-  spawnWarnings?: string[];
+  spawnWarnings: Type.Optional(Type.Array(Type.String())),
   /**
    * Pending collection. Lives in the state file rather than memory so a
    * pending delivery survives `/reload`.
    */
-  detached?: boolean;
+  detached: Type.Optional(Type.Boolean()),
   /** A committed outcome claim; a new task's lifecycle record clears it. */
-  collected?: boolean;
+  collected: Type.Optional(Type.Boolean()),
   /**
    * Orchestrator pane `terminal_id` that spawned this agent. Widget, reuse,
    * and detached delivery all key off this so two Orchestrators in one
    * workspace do not claim each other's children.
    */
-  ownerTerminalId?: string;
+  ownerTerminalId: Type.Optional(Type.String()),
   /** Orchestrator Pi session UUID that spawned this agent. */
-  ownerSessionId?: string;
-  ownerSessionFile?: string;
+  ownerSessionId: Type.Optional(Type.String()),
+  ownerSessionFile: Type.Optional(Type.String()),
   /** Closed-history slot this live agent is continuing, if any. */
-  closedHistoryId?: string;
-  closedHistoryGeneration?: number;
-  updatedAt: string;
-}
+  closedHistoryId: Type.Optional(Type.String()),
+  closedHistoryGeneration: Type.Optional(Type.Number()),
+  updatedAt: Type.String(),
+};
+
+export const HerdrAgentStateRecord = Type.Object(agentRecordFields);
+/** Reading an older state file: `updatedAt` may be absent and is defaulted. */
+export const HerdrAgentStateRecordInput = Type.Object(agentRecordFields, {
+  required: ['lifecycle'],
+});
+export type HerdrAgentStateRecord = Static<typeof HerdrAgentStateRecord>;
 
 /** State-record fields a listed managed agent exposes. */
 export type HerdrAgentStateInfoFields = Pick<
@@ -106,17 +155,6 @@ export interface HerdrAgentInfo extends HerdrAgentStateInfoFields {
 export interface ReusableAgentTab {
   tab: TabInfo;
   pane: PaneInfo;
-}
-
-export interface HerdrNamedAgent extends PaneInfo {
-  name?: string;
-}
-
-export interface HerdrSessionSnapshot {
-  panes: PaneInfo[];
-  agents?: HerdrNamedAgent[];
-  tabs: TabInfo[];
-  focused_pane_id?: string;
 }
 
 export interface HerdrContext {

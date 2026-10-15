@@ -1,6 +1,9 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 
-import { errorMessage } from '../utils.ts';
+import { Type } from 'typebox';
+import type { Static } from 'typebox';
+
+import { parseJson } from '../json.ts';
 import { execHerdr, HerdrCliError } from './cli.ts';
 
 async function delay(ms: number, signal?: AbortSignal): Promise<void> {
@@ -17,54 +20,35 @@ type StartedAgentSnapshot = {
   status: string;
 };
 
-type ParsedAgentGet = {
-  agent?: string;
-  status?: string;
-  stateChangeSeq?: number;
-  completionSeq?: number;
-};
+const AgentGetFields = Type.Object({
+  agent: Type.Optional(Type.String()),
+  agent_status: Type.Optional(Type.String()),
+  state_change_seq: Type.Optional(Type.Number()),
+  completion_seq: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+});
+const AgentGetResponse = Type.Object({
+  result: Type.Object({ agent: AgentGetFields }),
+});
+type AgentGetFields = Static<typeof AgentGetFields>;
 
-function parseAgentGetOutput(output: string): ParsedAgentGet {
-  let parsed: {
-    result?: {
-      agent?: {
-        agent?: unknown;
-        agent_status?: unknown;
-        state_change_seq?: unknown;
-        completion_seq?: unknown;
-      };
-    };
-  };
-  try {
-    parsed = JSON.parse(output);
-  } catch (error) {
-    throw new Error(`Malformed herdr agent get output: ${errorMessage(error)}`);
+function parseAgentGetOutput(output: string): AgentGetFields {
+  const parsed = parseJson(AgentGetResponse, output);
+  if (!parsed) {
+    throw new Error('Malformed herdr agent get output.');
   }
-
-  const raw = parsed.result?.agent;
-  return {
-    agent: typeof raw?.agent === 'string' ? raw.agent : undefined,
-    status:
-      typeof raw?.agent_status === 'string' ? raw.agent_status : undefined,
-    stateChangeSeq:
-      typeof raw?.state_change_seq === 'number'
-        ? raw.state_change_seq
-        : undefined,
-    completionSeq:
-      typeof raw?.completion_seq === 'number' ? raw.completion_seq : undefined,
-  };
+  return parsed.result.agent;
 }
 
 export function parseStartedAgentSnapshot(
   output: string,
 ): StartedAgentSnapshot {
   const parsed = parseAgentGetOutput(output);
-  if (typeof parsed.agent !== 'string' || typeof parsed.status !== 'string') {
+  if (parsed.agent === undefined || parsed.agent_status === undefined) {
     throw new Error(
       'Malformed herdr agent get output: expected result.agent.agent and agent_status.',
     );
   }
-  return { agent: parsed.agent, status: parsed.status };
+  return { agent: parsed.agent, status: parsed.agent_status };
 }
 
 /** Idle or done: the child has finished its turn. */
@@ -169,17 +153,17 @@ type HerdrAgentSnapshot = {
 export function parseAgentSnapshot(output: string): HerdrAgentSnapshot {
   const parsed = parseAgentGetOutput(output);
   if (
-    typeof parsed.status !== 'string' ||
-    typeof parsed.stateChangeSeq !== 'number'
+    parsed.agent_status === undefined ||
+    parsed.state_change_seq === undefined
   ) {
     throw new Error(
       'Malformed herdr agent get output: expected result.agent.agent_status and state_change_seq.',
     );
   }
   return {
-    status: parsed.status,
-    stateChangeSeq: parsed.stateChangeSeq,
-    completionSeq: parsed.completionSeq,
+    status: parsed.agent_status,
+    stateChangeSeq: parsed.state_change_seq,
+    completionSeq: parsed.completion_seq ?? undefined,
   };
 }
 

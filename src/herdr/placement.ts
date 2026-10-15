@@ -1,3 +1,7 @@
+import { Type } from 'typebox';
+import type { Static } from 'typebox';
+import { Value } from 'typebox/value';
+
 import {
   isAgentOwnedBy,
   liveAgentWithAutomationName,
@@ -213,15 +217,26 @@ export function listManagedWorkspaceAgents(
   return agents.sort((a, b) => a.tabLabel.localeCompare(b.tabLabel));
 }
 
-type PortableLayoutNode =
-  | { type: 'pane'; pane_id?: string }
-  | {
-      type: 'split';
-      direction: 'right' | 'down';
-      ratio: number;
-      first: PortableLayoutNode;
-      second: PortableLayoutNode;
-    };
+/** Layout tree from `layout.export`; `node` refers to itself by definition name. */
+export const PortableLayoutNode = Type.Cyclic(
+  {
+    node: Type.Union([
+      Type.Object({
+        type: Type.Literal('pane'),
+        pane_id: Type.Optional(Type.String()),
+      }),
+      Type.Object({
+        type: Type.Literal('split'),
+        direction: Type.Union([Type.Literal('right'), Type.Literal('down')]),
+        ratio: Type.Number(),
+        first: Type.Ref('node'),
+        second: Type.Ref('node'),
+      }),
+    ]),
+  },
+  'node',
+);
+export type PortableLayoutNode = Static<typeof PortableLayoutNode>;
 
 interface SplitRatioUpdate {
   path: boolean[];
@@ -269,16 +284,20 @@ export async function exportPaneLayout(
   paneId: string,
   signal?: AbortSignal,
 ): Promise<{ tab_id: string; root: PortableLayoutNode }> {
-  const result = (await execHerdrApi(
+  const value = await execHerdrApi(
     'layout.export',
     { pane_id: paneId },
     signal,
-  )) as { layout?: { tab_id?: string; root?: PortableLayoutNode } };
-  if (!result.layout?.tab_id || !result.layout.root) {
+  );
+  if (!Value.Check(ExportedLayoutResponse, value) || !value.layout.tab_id) {
     throw new Error('Malformed Herdr layout.export response.');
   }
-  return { tab_id: result.layout.tab_id, root: result.layout.root };
+  return { tab_id: value.layout.tab_id, root: value.layout.root };
 }
+
+const ExportedLayoutResponse = Type.Object({
+  layout: Type.Object({ tab_id: Type.String(), root: PortableLayoutNode }),
+});
 
 export async function setLayoutSplitRatio(
   tabId: string,
@@ -293,12 +312,22 @@ export async function setLayoutSplitRatio(
   );
 }
 
-interface PaneLayout {
-  panes?: Array<{
-    pane_id: string;
-    rect?: { height?: number; width?: number };
-  }>;
-}
+export const PaneLayout = Type.Object({
+  panes: Type.Optional(
+    Type.Array(
+      Type.Object({
+        pane_id: Type.String(),
+        rect: Type.Optional(
+          Type.Object({
+            height: Type.Optional(Type.Number()),
+            width: Type.Optional(Type.Number()),
+          }),
+        ),
+      }),
+    ),
+  ),
+});
+export type PaneLayout = Static<typeof PaneLayout>;
 
 export function chooseAgentColumnSplitTarget(
   panes: PaneInfo[],

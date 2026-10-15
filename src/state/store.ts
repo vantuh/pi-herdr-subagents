@@ -4,34 +4,71 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
+import { Type } from 'typebox';
+import type { Static } from 'typebox';
+import { Value } from 'typebox/value';
+
 import { readIfExists } from '../artifacts.ts';
+import { parseJson } from '../json.ts';
 import {
-  isHerdrAgentLayout,
-  type HerdrAgentLayout,
+  HerdrAgentStateRecordInput,
+  HerdrAgentLayout,
   type HerdrAgentStateRecord,
   type HerdrNamedAgent,
   type PaneInfo,
 } from '../types.ts';
 
-type ClosedHistoryStatus = 'resumable' | 'claimed' | 'invalid' | 'staged';
+export const ClosedHistoryStatus = Type.Union([
+  Type.Literal('resumable'),
+  Type.Literal('claimed'),
+  Type.Literal('invalid'),
+  Type.Literal('staged'),
+]);
+export type ClosedHistoryStatus = Static<typeof ClosedHistoryStatus>;
 
-export interface ClosedAgentHistoryRecord {
-  id: string;
-  ownerSessionId: string;
-  ownerSessionFile?: string;
-  profileName: string;
-  tabLabel: string;
-  childSessionFile: string;
-  childSessionId: string;
-  cwd: string;
-  layout: HerdrAgentLayout;
-  lifecycle: 'oneshot';
-  createdAt: string;
-  closedAt: string;
-  status: ClosedHistoryStatus;
-  claimGeneration: number;
-  claimedAt?: string;
-}
+const closedHistoryFields = {
+  id: Type.String(),
+  ownerSessionId: Type.String(),
+  ownerSessionFile: Type.Optional(Type.String()),
+  profileName: Type.String(),
+  tabLabel: Type.String(),
+  childSessionFile: Type.String(),
+  childSessionId: Type.String(),
+  cwd: Type.String(),
+  layout: HerdrAgentLayout,
+  lifecycle: Type.Literal('oneshot'),
+  createdAt: Type.String(),
+  closedAt: Type.String(),
+  status: ClosedHistoryStatus,
+  claimGeneration: Type.Number(),
+  claimedAt: Type.Optional(Type.String()),
+};
+const closedHistoryRequired = [
+  'id',
+  'ownerSessionId',
+  'profileName',
+  'tabLabel',
+  'childSessionFile',
+  'childSessionId',
+  'cwd',
+  'layout',
+  'lifecycle',
+  'status',
+];
+
+export const ClosedAgentHistoryRecord = Type.Object(closedHistoryFields, {
+  required: [
+    ...closedHistoryRequired,
+    'createdAt',
+    'closedAt',
+    'claimGeneration',
+  ],
+});
+/** Reading an older state file: timestamps and the generation are defaulted. */
+export const ClosedAgentHistoryRecordInput = Type.Object(closedHistoryFields, {
+  required: closedHistoryRequired,
+});
+export type ClosedAgentHistoryRecord = Static<typeof ClosedAgentHistoryRecord>;
 
 export interface HerdrAgentsState {
   version: 2;
@@ -233,6 +270,12 @@ export async function mutateHerdrAgentsState<T>(
   );
 }
 
+const StateEnvelope = Type.Object({
+  version: Type.Optional(Type.Unknown()),
+  agents: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+  closedHistory: Type.Optional(Type.Unknown()),
+});
+
 /** A record stamped by a different Herdr server is not this Orchestrator's. */
 function isForeignServerRecord(
   record: Pick<HerdrAgentStateRecord, 'serverSocketPath'>,
@@ -265,12 +308,6 @@ export function emptyHerdrAgentsState(): HerdrAgentsState {
   return { version: 2, agents: {}, closedHistory: [] };
 }
 
-function isLifecycle(
-  value: unknown,
-): value is HerdrAgentStateRecord['lifecycle'] {
-  return value === 'oneshot' || value === 'persistent';
-}
-
 // Terminal identity survives pane moves; live handoff rekeys it from verified
 // automation names and the recorded child/owner panes before pruning.
 export function paneStateKey(
@@ -285,18 +322,8 @@ export async function loadHerdrAgentsState(
   const raw = await readIfExists(filePath);
   if (raw === undefined) return emptyHerdrAgentsState();
 
-  let parsed: {
-    version?: unknown;
-    agents?: unknown;
-    closedHistory?: unknown;
-  };
-  try {
-    parsed = JSON.parse(raw) as {
-      version?: unknown;
-      agents?: unknown;
-      closedHistory?: unknown;
-    };
-  } catch {
+  const parsed = parseJson(StateEnvelope, raw);
+  if (!parsed) {
     await quarantineStateFile(filePath, 'json');
     return emptyHerdrAgentsState();
   }
@@ -307,7 +334,7 @@ export async function loadHerdrAgentsState(
   }
 
   const state = emptyHerdrAgentsState();
-  if (parsed.agents && typeof parsed.agents === 'object') {
+  if (parsed.agents) {
     copyAgentRecords(state, parsed.agents);
   }
   state.closedHistory = parseClosedHistory(parsed.closedHistory);
@@ -320,62 +347,16 @@ function isExactStateVersion(version: unknown): version is 1 | 2 {
   return version === 1 || version === 2;
 }
 
-function copyAgentRecords(state: HerdrAgentsState, agents: unknown): void {
-  for (const [key, record] of Object.entries(
-    agents as Record<string, Partial<HerdrAgentStateRecord>>,
-  )) {
-    if (!record || typeof record !== 'object') continue;
-    if (!isLifecycle(record.lifecycle)) continue;
-
+function copyAgentRecords(
+  state: HerdrAgentsState,
+  agents: Record<string, unknown>,
+): void {
+  for (const [key, record] of Object.entries(agents)) {
+    if (!Value.Check(HerdrAgentStateRecordInput, record)) continue;
+    const { updatedAt, ...fields } = record;
     state.agents[key] = {
-      lifecycle: record.lifecycle,
-      ...(typeof record.serverSocketPath === 'string'
-        ? { serverSocketPath: record.serverSocketPath }
-        : {}),
-      ...(typeof record.paneId === 'string' ? { paneId: record.paneId } : {}),
-      ...(typeof record.ownerPaneId === 'string'
-        ? { ownerPaneId: record.ownerPaneId }
-        : {}),
-      ...(typeof record.tabLabel === 'string'
-        ? { tabLabel: record.tabLabel }
-        : {}),
-      ...(typeof record.agent === 'string' ? { agent: record.agent } : {}),
-      ...(typeof record.automationName === 'string'
-        ? { automationName: record.automationName }
-        : {}),
-      ...(typeof record.resultFile === 'string'
-        ? { resultFile: record.resultFile }
-        : {}),
-      ...(isHerdrAgentLayout(record.layout) ? { layout: record.layout } : {}),
-      ...(Array.isArray(record.spawnWarnings)
-        ? {
-            spawnWarnings: record.spawnWarnings.filter(
-              (warning): warning is string => typeof warning === 'string',
-            ),
-          }
-        : {}),
-      ...(record.detached === true ? { detached: true } : {}),
-      ...(record.collected === true ? { collected: true } : {}),
-      ...(typeof record.ownerTerminalId === 'string'
-        ? { ownerTerminalId: record.ownerTerminalId }
-        : {}),
-      ...(typeof record.ownerSessionId === 'string'
-        ? { ownerSessionId: record.ownerSessionId }
-        : {}),
-      ...(typeof record.ownerSessionFile === 'string'
-        ? { ownerSessionFile: record.ownerSessionFile }
-        : {}),
-      ...(typeof record.closedHistoryId === 'string'
-        ? { closedHistoryId: record.closedHistoryId }
-        : {}),
-      ...(typeof record.closedHistoryGeneration === 'number' &&
-      Number.isFinite(record.closedHistoryGeneration)
-        ? { closedHistoryGeneration: record.closedHistoryGeneration }
-        : {}),
-      updatedAt:
-        typeof record.updatedAt === 'string'
-          ? record.updatedAt
-          : new Date(0).toISOString(),
+      ...fields,
+      updatedAt: updatedAt ?? new Date(0).toISOString(),
     };
   }
 }
@@ -558,7 +539,7 @@ function carriedLifecycleFields(
 }
 
 export async function recordAgentLifecycle(
-  pane: PaneInfo,
+  pane: Pick<PaneInfo, 'pane_id' | 'terminal_id'>,
   metadata: AgentLifecycleMetadata = {},
   filePath = getHerdrAgentsStatePath(),
 ): Promise<void> {
@@ -673,67 +654,28 @@ async function claimCollection(
   );
 }
 
-function isClosedHistoryStatus(value: unknown): value is ClosedHistoryStatus {
-  return (
-    value === 'resumable' ||
-    value === 'claimed' ||
-    value === 'invalid' ||
-    value === 'staged'
-  );
-}
-
 function parseClosedHistory(raw: unknown): ClosedAgentHistoryRecord[] {
   if (!Array.isArray(raw)) return [];
   const records: ClosedAgentHistoryRecord[] = [];
   for (const item of raw) {
-    if (!item || typeof item !== 'object') continue;
-    const record = item as Partial<ClosedAgentHistoryRecord>;
-    if (typeof record.id !== 'string' || !record.id) continue;
-    if (typeof record.ownerSessionId !== 'string' || !record.ownerSessionId) {
+    if (!Value.Check(ClosedAgentHistoryRecordInput, item)) continue;
+    if (
+      !item.id ||
+      !item.ownerSessionId ||
+      !item.profileName ||
+      !item.tabLabel ||
+      !item.childSessionId ||
+      !item.cwd
+    ) {
       continue;
     }
-    if (typeof record.profileName !== 'string' || !record.profileName) continue;
-    if (typeof record.tabLabel !== 'string' || !record.tabLabel) continue;
-    if (typeof record.childSessionFile !== 'string') continue;
-    if (!path.isAbsolute(record.childSessionFile)) continue;
-    if (typeof record.childSessionId !== 'string' || !record.childSessionId) {
-      continue;
-    }
-    if (typeof record.cwd !== 'string' || !record.cwd) continue;
-    if (!isHerdrAgentLayout(record.layout)) continue;
-    if (record.lifecycle !== 'oneshot') continue;
-    if (!isClosedHistoryStatus(record.status)) continue;
-    const claimGeneration =
-      typeof record.claimGeneration === 'number' &&
-      Number.isFinite(record.claimGeneration)
-        ? record.claimGeneration
-        : 0;
+    if (!path.isAbsolute(item.childSessionFile)) continue;
+    const { createdAt, closedAt, claimGeneration, ...fields } = item;
     records.push({
-      id: record.id,
-      ownerSessionId: record.ownerSessionId,
-      ...(typeof record.ownerSessionFile === 'string'
-        ? { ownerSessionFile: record.ownerSessionFile }
-        : {}),
-      profileName: record.profileName,
-      tabLabel: record.tabLabel,
-      childSessionFile: record.childSessionFile,
-      childSessionId: record.childSessionId,
-      cwd: record.cwd,
-      layout: record.layout,
-      lifecycle: 'oneshot',
-      createdAt:
-        typeof record.createdAt === 'string'
-          ? record.createdAt
-          : new Date(0).toISOString(),
-      closedAt:
-        typeof record.closedAt === 'string'
-          ? record.closedAt
-          : new Date(0).toISOString(),
-      status: record.status,
-      claimGeneration,
-      ...(typeof record.claimedAt === 'string'
-        ? { claimedAt: record.claimedAt }
-        : {}),
+      ...fields,
+      createdAt: createdAt ?? new Date(0).toISOString(),
+      closedAt: closedAt ?? new Date(0).toISOString(),
+      claimGeneration: claimGeneration ?? 0,
     });
   }
   return records;

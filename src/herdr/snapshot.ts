@@ -1,34 +1,32 @@
+import { Type } from 'typebox';
+import { Value } from 'typebox/value';
+
+import { parseJson } from '../json.ts';
 import {
   emptyHerdrAgentsState,
   persistPrunedAgentsState,
   type HerdrAgentsState,
 } from '../state/store.ts';
-import type {
-  HerdrContext,
-  HerdrSessionSnapshot,
-  PaneInfo,
-  TabInfo,
-  WorkspaceInfo,
-} from '../types.ts';
-import { bestEffort, errorMessage } from '../utils.ts';
+import { HerdrSessionSnapshot, TabInfo, WorkspaceInfo } from '../types.ts';
+import { type HerdrContext, type PaneInfo } from '../types.ts';
+import { bestEffort } from '../utils.ts';
 import { execHerdr } from './cli.ts';
+
+const SnapshotResponse = Type.Object({
+  result: Type.Object({ snapshot: HerdrSessionSnapshot }),
+});
 
 export async function getSessionSnapshot(
   signal?: AbortSignal,
 ): Promise<HerdrSessionSnapshot> {
-  const output = await execHerdr(['api', 'snapshot'], signal);
-  const snapshot = JSON.parse(output)?.result?.snapshot as
-    | HerdrSessionSnapshot
-    | undefined;
-  if (
-    !snapshot ||
-    !Array.isArray(snapshot.panes) ||
-    !Array.isArray(snapshot.tabs) ||
-    (snapshot.agents !== undefined && !Array.isArray(snapshot.agents))
-  ) {
+  const parsed = parseJson(
+    SnapshotResponse,
+    await execHerdr(['api', 'snapshot'], signal),
+  );
+  if (!parsed) {
     throw new Error('Malformed Herdr api snapshot response.');
   }
-  return snapshot;
+  return parsed.result.snapshot;
 }
 
 export async function listPanes(signal?: AbortSignal): Promise<PaneInfo[]> {
@@ -59,6 +57,10 @@ export async function getCurrentContext(
   };
 }
 
+const TabListResponse = Type.Object({
+  result: Type.Object({ tabs: Type.Array(TabInfo) }),
+});
+
 export async function listTabs(
   workspaceId: string,
   signal?: AbortSignal,
@@ -67,35 +69,43 @@ export async function listTabs(
     ['tab', 'list', '--workspace', workspaceId],
     signal,
   );
-  return JSON.parse(output).result.tabs as TabInfo[];
+  const parsed = parseJson(TabListResponse, output);
+  if (!parsed) {
+    throw new Error('Malformed Herdr tab list output.');
+  }
+  return parsed.result.tabs;
 }
 
+const WorkspaceListResponse = Type.Object({
+  result: Type.Object({ workspaces: Type.Array(Type.Unknown()) }),
+});
+
+/** A wrong-typed `label` drops the label, not the workspace. */
+const WorkspaceListItem = Type.Object({
+  workspace_id: Type.String(),
+  label: Type.Optional(Type.Unknown()),
+});
+
+/** Items are checked one by one: a bad entry is dropped, not the whole list. */
 export function parseWorkspaceListOutput(output: string): WorkspaceInfo[] {
-  let parsed: { result?: { workspaces?: unknown } };
-  try {
-    parsed = JSON.parse(output);
-  } catch (error) {
-    throw new Error(
-      `Malformed Herdr workspace list output: ${errorMessage(error)}`,
-    );
-  }
-  const workspaces = parsed.result?.workspaces;
-  if (!Array.isArray(workspaces)) {
+  const parsed = parseJson(WorkspaceListResponse, output);
+  if (!parsed) {
     throw new Error(
       'Malformed Herdr workspace list output: expected result.workspaces.',
     );
   }
-  return workspaces
-    .filter(
-      (item): item is WorkspaceInfo & { workspace_id: string } =>
-        !!item &&
-        typeof item === 'object' &&
-        typeof (item as WorkspaceInfo).workspace_id === 'string',
-    )
-    .map(({ workspace_id, label }) => ({
-      workspace_id,
-      ...(typeof label === 'string' ? { label } : {}),
-    }));
+  return parsed.result.workspaces.flatMap((workspace) =>
+    Value.Check(WorkspaceListItem, workspace)
+      ? [
+          {
+            workspace_id: workspace.workspace_id,
+            ...(typeof workspace.label === 'string' && workspace.label
+              ? { label: workspace.label }
+              : {}),
+          },
+        ]
+      : [],
+  );
 }
 
 async function listWorkspaces(signal?: AbortSignal): Promise<WorkspaceInfo[]> {
@@ -122,27 +132,23 @@ export function parseCreatedWorkspace(output: string): {
   workspaceId?: string;
   rootTabId?: string;
 } {
-  try {
-    const parsed = JSON.parse(output) as {
-      result?: {
-        workspace?: { workspace_id?: unknown };
-        tab?: { tab_id?: unknown };
-      };
-    };
-    const workspaceId = parsed.result?.workspace?.workspace_id;
-    const rootTabId = parsed.result?.tab?.tab_id;
-    return {
-      ...(typeof workspaceId === 'string' && workspaceId.length > 0
-        ? { workspaceId }
-        : {}),
-      ...(typeof rootTabId === 'string' && rootTabId.length > 0
-        ? { rootTabId }
-        : {}),
-    };
-  } catch {
-    return {};
-  }
+  const parsed = parseJson(CreatedWorkspaceResponse, output);
+  const workspaceId = parsed?.result?.workspace?.workspace_id;
+  const rootTabId = parsed?.result?.tab?.tab_id;
+  return {
+    ...(workspaceId && workspaceId.length > 0 ? { workspaceId } : {}),
+    ...(rootTabId && rootTabId.length > 0 ? { rootTabId } : {}),
+  };
 }
+
+const CreatedWorkspaceResponse = Type.Object({
+  result: Type.Optional(
+    Type.Object({
+      workspace: Type.Optional(Type.Object({ workspace_id: Type.String() })),
+      tab: Type.Optional(Type.Object({ tab_id: Type.String() })),
+    }),
+  ),
+});
 
 /**
  * Find the managed agents workspace by label, creating it when missing.

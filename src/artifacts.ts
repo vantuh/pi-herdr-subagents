@@ -2,6 +2,11 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { Type } from 'typebox';
+import type { Static } from 'typebox';
+import { Value } from 'typebox/value';
+
+import { parseJson } from './json.ts';
 import { errorMessage } from './utils.ts';
 
 export const RESULT_FILE_MARKER = 'HERDR_RESULT_FILE:';
@@ -13,17 +18,20 @@ export const SESSION_META_ENV = 'HERDR_AGENT_SESSION_META';
 
 const SESSION_META_FILE_NAME = 'session.json';
 
-interface ChildSessionMeta {
-  sessionId: string;
-  sessionFile?: string;
-  cwd: string;
-  updatedAt: string;
-}
+export const ChildSessionMeta = Type.Object({
+  sessionId: Type.String(),
+  sessionFile: Type.Optional(Type.String()),
+  cwd: Type.String(),
+  updatedAt: Type.Optional(Type.String()),
+});
+export type ChildSessionMeta = Static<typeof ChildSessionMeta>;
 
-interface PiSessionHeader {
-  id: string;
-  cwd: string;
-}
+export const PiSessionHeader = Type.Object({
+  type: Type.Literal('session'),
+  id: Type.String(),
+  cwd: Type.String(),
+});
+export type PiSessionHeader = Static<typeof PiSessionHeader>;
 
 async function makeAgentTempDir(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), 'herdr-agent-'));
@@ -140,26 +148,22 @@ export async function readAgentSessionMeta(
   if (!filePath) return undefined;
   const raw = await readTrimmedIfExists(filePath);
   if (!raw) return undefined;
-  try {
-    const parsed = JSON.parse(raw) as Partial<ChildSessionMeta>;
-    if (!isNonEmptyString(parsed.sessionId) || !isNonEmptyString(parsed.cwd)) {
-      return undefined;
-    }
-    return {
-      sessionId: parsed.sessionId.trim(),
-      cwd: parsed.cwd.trim(),
-      updatedAt:
-        typeof parsed.updatedAt === 'string'
-          ? parsed.updatedAt
-          : new Date(0).toISOString(),
-      ...(isNonEmptyString(parsed.sessionFile)
-        ? { sessionFile: path.resolve(parsed.sessionFile.trim()) }
-        : {}),
-    };
-  } catch (error) {
-    if (error instanceof SyntaxError) return undefined;
-    throw error;
+  const parsed = parseJson(ChildSessionMeta, raw);
+  if (
+    !parsed ||
+    !isNonEmptyString(parsed.sessionId) ||
+    !isNonEmptyString(parsed.cwd)
+  ) {
+    return undefined;
   }
+  return {
+    sessionId: parsed.sessionId.trim(),
+    cwd: parsed.cwd.trim(),
+    updatedAt: parsed.updatedAt ?? new Date(0).toISOString(),
+    ...(isNonEmptyString(parsed.sessionFile)
+      ? { sessionFile: path.resolve(parsed.sessionFile!.trim()) }
+      : {}),
+  };
 }
 
 export async function readPiSessionHeader(
@@ -180,16 +184,12 @@ export async function readPiSessionHeader(
     const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
     const firstLine = buf.toString('utf8', 0, bytesRead).split(/\r?\n/, 1)[0];
     if (!firstLine) return undefined;
-    const parsed = JSON.parse(firstLine) as {
-      type?: unknown;
-      id?: unknown;
-      cwd?: unknown;
-    };
-    if (parsed.type !== 'session') return undefined;
+    const parsed = parseJson(PiSessionHeader, firstLine);
+    if (!parsed) return undefined;
     if (!isNonEmptyString(parsed.id) || !isNonEmptyString(parsed.cwd)) {
       return undefined;
     }
-    return { id: parsed.id.trim(), cwd: parsed.cwd.trim() };
+    return { type: 'session', id: parsed.id.trim(), cwd: parsed.cwd.trim() };
   } catch {
     return undefined;
   } finally {
@@ -255,19 +255,23 @@ export function findResultFileMarker(prompt: string): string | undefined {
   return candidate && isManagedResultFile(candidate) ? candidate : undefined;
 }
 
+const TextPart = Type.Object({
+  type: Type.Literal('text'),
+  text: Type.String(),
+});
+const MessageContent = Type.Object({
+  content: Type.Optional(
+    Type.Union([Type.String(), Type.Array(Type.Unknown())]),
+  ),
+});
+
 export function assistantText(message: unknown): string {
-  const content = (message as { content?: unknown })?.content;
+  if (!Value.Check(MessageContent, message)) return '';
+  const content = message.content;
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
   return content
-    .filter(
-      (part): part is { type: 'text'; text: string } =>
-        typeof part === 'object' &&
-        part !== null &&
-        (part as { type?: unknown }).type === 'text' &&
-        typeof (part as { text?: unknown }).text === 'string',
-    )
-    .map((part) => part.text)
+    .flatMap((part) => (Value.Check(TextPart, part) ? [part.text] : []))
     .join('\n');
 }
 

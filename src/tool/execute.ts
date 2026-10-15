@@ -5,6 +5,7 @@ import type {
   ExtensionToolContext,
 } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
+import { Type } from 'typebox';
 
 import { discoverAgents } from '../agents.ts';
 import {
@@ -33,6 +34,7 @@ import {
   findReusableAgentTab,
   listManagedWorkspaceAgents,
   uniqueLabel,
+  PaneLayout,
 } from '../herdr/placement.ts';
 import {
   getCurrentContext,
@@ -40,6 +42,7 @@ import {
   listTabs,
   resolveAgentsWorkspace,
 } from '../herdr/snapshot.ts';
+import { parseJson } from '../json.ts';
 import { CHILD_PROTOCOL } from '../prompts.ts';
 import {
   claimClosedHistory,
@@ -55,6 +58,7 @@ import {
   type ClosedAgentHistoryRecord,
   type HerdrAgentsState,
 } from '../state/store.ts';
+import { CreatedPane } from '../types.ts';
 import type {
   AgentProfile,
   HerdrAgentLayout,
@@ -65,7 +69,6 @@ import type {
 import { ensureAgentsWidget } from '../ui/poller.ts';
 import {
   bestEffort,
-  errorMessage,
   formatSpawnWarnings,
   makeHerdrAgentName,
   titleCase,
@@ -87,6 +90,16 @@ import { buildHerdrAgentParams } from './schema.ts';
 import { executeAgentStatus, resumeClosedLiveDecision } from './status.ts';
 
 type HerdrAgentParams = Static<ReturnType<typeof buildHerdrAgentParams>>;
+
+const TabCreateResponse = Type.Object({
+  result: Type.Object({ root_pane: Type.Optional(CreatedPane) }),
+});
+const PaneSplitResponse = Type.Object({
+  result: Type.Object({ pane: Type.Optional(CreatedPane) }),
+});
+const PaneLayoutResponse = Type.Object({
+  result: Type.Optional(Type.Object({ layout: Type.Optional(PaneLayout) })),
+});
 
 interface TaskInvocation {
   pi: ExtensionAPI;
@@ -112,7 +125,7 @@ interface SpawnState {
   tabLabel: string;
   tabId?: string;
   paneId?: string;
-  agentPane?: PaneInfo;
+  agentPane?: CreatedPane;
   lifecycleRecorded?: boolean;
   automationName?: string;
   resultFile?: string;
@@ -654,25 +667,16 @@ async function createAgentTab(
     ],
     signal,
   );
-  let createResult;
-  try {
-    createResult = JSON.parse(createOutput)?.result;
-  } catch (error) {
-    throw new Error(
-      `Malformed Herdr tab create output: expected JSON with result.root_pane.pane_id (${errorMessage(error)}). Output: ${createOutput}`,
-    );
-  }
-
-  const rootPane = createResult?.root_pane as PaneInfo | undefined;
-  if (!rootPane || typeof rootPane.pane_id !== 'string') {
+  const createResult = parseJson(TabCreateResponse, createOutput)?.result;
+  const rootPane = createResult?.root_pane;
+  if (!rootPane) {
     throw new Error(
       `Malformed Herdr tab create output: missing result.root_pane.pane_id. Output: ${createOutput}`,
     );
   }
   spawn.paneId = rootPane.pane_id;
   spawn.agentPane = rootPane;
-  spawn.tabId =
-    typeof rootPane.tab_id === 'string' ? rootPane.tab_id : undefined;
+  spawn.tabId = rootPane.tab_id;
 
   if (!spawn.tabId) {
     spawn.tabId = (await listPanes(signal)).find(
@@ -713,7 +717,8 @@ async function createAgentPane(
       ['pane', 'layout', '--pane', current.currentPane.pane_id],
       signal,
     );
-    const paneLayout = JSON.parse(layoutOutput)?.result?.layout;
+    const paneLayout = parseJson(PaneLayoutResponse, layoutOutput)?.result
+      ?.layout;
     splitTarget = chooseAgentColumnSplitTarget(managedPanes, paneLayout);
   }
 
@@ -733,16 +738,9 @@ async function createAgentPane(
     ],
     signal,
   );
-  let createResult;
-  try {
-    createResult = JSON.parse(createOutput)?.result;
-  } catch (error) {
-    throw new Error(
-      `Malformed Herdr pane split output: expected JSON with result.pane.pane_id (${errorMessage(error)}). Output: ${createOutput}`,
-    );
-  }
-  const createdPane = createResult?.pane as PaneInfo | undefined;
-  if (!createdPane || typeof createdPane.pane_id !== 'string') {
+  const createResult = parseJson(PaneSplitResponse, createOutput)?.result;
+  const createdPane = createResult?.pane;
+  if (!createdPane) {
     throw new Error(
       `Malformed Herdr pane split output: missing result.pane.pane_id. Output: ${createOutput}`,
     );

@@ -9,6 +9,9 @@ import {
   parseFrontmatter,
   SettingsManager,
 } from '@earendil-works/pi-coding-agent';
+import { Type } from 'typebox';
+import type { Static } from 'typebox';
+import { Value } from 'typebox/value';
 
 import type { AgentProfile } from './types.ts';
 
@@ -40,9 +43,11 @@ export function resolveThinkingLevel(value: unknown): string | undefined {
   return THINKING_LEVEL_SET.has(level) ? level : undefined;
 }
 
-function normalizeTools(rawTools: unknown): string[] | undefined {
+function normalizeTools(
+  rawTools: string | string[] | undefined,
+): string[] | undefined {
   const tools = Array.isArray(rawTools)
-    ? rawTools.map((tool) => String(tool).trim()).filter(Boolean)
+    ? rawTools.map((tool) => tool.trim()).filter(Boolean)
     : typeof rawTools === 'string'
       ? rawTools
           .split(',')
@@ -57,13 +62,15 @@ function normalizeTools(rawTools: unknown): string[] | undefined {
  * `skills: none` and `skills: []` both mean "load no skills". An omitted
  * field stays undefined so the child keeps full discovery.
  */
-export function normalizeSkillList(raw: unknown): string[] | undefined {
+export function normalizeSkillList(
+  raw: string | string[] | undefined,
+): string[] | undefined {
   if (typeof raw === 'string') {
     const trimmed = raw.trim();
     if (trimmed.toLowerCase() === 'none' || trimmed === '[]') return [];
   }
   if (Array.isArray(raw)) {
-    return raw.map((skill) => String(skill).trim()).filter(Boolean);
+    return raw.map((skill) => skill.trim()).filter(Boolean);
   }
   return normalizeTools(raw);
 }
@@ -135,6 +142,18 @@ export async function resolveProfileSkills(
   return { found, missing, diagnostics };
 }
 
+/** Profile frontmatter: unknown keys stay allowed, wrong types skip the profile. */
+const Frontmatter = Type.Object({
+  name: Type.String(),
+  description: Type.String(),
+  tools: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])),
+  skills: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])),
+  'system-prompt': Type.Optional(Type.Union([Type.String(), Type.Boolean()])),
+  'disable-model-invocation': Type.Optional(
+    Type.Union([Type.Boolean(), Type.String()]),
+  ),
+});
+
 function findNearestProjectAgentsDir(cwd: string): string | null {
   let current = cwd;
   while (true) {
@@ -171,17 +190,9 @@ async function loadAgentsFromDir(
     }
 
     const { frontmatter, body } = parseFrontmatter<
-      Record<string, unknown> & {
-        tools?: string | string[];
-        skills?: string | string[];
-        'system-prompt'?: unknown;
-        'disable-model-invocation'?: string | boolean;
-      }
+      Record<string, unknown> & Static<typeof Frontmatter>
     >(content);
-    if (
-      typeof frontmatter.name !== 'string' ||
-      typeof frontmatter.description !== 'string'
-    ) {
+    if (!Value.Check(Frontmatter, frontmatter)) {
       continue;
     }
 
