@@ -24,15 +24,30 @@ export const HERDR_AGENTS_CONFIG_FILE = 'herdr-agents.json';
  * harnesses and debugging, not for users.
  */
 export const HerdrAgentsConfig = Type.Object({
-  /** User input: wrong leaf types drop that setting, never the siblings. */
-  layout: Type.Optional(Type.Unknown()),
+  /** Agent target layout, normalized on read. Default: "workspace". */
+  layout: Type.Optional(Type.String()),
   workspace: Type.Optional(
     Type.Object({
-      label: Type.Optional(Type.Unknown()),
+      /** Label of the dedicated Agents workspace. Default: "subagents". */
+      label: Type.Optional(Type.String()),
     }),
   ),
 });
 export type HerdrAgentsConfig = Static<typeof HerdrAgentsConfig>;
+
+/**
+ * Reading the user file: each setting is read on its own, so one malformed
+ * field or container cannot discard the others (`{"workspace":null}` keeps
+ * `layout`). Normalization decides which value survives.
+ */
+const ConfigLayoutField = Type.Object({
+  layout: Type.Optional(Type.Unknown()),
+});
+const ConfigWorkspaceField = Type.Object({
+  workspace: Type.Optional(
+    Type.Object({ label: Type.Optional(Type.Unknown()) }),
+  ),
+});
 
 export function herdrAgentsConfigPath(
   agentDir: string = getAgentDir(),
@@ -60,12 +75,10 @@ export async function loadHerdrAgentsConfig(
   } catch {
     return {};
   }
-  const parsed = parseJson(HerdrAgentsConfig, raw);
-  if (!parsed) {
-    return {};
-  }
-  const layout = normalizeLayout(parsed.layout);
-  const label = normalizeLabel(parsed.workspace?.label);
+  const layout = normalizeLayout(parseJson(ConfigLayoutField, raw)?.layout);
+  const label = normalizeLabel(
+    parseJson(ConfigWorkspaceField, raw)?.workspace?.label,
+  );
   return {
     ...(layout ? { layout } : {}),
     ...(label ? { workspace: { label } } : {}),
