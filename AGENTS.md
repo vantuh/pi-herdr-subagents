@@ -17,6 +17,8 @@ flow, config and profiles. Keep those in sync when behavior changes.
 - `src/prompts.ts` — Orchestrator instructions and the child-agent protocol.
 - `src/json.ts` — `parseJson`: JSON parsing validated against a TypeBox schema.
 - `src/artifacts.ts` — result, question and session-meta file IO.
+- `src/artifacts/schema.ts` — artifact schemas: session metadata, native Pi session header, assistant message; shared non-empty-string guard.
+- `src/artifacts/sessions.ts` — native Pi session-file header reading and resumable-session validation.
 - `src/child.ts` — child mode: `ask_question` and the result writer.
 - `src/utils.ts` — shared helpers: agent naming, title casing, error messages, best-effort state persistence.
 - `src/output.ts` — child output, status-preview and spawn-warning formatting.

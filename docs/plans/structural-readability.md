@@ -35,7 +35,7 @@ file map in `AGENTS.md` and affected documentation/imports with each step.
 - [x] 5. Extract detached outcome delivery from widget polling. Preserve question
   precedence, fresh status checks, durable claims, notification/close ordering,
   batching and awaited shutdown.
-- [ ] 5a. Finish the audit's artifact/session boundary before reorganizing tests.
+- [x] 5a. Finish the audit's artifact/session boundary before reorganizing tests.
   Separate native Pi session validation from managed artifact IO, and move
   artifact/message schemas plus their derived types beside the feature. Preserve
   all path checks, file permissions, JSONL validation and resume behavior.
@@ -87,5 +87,10 @@ and 127 integration tests pass. E2E has not yet been run for this task.
 - Added the audit's smaller artifact/session extraction before test organization:
   `artifacts.ts` is the only remaining source file above 300 lines, and native
   session-file validation has a distinct responsibility from managed artifact IO.
+- Step 5a: separated native-session validation and artifact schemas. No source
+  file now exceeds 300 lines (largest: 267). Independent review found no issues;
+  typecheck, lint, 190 unit, 127 integration and 13 E2E tests pass. Compared with
+  the audit baseline, all 309 literal test declarations and 1,105 assertion-start
+  lines remain unchanged.
 - E2E runs use installed Pi `1.2.0` and Herdr `0.9.5`; the documented Herdr
   `0.9.4` binary is not installed, so that exact version remains unverified.

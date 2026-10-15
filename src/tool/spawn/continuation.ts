@@ -1,11 +1,11 @@
 import type { AgentToolResult } from '@earendil-works/pi-coding-agent';
 
 import { discoverAgents } from '../../agents.ts';
+import { readAgentQuestion } from '../../artifacts.ts';
 import {
-  readAgentQuestion,
   resumableSessionDirError,
   validateResumableSessionFile,
-} from '../../artifacts.ts';
+} from '../../artifacts/sessions.ts';
 import {
   findReusableAgentPane,
   findReusableAgentTab,

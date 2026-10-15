@@ -1,8 +1,5 @@
-import {
-  readAgentSessionMeta,
-  removeAgentTempFiles,
-  validateResumableSessionFile,
-} from '../artifacts.ts';
+import { readAgentSessionMeta, removeAgentTempFiles } from '../artifacts.ts';
+import { validateResumableSessionFile } from '../artifacts/sessions.ts';
 import type { HerdrAgentLayout } from '../config/schema.ts';
 import { execHerdr } from '../herdr/cli.ts';
 import { rebalanceCurrentPaneAgents } from '../herdr/layout.ts';

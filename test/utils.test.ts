@@ -15,15 +15,17 @@ import {
   readAgentQuestion,
   readAgentResult,
   readAgentSessionMeta,
-  readPiSessionHeader,
   removeAgentTempFiles,
   SESSION_META_ENV,
   sessionMetaFileFor,
-  validateResumableSessionFile,
   writeAgentQuestion,
   appendAgentResult,
   writeAgentSessionMeta,
 } from '../src/artifacts.ts';
+import {
+  readPiSessionHeader,
+  validateResumableSessionFile,
+} from '../src/artifacts/sessions.ts';
 import {
   formatAgentOutput,
   formatAssistantPreview,

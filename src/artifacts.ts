@@ -2,12 +2,15 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { Type } from 'typebox';
-import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
+import {
+  ChildSessionMeta,
+  isNonEmptyString,
+  MessageContent,
+  TextPart,
+} from './artifacts/schema.ts';
 import { parseJson } from './json.ts';
-import { errorMessage } from './utils.ts';
 
 export const RESULT_FILE_MARKER = 'HERDR_RESULT_FILE:';
 
@@ -17,21 +20,6 @@ export const ASK_QUESTION_TOOL = 'ask_question';
 export const SESSION_META_ENV = 'HERDR_AGENT_SESSION_META';
 
 const SESSION_META_FILE_NAME = 'session.json';
-
-export const ChildSessionMeta = Type.Object({
-  sessionId: Type.String(),
-  sessionFile: Type.Optional(Type.String()),
-  cwd: Type.String(),
-  updatedAt: Type.Optional(Type.String()),
-});
-export type ChildSessionMeta = Static<typeof ChildSessionMeta>;
-
-export const PiSessionHeader = Type.Object({
-  type: Type.Literal('session'),
-  id: Type.String(),
-  cwd: Type.String(),
-});
-export type PiSessionHeader = Static<typeof PiSessionHeader>;
 
 async function makeAgentTempDir(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), 'herdr-agent-'));
@@ -128,10 +116,6 @@ export function sessionMetaFileFor(
   return siblingArtifact(resultFile, SESSION_META_FILE_NAME);
 }
 
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
 export async function writeAgentSessionMeta(
   filePath: string | undefined,
   meta: ChildSessionMeta,
@@ -166,63 +150,6 @@ export async function readAgentSessionMeta(
   };
 }
 
-export async function readPiSessionHeader(
-  sessionFile: string,
-): Promise<PiSessionHeader | undefined> {
-  if (!path.isAbsolute(sessionFile)) return undefined;
-  let stat;
-  try {
-    stat = await fs.lstat(sessionFile);
-  } catch {
-    return undefined;
-  }
-  if (!stat.isFile()) return undefined;
-
-  const handle = await fs.open(sessionFile, 'r');
-  try {
-    const buf = Buffer.alloc(8192);
-    const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
-    const firstLine = buf.toString('utf8', 0, bytesRead).split(/\r?\n/, 1)[0];
-    if (!firstLine) return undefined;
-    const parsed = parseJson(PiSessionHeader, firstLine);
-    if (!parsed) return undefined;
-    if (!isNonEmptyString(parsed.id) || !isNonEmptyString(parsed.cwd)) {
-      return undefined;
-    }
-    return { type: 'session', id: parsed.id.trim(), cwd: parsed.cwd.trim() };
-  } catch {
-    return undefined;
-  } finally {
-    await handle.close();
-  }
-}
-
-export async function validateResumableSessionFile(
-  sessionFile: string,
-  expected: { sessionId: string; cwd: string },
-): Promise<PiSessionHeader | undefined> {
-  const header = await readPiSessionHeader(sessionFile);
-  if (!header) return undefined;
-  if (header.id !== expected.sessionId) return undefined;
-  if (path.resolve(header.cwd) !== path.resolve(expected.cwd)) return undefined;
-  return header;
-}
-
-export async function resumableSessionDirError(
-  cwd: string,
-): Promise<string | undefined> {
-  try {
-    const stat = await fs.stat(cwd);
-    if (!stat.isDirectory())
-      return 'Session working directory is not a directory.';
-    return undefined;
-  } catch (error) {
-    const code = (error as { code?: string }).code;
-    if (code === 'ENOENT') return 'Session working directory is missing.';
-    return errorMessage(error);
-  }
-}
-
 export async function writeAgentQuestion(
   resultFile: string | undefined,
   question: string,
@@ -254,16 +181,6 @@ export function findResultFileMarker(prompt: string): string | undefined {
   const candidate = matches.at(-1)?.[1]?.trim();
   return candidate && isManagedResultFile(candidate) ? candidate : undefined;
 }
-
-const TextPart = Type.Object({
-  type: Type.Literal('text'),
-  text: Type.String(),
-});
-const MessageContent = Type.Object({
-  content: Type.Optional(
-    Type.Union([Type.String(), Type.Array(Type.Unknown())]),
-  ),
-});
 
 export function assistantText(message: unknown): string {
   if (!Value.Check(MessageContent, message)) return '';
