@@ -1,7 +1,3 @@
-import { Type } from 'typebox';
-import type { Static } from 'typebox';
-import { Value } from 'typebox/value';
-
 import type {
   HerdrAgentStateInfoFields,
   HerdrAgentStateRecord,
@@ -12,7 +8,6 @@ import {
   liveAgentWithAutomationName,
   paneStateKey,
 } from '../state/store.ts';
-import { execHerdrApi } from './cli.ts';
 import type { PaneInfo, TabInfo } from './schema.ts';
 import type {
   HerdrAgentInfo,
@@ -216,132 +211,4 @@ export function listManagedWorkspaceAgents(
   }
 
   return agents.sort((a, b) => a.tabLabel.localeCompare(b.tabLabel));
-}
-
-/** Layout tree from `layout.export`; `node` refers to itself by definition name. */
-export const PortableLayoutNode = Type.Cyclic(
-  {
-    node: Type.Union([
-      Type.Object({
-        type: Type.Literal('pane'),
-        pane_id: Type.Optional(Type.String()),
-      }),
-      Type.Object({
-        type: Type.Literal('split'),
-        direction: Type.Union([Type.Literal('right'), Type.Literal('down')]),
-        ratio: Type.Number(),
-        first: Type.Ref('node'),
-        second: Type.Ref('node'),
-      }),
-    ]),
-  },
-  'node',
-);
-export type PortableLayoutNode = Static<typeof PortableLayoutNode>;
-
-interface SplitRatioUpdate {
-  path: boolean[];
-  ratio: number;
-}
-
-function countManagedPanes(
-  node: PortableLayoutNode,
-  managedPaneIds: ReadonlySet<string>,
-): number {
-  if (node.type === 'pane') {
-    return node.pane_id && managedPaneIds.has(node.pane_id) ? 1 : 0;
-  }
-  return (
-    countManagedPanes(node.first, managedPaneIds) +
-    countManagedPanes(node.second, managedPaneIds)
-  );
-}
-
-export function buildEqualAgentSplitRatios(
-  root: PortableLayoutNode,
-  managedPaneIds: ReadonlySet<string>,
-): SplitRatioUpdate[] {
-  const updates: SplitRatioUpdate[] = [];
-
-  const visit = (node: PortableLayoutNode, path: boolean[]) => {
-    if (node.type === 'pane') return;
-
-    const firstCount = countManagedPanes(node.first, managedPaneIds);
-    const secondCount = countManagedPanes(node.second, managedPaneIds);
-    const total = firstCount + secondCount;
-
-    if (node.direction === 'down' && firstCount > 0 && secondCount > 0) {
-      updates.push({ path, ratio: firstCount / total });
-    }
-    if (firstCount > 0) visit(node.first, [...path, false]);
-    if (secondCount > 0) visit(node.second, [...path, true]);
-  };
-
-  visit(root, []);
-  return updates;
-}
-
-export async function exportPaneLayout(
-  paneId: string,
-  signal?: AbortSignal,
-): Promise<{ tab_id: string; root: PortableLayoutNode }> {
-  const value = await execHerdrApi(
-    'layout.export',
-    { pane_id: paneId },
-    signal,
-  );
-  if (!Value.Check(ExportedLayoutResponse, value) || !value.layout.tab_id) {
-    throw new Error('Malformed Herdr layout.export response.');
-  }
-  return { tab_id: value.layout.tab_id, root: value.layout.root };
-}
-
-const ExportedLayoutResponse = Type.Object({
-  layout: Type.Object({ tab_id: Type.String(), root: PortableLayoutNode }),
-});
-
-export async function setLayoutSplitRatio(
-  tabId: string,
-  path: boolean[],
-  ratio: number,
-  signal?: AbortSignal,
-): Promise<void> {
-  await execHerdrApi(
-    'layout.set_split_ratio',
-    { tab_id: tabId, path, ratio },
-    signal,
-  );
-}
-
-export const PaneLayout = Type.Object({
-  panes: Type.Optional(
-    Type.Array(
-      Type.Object({
-        pane_id: Type.String(),
-        rect: Type.Optional(
-          Type.Object({
-            height: Type.Optional(Type.Number()),
-            width: Type.Optional(Type.Number()),
-          }),
-        ),
-      }),
-    ),
-  ),
-});
-export type PaneLayout = Static<typeof PaneLayout>;
-
-export function chooseAgentColumnSplitTarget(
-  panes: PaneInfo[],
-  layout?: PaneLayout,
-): PaneInfo | undefined {
-  const areaByPaneId = new Map(
-    (layout?.panes ?? []).map((pane) => [
-      pane.pane_id,
-      (pane.rect?.height ?? 0) * (pane.rect?.width ?? 0),
-    ]),
-  );
-  return [...panes].sort(
-    (a, b) =>
-      (areaByPaneId.get(b.pane_id) ?? 0) - (areaByPaneId.get(a.pane_id) ?? 0),
-  )[0];
 }

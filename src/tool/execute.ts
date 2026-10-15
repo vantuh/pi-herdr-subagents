@@ -28,12 +28,15 @@ import { promptAgent, startAgent } from '../herdr/agent.ts';
 import { execHerdr } from '../herdr/cli.ts';
 import {
   chooseAgentColumnSplitTarget,
+  rebalanceCurrentPaneAgents,
+} from '../herdr/layout.ts';
+import { PaneLayout } from '../herdr/layout/schema.ts';
+import {
   findUnresolvedOwnedAgent,
   findReusableAgentPane,
   findReusableAgentTab,
   listManagedWorkspaceAgents,
   uniqueLabel,
-  PaneLayout,
 } from '../herdr/placement.ts';
 import { CreatedPane, type PaneInfo, type TabInfo } from '../herdr/schema.ts';
 import {
@@ -44,6 +47,7 @@ import {
 } from '../herdr/snapshot.ts';
 import type { HerdrContext } from '../herdr/types.ts';
 import { parseJson } from '../json.ts';
+import { formatSpawnWarnings, spawnWarningDetails } from '../output.ts';
 import { CHILD_PROTOCOL } from '../prompts.ts';
 import {
   claimClosedHistory,
@@ -62,26 +66,16 @@ import {
   recordAgentLifecycle,
 } from '../state/store.ts';
 import { ensureAgentsWidget } from '../ui/poller.ts';
-import {
-  bestEffort,
-  formatSpawnWarnings,
-  makeHerdrAgentName,
-  titleCase,
-} from '../utils.ts';
+import { bestEffort, makeHerdrAgentName, titleCase } from '../utils.ts';
 import {
   buildChildPiArgs,
   herdrChildEnvArgs,
   orchestratorIdentity,
 } from './child-args.ts';
-import {
-  acquirePanePlacementLock,
-  closeTargetArgs,
-  independentCleanupSignal,
-  rebalanceCurrentPaneAgents,
-  spawnWarningDetails,
-} from './one-shot.ts';
+import { closeTargetArgs, independentCleanupSignal } from './one-shot.ts';
 import { textResult } from './result.ts';
 import type { HerdrAgentParams } from './schema.ts';
+import { acquirePanePlacementLock } from './spawn/placement-lock.ts';
 import { executeAgentStatus, resumeClosedLiveDecision } from './status.ts';
 
 const TabCreateResponse = Type.Object({

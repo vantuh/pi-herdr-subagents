@@ -5,14 +5,9 @@ import {
 } from '../artifacts.ts';
 import type { HerdrAgentLayout } from '../config/schema.ts';
 import { execHerdr } from '../herdr/cli.ts';
-import {
-  buildEqualAgentSplitRatios,
-  exportPaneLayout,
-  listManagedWorkspaceAgents,
-  setLayoutSplitRatio,
-} from '../herdr/placement.ts';
+import { rebalanceCurrentPaneAgents } from '../herdr/layout.ts';
 import type { PaneInfo } from '../herdr/schema.ts';
-import { getSessionSnapshot, loadContextWithState } from '../herdr/snapshot.ts';
+import { getSessionSnapshot } from '../herdr/snapshot.ts';
 import {
   finalizeStagedClosedOneShot,
   stageClosedOneShot,
@@ -33,23 +28,6 @@ export function independentCleanupSignal(
   timeoutMs = RESUME_CLEANUP_TIMEOUT_MS,
 ): AbortSignal {
   return AbortSignal.timeout(timeoutMs);
-}
-
-export async function rebalanceCurrentPaneAgents(
-  signal?: AbortSignal,
-): Promise<void> {
-  const { context: current, state } = await loadContextWithState(signal);
-  const agents = listManagedWorkspaceAgents(current, state).filter(
-    (agent) => agent.layout === 'pane' && agent.tabId === current.currentTab,
-  );
-  if (agents.length < 2) return;
-
-  const layout = await exportPaneLayout(current.currentPane.pane_id, signal);
-  const managedPaneIds = new Set(agents.map((agent) => agent.paneId));
-  const updates = buildEqualAgentSplitRatios(layout.root, managedPaneIds);
-  for (const update of updates) {
-    await setLayoutSplitRatio(layout.tab_id, update.path, update.ratio, signal);
-  }
 }
 
 /**
@@ -215,12 +193,6 @@ async function stageClosedOneShotIfEligible(target: {
   return staged.id;
 }
 
-export function spawnWarningDetails(warnings: readonly string[]): {
-  spawnWarnings?: string[];
-} {
-  return warnings.length > 0 ? { spawnWarnings: [...warnings] } : {};
-}
-
 export async function dropCollectedSpawnWarnings(
   pane: Pick<PaneInfo, 'terminal_id'> | undefined,
   signal?: AbortSignal,
@@ -229,17 +201,4 @@ export async function dropCollectedSpawnWarnings(
   await bestEffort(undefined, () =>
     clearAgentSpawnWarnings(pane, undefined, signal),
   );
-}
-
-let panePlacementQueue: Promise<void> = Promise.resolve();
-
-export async function acquirePanePlacementLock(): Promise<() => void> {
-  const previous = panePlacementQueue;
-  let release!: () => void;
-  const current = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  panePlacementQueue = previous.then(() => current);
-  await previous;
-  return release;
 }

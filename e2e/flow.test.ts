@@ -4,7 +4,7 @@ import { test } from 'vitest';
 
 import { readAgentResult, readAgentSessionMeta } from '../src/artifacts.ts';
 import { execHerdrApi } from '../src/herdr/cli.ts';
-import { exportPaneLayout } from '../src/herdr/placement.ts';
+import { exportPaneLayout } from '../src/herdr/layout.ts';
 import { loadCurrentAgents } from '../src/ui/poller.ts';
 import {
   createE2eHarness,

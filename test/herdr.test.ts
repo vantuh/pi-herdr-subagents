@@ -17,6 +17,8 @@ import {
 import {
   buildEqualAgentSplitRatios,
   chooseAgentColumnSplitTarget,
+} from '../src/herdr/layout.ts';
+import {
   findReusableAgentPane,
   findReusableAgentTab,
   listManagedWorkspaceAgents,

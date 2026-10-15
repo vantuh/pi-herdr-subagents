@@ -21,7 +21,7 @@ file map in `AGENTS.md` and affected documentation/imports with each step.
   schemas. Move the state/history schemas out of `store.ts`. Preserve names and
   validation semantics; update every source/test importer without compatibility
   re-exports. Leave compact single-parser schemas alone unless needed by the move.
-- [ ] 2. Extract layout operations from `herdr/placement.ts` and output formatting
+- [x] 2. Extract layout operations from `herdr/placement.ts` and output formatting
   from `utils.ts`. Put spawn warning formatting/details with output formatting,
   and move the placement lock out of one-shot closing into spawn-owned code.
 - [ ] 3. Separate state locking, history normalization/reconciliation/pruning and
@@ -65,5 +65,9 @@ and 127 integration tests pass. E2E has not yet been run for this task.
   and a migration-oriented comment. All 15 moved public TypeBox schemas compare
   exactly with their pre-refactor values. Typecheck, lint, 190 unit tests,
   127 integration tests and all 13 E2E tests pass.
+- Step 2: extracted layout operations/schemas, output formatting and placement
+  locking. Independent diff review found no issues. Typecheck, lint, 190 unit,
+  127 integration and 13 E2E tests pass; named relative imports also resolve to
+  real exports across source and test files.
 - E2E runs use installed Pi `1.2.0` and Herdr `0.9.5`; the documented Herdr
   `0.9.4` binary is not installed, so that exact version remains unverified.

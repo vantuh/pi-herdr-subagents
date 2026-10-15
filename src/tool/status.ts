@@ -14,11 +14,14 @@ import {
   listTabs,
   loadContextWithState,
 } from '../herdr/snapshot.ts';
+import {
+  formatAssistantPreview,
+  formatSpawnWarnings,
+  spawnWarningDetails,
+} from '../output.ts';
 import { formatAgentQuestion } from '../prompts.ts';
 import type { HerdrAgentStateRecord } from '../state/schema.ts';
 import { paneStateKey } from '../state/store.ts';
-import { formatAssistantPreview, formatSpawnWarnings } from '../utils.ts';
-import { spawnWarningDetails } from './one-shot.ts';
 import { textResult } from './result.ts';
 
 export function resumeClosedLiveDecision(input: {

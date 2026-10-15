@@ -24,13 +24,13 @@ import {
   appendAgentResult,
   writeAgentSessionMeta,
 } from '../src/artifacts.ts';
-import { buildChildToolAllowlist } from '../src/tool/child-args.ts';
 import {
   formatAgentOutput,
   formatAssistantPreview,
   formatSpawnWarnings,
-  makeHerdrAgentName,
-} from '../src/utils.ts';
+} from '../src/output.ts';
+import { buildChildToolAllowlist } from '../src/tool/child-args.ts';
+import { makeHerdrAgentName } from '../src/utils.ts';
 
 test('previews assistant text verbatim', () => {
   const text = [

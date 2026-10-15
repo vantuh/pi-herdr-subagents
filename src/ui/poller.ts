@@ -9,18 +9,15 @@ import { execHerdr } from '../herdr/cli.ts';
 import { listManagedWorkspaceAgents } from '../herdr/placement.ts';
 import { loadContextWithState } from '../herdr/snapshot.ts';
 import type { HerdrAgentInfo } from '../herdr/types.ts';
-import { formatAgentQuestion } from '../prompts.ts';
-import { claimDetachedAgent } from '../state/store.ts';
 import {
-  closeOneShot,
-  dropCollectedSpawnWarnings,
-  spawnWarningDetails,
-} from '../tool/one-shot.ts';
-import {
-  bestEffort,
   formatCollectedOutput,
   formatSpawnWarnings,
-} from '../utils.ts';
+  spawnWarningDetails,
+} from '../output.ts';
+import { formatAgentQuestion } from '../prompts.ts';
+import { claimDetachedAgent } from '../state/store.ts';
+import { closeOneShot, dropCollectedSpawnWarnings } from '../tool/one-shot.ts';
+import { bestEffort } from '../utils.ts';
 import {
   AGENT_QUESTION_MESSAGE_TYPE,
   AGENT_RESULT_MESSAGE_TYPE,
