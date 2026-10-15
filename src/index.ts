@@ -8,7 +8,6 @@ import { buildRunTurnInstructions, GLOBAL_INSTRUCTIONS } from './prompts.ts';
 import {
   formatRunUserMessage,
   parseRunArgs,
-  DEFAULT_AGENT_NAMES,
   type RunDelegationRequest,
 } from './run.ts';
 import { executeHerdrAgent } from './tool/execute.ts';
@@ -33,6 +32,8 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
 
   // Read once per extension load: herdr-agents.json changes apply on /reload.
   const configPromise = loadHerdrAgentsConfig();
+  // Profile names for /run, discovered on session_start (and /reload).
+  let agentNames: string[] = [];
 
   registerHerdrAgentTool(pi);
   // A /reload leaves the previous instance's poller running with a stale ctx.
@@ -74,30 +75,29 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
   pi.registerCommand('run', {
     description: 'Explicitly delegate a task to a Herdr agent',
     getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
-      const agents = DEFAULT_AGENT_NAMES;
       const [first = '', ...rest] = prefix.trimStart().split(/\s+/);
       const taskPrefix = rest.join(' ');
 
       if (!prefix.trim() || (!taskPrefix && !prefix.includes(' '))) {
-        const items = agents.map((agent) => ({
+        const items = agentNames.map((agent) => ({
           value: `${agent} `,
           label: agent,
         }));
         const filtered = items.filter((item) =>
-          item.value.startsWith(prefix.toLowerCase()),
+          item.value.toLowerCase().startsWith(prefix.toLowerCase()),
         );
         return filtered.length > 0 ? filtered : null;
       }
 
       if (taskPrefix) return null;
 
-      const items = agents
-        .filter((agent) => agent.startsWith(first.toLowerCase()))
+      const items = agentNames
+        .filter((agent) => agent.toLowerCase().startsWith(first.toLowerCase()))
         .map((agent) => ({ value: `${agent} `, label: agent }));
       return items.length > 0 ? items : null;
     },
     handler: async (args, ctx) => {
-      const parsed = parseRunArgs(args);
+      const parsed = parseRunArgs(args, agentNames);
       if (!parsed) {
         ctx.ui.notify(
           'Usage: /run [agent] <task> — e.g. /run scout find auth flow',
@@ -136,6 +136,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
   async function refreshAgentListing(cwd: string): Promise<void> {
     try {
       const agents = await discoverAgents(cwd);
+      agentNames = agents.map((agent) => agent.name);
       registerHerdrAgentTool(pi, describeAgentProfiles(agents));
     } catch (error) {
       process.stderr.write(
@@ -162,7 +163,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       promptSnippet:
         'Delegate exploration, research, planning, review, and isolated implementation to a one-shot Herdr agent.',
       promptGuidelines: [
-        'Use herdr_agent when global Delegation says isolated context helps; call after /run, a named role, or explicit delegation request.',
+        'Use herdr_agent when isolated context helps, after /run, or on an explicit delegation request.',
         'Follow the Herdr agents system instructions for self-contained tasks, independent parallel calls, avoiding duplicate work, status checks, and resume.',
       ],
       parameters: buildHerdrAgentParams(agentDescription),

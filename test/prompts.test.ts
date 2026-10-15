@@ -26,9 +26,12 @@ describe('prompts', () => {
       ),
     );
     assert.ok(GLOBAL_INSTRUCTIONS.includes('resumeClosed: true'));
-    assert.ok(
-      GLOBAL_INSTRUCTIONS.includes('scout, researcher, worker, reviewer'),
+    // Profiles are user-defined: the prompt must not name any of them.
+    assert.doesNotMatch(
+      GLOBAL_INSTRUCTIONS,
+      /\b(scout|researcher|worker|reviewer)\b/,
     );
+    assert.doesNotMatch(buildRunTurnInstructions(), /\b(scout|researcher)\b/);
   });
 
   it('GLOBAL_INSTRUCTIONS drops persistent/standby mechanics', () => {

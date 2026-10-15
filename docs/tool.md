@@ -17,7 +17,7 @@ The document has two parts:
 | `label` | `Herdr Agent` |
 | `description` | `Spawn a one-shot Herdr agent with a named profile from ~/.pi/agent/agents. Agents close after delivering their result; continue a closed one-shot with its context via resumeClosed and the same tabLabel.` |
 | `promptSnippet` | `Delegate exploration, research, planning, review, and isolated implementation to a one-shot Herdr agent.` |
-| `promptGuidelines` | `Use herdr_agent when global Delegation says isolated context helps; call after /run, a named role, or explicit delegation request.` and `Follow the Herdr agents system instructions for self-contained tasks, independent parallel calls, avoiding duplicate work, status checks, and resume.` |
+| `promptGuidelines` | `Use herdr_agent when isolated context helps, after /run, or on an explicit delegation request.` and `Follow the Herdr agents system instructions for self-contained tasks, independent parallel calls, avoiding duplicate work, status checks, and resume.` |
 
 The tool is registered with a static `agent` description at load. On `session_start` (including `/reload`) it is registered again, replacing the first registration, with the profile names discovered from the working directory appended as ` Available: a, b, c.` Profiles with `disable-model-invocation` are left out of that listing but can still be spawned by exact name.
 
@@ -29,7 +29,7 @@ Only `agent` is required by the schema. Some modes require more fields at runtim
 
 | Parameter | Type | Required | Default | Meaning |
 |---|---|---|---|---|
-| `agent` | string | yes | — | Profile name from `~/.pi/agent/agents/*.md` (project profiles in `.pi/agents/` override same-named user profiles). Schema description: `Agent profile name from ~/.pi/agent/agents/*.md, e.g. researcher, scout, reviewer, worker.` plus the dynamic `Available:` list. |
+| `agent` | string | yes | — | Profile name from `~/.pi/agent/agents/*.md` (project profiles in `.pi/agents/` override same-named user profiles). Schema description: `Agent profile name from ~/.pi/agent/agents/*.md or the project .pi/agents.` plus the dynamic `Available:` list. |
 | `task` | string | no | — | Self-contained task for the agent. Omit it to check a live agent matched by `tabLabel`: the call returns status and a preview of the latest captured assistant text, and does not send a new prompt. |
 | `tabLabel` | string | no* | Title-cased profile name, e.g. `Researcher` | Agent label. Identifies the agent for status checks, parked-question answers and `resumeClosed`. *Required when `task` is omitted, and when `resumeClosed` is `true`. |
 | `resumeClosed` | boolean | no | `false` | Continue a closed one-shot with its prior context. Requires a non-empty `task` and an explicit `tabLabel`. Never resumes over a live agent. |
@@ -170,7 +170,7 @@ Herdr CLI failures and malformed Herdr output are thrown as tool errors with the
 On every Orchestrator turn the extension appends `GLOBAL_INSTRUCTIONS` (`src/prompts.ts`) to the system prompt through `before_agent_start`. It repeats the usage rules above and adds policy that is not enforced by the schema:
 
 - Use `herdr_agent` for delegation instead of raw Herdr CLI commands.
-- Pick the smallest suitable profile: `scout`, `researcher`, `worker`, `reviewer`.
+- Pick the smallest suitable profile from the `Available:` list; the instructions name no profiles.
 - Do not duplicate delegated work. Do not recurse.
 - Run parallel calls only for independent reads or disjoint write slices (4–5 at most).
 - Make each task self-contained: goal, scope, paths or links, constraints, expected output, read-only vs edit permission.

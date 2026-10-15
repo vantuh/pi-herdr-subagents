@@ -621,33 +621,50 @@ test('/run explains itself when given no task', async () => {
     );
 
     // A bare profile name with no task is also not a delegation.
+    await harness.fire('session_start');
     await harness.runCommand('run', 'scout');
     assert.deepEqual(harness.userMessages, []);
   });
 });
 
-test('/run completes agent names, then stops offering completions', async () => {
-  await withHarness({}, async (harness) => {
-    const command = harness.commands.get('run') as {
-      getArgumentCompletions?: (
-        prefix: string,
-      ) => Array<{ value: string }> | null;
-    };
-    assert.ok(command.getArgumentCompletions);
+test('/run completes discovered agent names, then stops offering completions', async () => {
+  await withHarness(
+    {
+      profiles: [
+        { name: 'scout', body: 'BODY' },
+        { name: 'oracle', body: 'BODY' },
+        { name: 'Oracle-Lite', disableModelInvocation: true, body: 'BODY' },
+      ],
+    },
+    async (harness) => {
+      const command = harness.commands.get('run') as {
+        getArgumentCompletions?: (
+          prefix: string,
+        ) => Array<{ value: string }> | null;
+      };
+      assert.ok(command.getArgumentCompletions);
+      const names = (prefix: string) =>
+        (command.getArgumentCompletions?.(prefix) ?? [])
+          .map((item) => item.value.trim())
+          .sort();
 
-    const all = command.getArgumentCompletions('') ?? [];
-    assert.deepEqual(
-      all.map((item) => item.value.trim()),
-      ['scout', 'researcher', 'worker', 'reviewer'],
-    );
-    assert.deepEqual(
-      (command.getArgumentCompletions('re') ?? []).map((i) => i.value.trim()),
-      ['researcher', 'reviewer'],
-    );
-    // Once a task is being typed there is nothing to complete.
-    assert.equal(command.getArgumentCompletions('scout find the '), null);
-    assert.equal(command.getArgumentCompletions('nonsense'), null);
-  });
+      // Nothing is offered before discovery.
+      assert.equal(command.getArgumentCompletions(''), null);
+
+      await harness.fire('session_start');
+      // /run is an explicit user choice, so hidden profiles are offered too.
+      assert.deepEqual(names(''), ['Oracle-Lite', 'oracle', 'scout']);
+      assert.deepEqual(names('or'), ['Oracle-Lite', 'oracle']);
+      // Once a task is being typed there is nothing to complete.
+      assert.equal(command.getArgumentCompletions('scout find the '), null);
+      assert.equal(command.getArgumentCompletions('nonsense'), null);
+
+      await harness.runCommand('run', 'ORACLE map the auth flow');
+      assert.deepEqual(harness.userMessages, [
+        '[via /run \u2192 oracle] map the auth flow',
+      ]);
+    },
+  );
 });
 
 test('/herdr-agents needs TUI mode', async () => {

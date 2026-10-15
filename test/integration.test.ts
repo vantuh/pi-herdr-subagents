@@ -1398,6 +1398,7 @@ test('injects Orchestrator instructions, and /run instructions for one turn', as
       /\/run delegation/,
     );
 
+    await harness.fire('session_start');
     const run = harness.commands.get('run');
     assert.ok(run, 'expected a /run command');
     await run.handler('scout find the auth flow', {

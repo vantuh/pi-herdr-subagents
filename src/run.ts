@@ -3,23 +3,18 @@ export interface RunDelegationRequest {
   task: string;
 }
 
-export const DEFAULT_AGENT_NAMES = [
-  'scout',
-  'researcher',
-  'worker',
-  'reviewer',
-] as const;
-
 export function parseRunArgs(
   args: string,
-  knownAgents: readonly string[] = DEFAULT_AGENT_NAMES,
+  knownAgents: readonly string[],
 ): RunDelegationRequest | null {
   const task = args.trim();
   if (!task) return null;
 
   const [first, ...rest] = task.split(/\s+/);
-  const agent = first.toLowerCase();
-  if (knownAgents.includes(agent)) {
+  const agent = knownAgents.find(
+    (name) => name.toLowerCase() === first.toLowerCase(),
+  );
+  if (agent) {
     const delegatedTask = rest.join(' ').trim();
     if (!delegatedTask) return null;
     return { agent, task: delegatedTask };

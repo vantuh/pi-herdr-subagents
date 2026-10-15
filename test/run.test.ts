@@ -5,26 +5,35 @@ import { describe, it } from 'vitest';
 import { formatRunUserMessage, parseRunArgs } from '../src/run.ts';
 
 describe('parseRunArgs', () => {
-  it('parses agent and task', () => {
-    assert.deepEqual(parseRunArgs('scout find auth entry points'), {
-      agent: 'scout',
+  const known = ['scout', 'oracle', 'Auditor'];
+
+  it('parses a discovered agent and task', () => {
+    assert.deepEqual(parseRunArgs('oracle find auth entry points', known), {
+      agent: 'oracle',
       task: 'find auth entry points',
     });
   });
 
-  it('parses task without agent', () => {
-    assert.deepEqual(parseRunArgs('review the current diff'), {
-      task: 'review the current diff',
+  it('matches case-insensitively but returns the real profile name', () => {
+    assert.deepEqual(parseRunArgs('auditor check the diff', known), {
+      agent: 'Auditor',
+      task: 'check the diff',
+    });
+  });
+
+  it('treats a word that is not a discovered profile as task text', () => {
+    assert.deepEqual(parseRunArgs('reviewer check the diff', known), {
+      task: 'reviewer check the diff',
     });
   });
 
   it('rejects empty input', () => {
-    assert.equal(parseRunArgs(''), null);
-    assert.equal(parseRunArgs('   '), null);
+    assert.equal(parseRunArgs('', known), null);
+    assert.equal(parseRunArgs('   ', known), null);
   });
 
   it('rejects agent without task', () => {
-    assert.equal(parseRunArgs('scout'), null);
+    assert.equal(parseRunArgs('scout', known), null);
   });
 });
 

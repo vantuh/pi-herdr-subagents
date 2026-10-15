@@ -77,6 +77,11 @@ also ask for it explicitly:
 /run reviewer review the current diff for regressions
 ```
 
+The first word is used as the profile when it matches a discovered profile
+name (case-insensitive); otherwise the whole text is the task and the
+Orchestrator picks the profile. Profiles added mid-session appear after
+`/reload`.
+
 Tool parameters:
 
 | Parameter      | Description                                                                                        |

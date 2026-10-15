@@ -15,7 +15,8 @@ both user and custom-message runs, preserving Pi's other prompt sections.
 
 `src/agents.ts` discovers profiles on every call from `getAgentDir()/agents`
 and the nearest project `.pi/agents`. `session_start` (including `/reload`)
-also rediscovers them to refresh the `Available:` list in the tool schema.
+also rediscovers them to refresh the `Available:` list in the tool schema and
+the profile names `/run` completes and recognizes.
 `herdr-agents.json` is read once at extension load. Project profiles override user profiles
 by name. See [agent-profiles.md](agent-profiles.md) for fields and precedence.
 
