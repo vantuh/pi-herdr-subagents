@@ -365,7 +365,7 @@ test("delivers a detached real child's result and closes its pane on its own", a
   // so the widget poller has to notice a real Pi child settling, read its
   // artifact, push it into the session and close the real pane.
   await withE2e({}, async (harness) => {
-    const started = await harness.call({
+    await harness.call({
       agent: 'scout',
       task: 'Report the magic word.',
     });
@@ -623,7 +623,7 @@ test('delivers an unseen real child that finishes in the background', async () =
   // strict `done` semantics are pinned by the FakeHerdr integration test and
   // cross-checked here with a server-side wait witness.
   await withE2e({ layout: 'workspace' }, async (harness) => {
-    const started = await harness.call({
+    await harness.call({
       agent: 'scout',
       task: 'Report the magic word.',
     });

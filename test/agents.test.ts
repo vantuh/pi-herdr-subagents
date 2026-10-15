@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+
 import { test } from 'vitest';
 
 import {
@@ -215,7 +216,7 @@ test("resolveThinkingLevel validates against pi's flag levels", () => {
 });
 
 test("resolveProfileSkills maps names to file paths via pi's discovery", async () => {
-  await withProfileDirs(async ({ userAgents, projectRoot }) => {
+  await withProfileDirs(async ({ projectRoot }) => {
     const agentDir = process.env.PI_CODING_AGENT_DIR!;
     await fs.mkdir(path.join(agentDir, 'skills', 'hunk-review'), {
       recursive: true,

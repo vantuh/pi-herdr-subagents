@@ -259,7 +259,7 @@ export class FakeHerdr {
   }
 
   /**
-   * Accept prompts but do not start the simulated turns yet.
+   * Accept prompts and hold the simulated turns.
    *
    * Lets a test make several children settle at the same moment, which is the
    * only way to land two detached outcomes in one poller tick.

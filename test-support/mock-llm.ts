@@ -107,7 +107,7 @@ export class MockLlm {
     await new Promise<void>((resolve) =>
       this.server?.listen(0, '127.0.0.1', resolve),
     );
-    const { port } = this.server?.address() as AddressInfo;
+    const { port } = this.server!.address() as AddressInfo;
     this.baseUrlValue = `http://127.0.0.1:${port}`;
     return this.baseUrlValue;
   }

@@ -16,7 +16,7 @@ To see what a live agent is doing, call \`herdr_agent\` with its \`tabLabel\` an
 export function buildRunTurnInstructions(agent?: string): string {
   const profile = agent
     ? `Use \`herdr_agent\` with \`agent: "${agent}"\` unless a different profile is clearly better.`
-    : 'Pick the smallest suitable \`herdr_agent\` profile: scout, researcher, planner, worker, reviewer.';
+    : 'Pick the smallest suitable `herdr_agent` profile: scout, researcher, planner, worker, reviewer.';
   return `## /run delegation
 
 This turn authorizes delegation via \`/run\`.

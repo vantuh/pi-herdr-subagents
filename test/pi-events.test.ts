@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { test } from 'vitest';
 
 import {
   createAgentSession,
@@ -10,6 +9,7 @@ import {
   SessionManager,
   SettingsManager,
 } from '@earendil-works/pi-coding-agent';
+import { test } from 'vitest';
 
 import herdrAgentsExtension from '../src/index.ts';
 import { applyEnv, waitFor } from '../test-support/mock-extension.ts';

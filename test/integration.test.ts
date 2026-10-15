@@ -935,7 +935,7 @@ test('recreates the Agents workspace after the user closed it by hand', async ()
     // The user closes the whole workspace; the next spawn must recover.
     assert.ok(harness.fake.closeWorkspaceById(first.workspace_id));
 
-    const result = await harness.callRaw({
+    await harness.callRaw({
       agent: 'scout',
       task: 'second',
       tabLabel: 'Scout Two',
@@ -965,7 +965,7 @@ test('delivers an unseen done completion, notifies, and closes the one-shot', as
       settleStatus: 'done',
     }));
 
-    const started = await harness.call({
+    await harness.call({
       agent: 'scout',
       task: 'Background job',
     });
@@ -1109,9 +1109,9 @@ test('serializes parallel workspace spawns into one workspace and unique labels'
       collectionCloseIds.every((id) => id !== rootCloseId),
       'collection must close agent tabs, not the root tab again',
     );
-    // Later spawns must not close anything between their tab create and
+    // Subsequent spawns must not close anything between their tab create and
     // agent start — that window is where the empty-tab heuristic used to
-    // kill a sibling whose agent was not started yet.
+    // kill a sibling whose agent had not started.
     for (let spawn = 1; spawn < 3; spawn++) {
       const createAt = tabCreateIdx[spawn]!;
       const startAt = agentStartIdx[spawn]!;
@@ -2097,7 +2097,7 @@ test('close failure after staging keeps the live agent and is not resumable', as
   await withHarness({}, async (harness) => {
     harness.fake.setBehavior(() => ({ result: 'PRECIOUS RESULT' }));
     harness.fake.failCommand('pane close', 'pane_close_failed');
-    const result = await harness.call({
+    await harness.call({
       agent: 'scout',
       task: 'Find it',
       tabLabel: 'Scout Close Fail',
@@ -2145,7 +2145,7 @@ test('/herdr-agents refuses to close an active resumed one-shot', async () => {
     });
     await harness.collect('Scout Resume Close');
     harness.fake.setBehavior(() => ({ question: 'Which module?' }));
-    const asked = await harness.call({
+    await harness.call({
       agent: 'scout',
       task: 'again',
       tabLabel: 'Scout Resume Close',
