@@ -3,7 +3,11 @@ import type {
   ExtensionContext,
 } from '@earendil-works/pi-coding-agent';
 
-import { readAgentQuestion, readAgentResult } from '../artifacts.ts';
+import {
+  isAgentResultInterrupted,
+  readAgentQuestion,
+  readAgentResult,
+} from '../artifacts.ts';
 import { getAgentSnapshot, isSettledAgentStatus } from '../herdr/agent.ts';
 import { execHerdr } from '../herdr/cli.ts';
 import type { HerdrAgentInfo } from '../herdr/types.ts';
@@ -129,13 +133,13 @@ export async function deliverDetachedOutcomes(
       continue;
     }
 
-    const result = await bestEffort(undefined, () =>
-      readAgentResult(agent.resultFile),
-    );
-    // Settled without an artifact means the child produced nothing usable.
-    // Leave the claim: there is nothing to deliver.
-    if (!result) continue;
     if (!(await agentStillSettled(agent, signal))) continue;
+    const result = await bestEffort(undefined, async () => {
+      if (await isAgentResultInterrupted(agent.resultFile)) return undefined;
+      return readAgentResult(agent.resultFile);
+    });
+    // Keep the claim for manual continuation when there is no complete result.
+    if (!result) continue;
 
     const claimed = await bestEffort(false, () =>
       claimDetachedAgent({ terminal_id: agent.terminalId }, undefined, signal),

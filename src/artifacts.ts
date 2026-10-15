@@ -209,11 +209,29 @@ export async function appendAgentResult(
   });
 }
 
+export async function setAgentResultInterrupted(
+  resultFile: string | undefined,
+  interrupted: boolean,
+): Promise<void> {
+  const marker = siblingArtifact(resultFile, 'interrupted');
+  if (!marker) return;
+  if (interrupted) await writePrivateFile(marker, 'interrupted\n');
+  else await fs.rm(marker, { force: true });
+}
+
+export async function isAgentResultInterrupted(
+  resultFile: string | undefined,
+): Promise<boolean> {
+  const marker = siblingArtifact(resultFile, 'interrupted');
+  return marker ? (await readIfExists(marker)) !== undefined : false;
+}
+
 export async function clearAgentResult(
   filePath: string | undefined,
 ): Promise<void> {
   if (!filePath || !isManagedResultFile(filePath)) return;
   await fs.rm(filePath, { force: true });
+  await setAgentResultInterrupted(filePath, false);
 }
 
 export async function removeAgentTempFiles(

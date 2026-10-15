@@ -119,6 +119,10 @@ How an agent runs:
 4. A child that stops without writing a result stays open. Inspect it or close
    it with `/herdr-agents`.
 
+If a child hits a model limit, switch models in its pane and send `continue`.
+Manual and steering messages preserve its result channel. Failed or aborted
+turns stay open with their partial output until a successful continuation.
+
 A new task sent with an explicit `tabLabel` that belongs to a live agent is
 rejected, so work is never duplicated: check its status, answer its question,
 or wait until it closes and use `resumeClosed`. Without `tabLabel`, a second call

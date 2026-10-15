@@ -464,6 +464,101 @@ test('does not deliver a real intermediate assistant artifact while a detached t
   });
 });
 
+test('keeps a rate-limited child open through a model switch, manual continuation and steering', async () => {
+  await withE2e({}, async (harness) => {
+    const recoveryReply = Promise.withResolvers<void>();
+    harness.llm.setScript(async (body, index) => {
+      if (index === 0) {
+        return {
+          text: 'PARTIAL_BEFORE_LIMIT',
+          toolCall: { name: 'bash', args: { command: 'printf WORK_STARTED' } },
+          delayMs: 0,
+        };
+      }
+      if (lastUserText(body) === 'continue') {
+        await recoveryReply.promise;
+        return { text: 'RECOVERED_AFTER_MODEL_SWITCH', delayMs: 0 };
+      }
+      if (lastUserText(body) === 'Finish the original task') {
+        return { text: 'STEERED_FINAL', delayMs: 0 };
+      }
+      return { error: { status: 429, message: 'Model quota exhausted' } };
+    });
+    await harness.call({ agent: 'scout', task: 'Recover from a model limit' });
+    const record = Object.values((await harness.readState()).agents)[0];
+    assert.ok(record);
+    await harness.waitFor(
+      async () => {
+        const child = (await harness.snapshot()).panes.find(
+          (pane) => pane.pane_id === record.paneId,
+        );
+        return (
+          harness.messages.length > 0 ||
+          (harness.llm.requests.length >= 2 && child?.agent_status === 'idle')
+        );
+      },
+      'rate-limited child to settle',
+      60000,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+    assert.equal(
+      harness.messages.length,
+      0,
+      'delivered a rate-limited partial result',
+    );
+    assert.equal((await harness.snapshot()).panes.length, 2);
+    assert.equal(
+      await readAgentResult(record.resultFile),
+      'PARTIAL_BEFORE_LIMIT',
+    );
+    assert.equal(
+      Object.values((await harness.readState()).agents)[0]?.detached,
+      true,
+    );
+
+    await harness.herdr([
+      'agent',
+      'prompt',
+      record.automationName!,
+      '/model mock/recovery-model',
+    ]);
+    try {
+      await harness.herdr([
+        'agent',
+        'prompt',
+        record.automationName!,
+        'continue',
+      ]);
+      await harness.waitFor(
+        () =>
+          harness.llm.requests.some(
+            (body) => lastUserText(body) === 'continue',
+          ),
+        'manual continuation to reach the recovery model',
+      );
+      await harness.herdr([
+        'agent',
+        'prompt',
+        record.automationName!,
+        'Finish the original task',
+      ]);
+    } finally {
+      recoveryReply.resolve();
+    }
+    const delivered = await harness.collect('Scout', 60000);
+    assert.match(
+      delivered.content,
+      /PARTIAL_BEFORE_LIMIT\n\nRECOVERED_AFTER_MODEL_SWITCH\n\nSTEERED_FINAL/,
+    );
+    const recovery = harness.llm.requests.find(
+      (body) => lastUserText(body) === 'continue',
+    );
+    assert.equal(recovery?.model, 'recovery-model');
+    assert.equal((await harness.snapshot()).panes.length, 1);
+    assert.equal(harness.messages.length, 1);
+  });
+});
+
 test('batches a real detached result and question with one turn trigger', async () => {
   await withE2e({}, async (harness) => {
     const replies = Promise.withResolvers<void>();

@@ -89,7 +89,16 @@ resurrects a closed agent, or reads the terminal.
 
 Child `message_end` appends each non-empty finalized assistant response to
 `result.md`, separated by a blank line, so an answer split across several
-messages is delivered whole. Before a new task, the parent clears old result/question files.
+messages is delivered whole. The child retains its result channel across manual
+user, steering and custom-message continuations, including a model switch after
+quota exhaustion. A new valid `HERDR_RESULT_FILE:` marker replaces the channel;
+starting, resuming or forking a session clears it.
+
+Before Pi settles, `agent_before_settle` records failed or aborted runs with an
+`interrupted` marker beside `result.md`. The poller leaves those agents open and
+unclaimed; partial text remains available to status previews. A successful
+continuation removes the marker and delivers the accumulated output. Before a
+new task, the parent clears old result/question files and the interruption marker.
 Session metadata is stored beside the result for durable resume.
 
 Collection checks `question.md` before `result.md`. `ask_question` writes the

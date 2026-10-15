@@ -5,7 +5,12 @@ import * as path from 'node:path';
 
 import { test } from 'vitest';
 
-import { RESULT_FILE_MARKER, SESSION_META_ENV } from '../src/artifacts.ts';
+import {
+  clearAgentResult,
+  isAgentResultInterrupted,
+  RESULT_FILE_MARKER,
+  SESSION_META_ENV,
+} from '../src/artifacts.ts';
 import herdrAgentsExtension from '../src/index.ts';
 import { applyEnv, createMockHost } from '../test-support/mock-extension.ts';
 
@@ -113,6 +118,117 @@ test('a custom-message run retains the child result channel', async () => {
     });
     assert.equal(await fs.readFile(resultFile, 'utf8'), 'continued');
   });
+});
+
+test('user continuations retain the child result and question channels', async () => {
+  await withChildHost(async (host, tmp) => {
+    const resultFile = await managedResultFile(tmp);
+    await host.fire('before_agent_start', {
+      prompt: `Task\n${RESULT_FILE_MARKER} ${resultFile}`,
+    });
+    await host.fire('before_agent_start', { prompt: 'continue' });
+    await host.fire('message_end', {
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'continued with another model' }],
+      },
+    });
+    assert.equal(
+      await fs.readFile(resultFile, 'utf8'),
+      'continued with another model',
+    );
+    const question = await host.tools.get('ask_question').execute('call-1', {
+      question: 'Which file next?',
+    });
+    assert.equal(question.details.delivered, true);
+    assert.equal(
+      await fs.readFile(
+        path.join(path.dirname(resultFile), 'question.md'),
+        'utf8',
+      ),
+      'Which file next?',
+    );
+  });
+});
+
+test('a new managed task replaces the child result channel', async () => {
+  await withChildHost(async (host, tmp) => {
+    const first = await managedResultFile(tmp);
+    const second = await managedResultFile(tmp);
+    for (const [resultFile, text] of [
+      [first, 'first'],
+      [second, 'second'],
+    ]) {
+      await host.fire('before_agent_start', {
+        prompt: `Task\n${RESULT_FILE_MARKER} ${resultFile}`,
+      });
+      await host.fire('message_end', {
+        message: { role: 'assistant', content: [{ type: 'text', text }] },
+      });
+    }
+    assert.equal(await fs.readFile(first, 'utf8'), 'first');
+    assert.equal(await fs.readFile(second, 'utf8'), 'second');
+  });
+});
+
+test('new, resumed and forked sessions do not inherit the child result channel', async () => {
+  for (const reason of ['new', 'resume', 'fork']) {
+    await withChildHost(async (host, tmp) => {
+      const resultFile = await managedResultFile(tmp);
+      await host.fire('before_agent_start', {
+        prompt: `Task\n${RESULT_FILE_MARKER} ${resultFile}`,
+      });
+      await host.fire('session_start', { reason });
+      await host.fire('before_agent_start', { prompt: 'unrelated task' });
+      await host.fire('message_end', {
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'unrelated' }],
+        },
+      });
+      assert.equal(await fs.stat(resultFile).catch(() => null), null);
+      const question = await host.tools.get('ask_question').execute('call-1', {
+        question: 'Unrelated question?',
+      });
+      assert.equal(question.isError, true);
+    });
+  }
+});
+
+test('failed and aborted turns preserve partial text until a successful continuation', async () => {
+  for (const outcome of ['error', 'aborted']) {
+    await withChildHost(async (host, tmp) => {
+      const resultFile = await managedResultFile(tmp);
+      await host.fire('before_agent_start', {
+        prompt: `Task\n${RESULT_FILE_MARKER} ${resultFile}`,
+      });
+      await host.fire('message_end', {
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'partial' }],
+        },
+      });
+      await host.fire('agent_before_settle', { outcome });
+      assert.equal(await isAgentResultInterrupted(resultFile), true);
+      assert.equal(await fs.readFile(resultFile, 'utf8'), 'partial');
+
+      await host.fire('before_agent_start', { prompt: 'continue' });
+      await host.fire('message_end', {
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'final' }],
+        },
+      });
+      await host.fire('agent_before_settle', { outcome: 'completed' });
+      assert.equal(await isAgentResultInterrupted(resultFile), false);
+      assert.equal(await fs.readFile(resultFile, 'utf8'), 'partial\n\nfinal');
+
+      await host.fire('agent_before_settle', { outcome });
+      await clearAgentResult(resultFile);
+      assert.equal(await isAgentResultInterrupted(resultFile), false);
+      assert.equal(await fs.stat(resultFile).catch(() => null), null);
+    });
+  }
 });
 
 test('a child writes nothing when the prompt carries no result channel', async () => {

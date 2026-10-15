@@ -11,6 +11,7 @@ import type { AddressInfo } from 'node:net';
  */
 
 export interface MockReply {
+  error?: { status: number; message: string };
   /** Assistant text. With no toolCall this ends the turn. */
   text?: string;
   /** Emit a tool call instead of (or before) text. */
@@ -133,6 +134,11 @@ export class MockLlm {
     this.requests.push(body);
 
     const reply = await this.script(body, index);
+    if (reply.error) {
+      res.writeHead(reply.error.status, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: reply.error.message } }));
+      return;
+    }
     const base = {
       id: `chatcmpl-mock-${index}`,
       object: 'chat.completion.chunk',

@@ -11,6 +11,7 @@ import {
   SESSION_META_ENV,
   writeAgentQuestion,
   appendAgentResult,
+  setAgentResultInterrupted,
   writeAgentSessionMeta,
 } from './artifacts.ts';
 import { getCurrentContext } from './herdr/snapshot.ts';
@@ -66,13 +67,14 @@ export function registerChildMode(pi: ExtensionAPI): void {
   let resultFile: string | undefined;
 
   pi.on('session_start', async (_event, ctx) => {
+    resultFile = undefined;
     await captureChildSessionMeta(ctx);
     await mirrorPaneLabelAsSessionName(pi);
   });
 
   pi.on('before_agent_start', async (event) => {
     if (event.messageType === 'user') {
-      resultFile = findResultFileMarker(event.prompt);
+      resultFile = findResultFileMarker(event.prompt) ?? resultFile;
     }
   });
 
@@ -81,6 +83,12 @@ export function registerChildMode(pi: ExtensionAPI): void {
     const output = assistantText(event.message);
     if (output.trim()) await appendAgentResult(resultFile, output);
     await captureChildSessionMeta(ctx);
+  });
+
+  // Herdr reports idle after errors too; preserve partial text for a manual retry.
+  pi.on('agent_before_settle', async (event) => {
+    if (!resultFile) return;
+    await setAgentResultInterrupted(resultFile, event.outcome !== 'completed');
   });
 
   pi.registerTool({
