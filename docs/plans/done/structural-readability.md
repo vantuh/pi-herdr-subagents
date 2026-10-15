@@ -39,7 +39,7 @@ file map in `AGENTS.md` and affected documentation/imports with each step.
   Separate native Pi session validation from managed artifact IO, and move
   artifact/message schemas plus their derived types beside the feature. Preserve
   all path checks, file permissions, JSONL validation and resume behavior.
-- [ ] 6. Align test organization with the new boundaries. First extract the fake
+- [x] 6. Align test organization with the new boundaries. First extract the fake
   Herdr's pure layout model/operations. Split oversized scenario suites by
   existing topics only where this improves navigation; update Vitest project
   selection and retain state-path isolation and all test scenarios. Keep real
@@ -92,5 +92,24 @@ and 127 integration tests pass. E2E has not yet been run for this task.
   typecheck, lint, 190 unit, 127 integration and 13 E2E tests pass. Compared with
   the audit baseline, all 309 literal test declarations and 1,105 assertion-start
   lines remain unchanged.
+- Step 6: extracted independent fake-Herdr types and pure layout operations;
+  split scenario suites by topic and moved source-specific helper tests beside
+  their owners. Purpose-owned harness wrappers preserve teardown ordering, and
+  state suites keep separate temporary-directory registries. Fixed the vacuous
+  double-quote-only import check and added one regression for both quote styles
+  across static, dynamic and side-effect imports. A temporary dangling import
+  correctly failed the integrity check, which passed again after removal.
+  Two independent reviews found no issues. Typecheck, lint and formatting pass,
+  along with 191 unit tests, 127 integration tests and 13 E2E tests.
+- Final test inventory: all 330 original runtime-collected tests retain their
+  names and projects; one import regression brings the total to 331. Of the
+  original 309 literal declarations, 307 whole test blocks remain verbatim; the
+  other two intentionally adopt the import matcher and registered temp-dir
+  fixture. No original assertion-start lines were removed. Fake layout function
+  bodies remain equivalent apart from direct recursive calls.
+- Final runtime structure: 47 source files and 5,769 lines; largest file is
+  267 lines, down from five files above 300 lines at baseline. All 26 moved
+  TypeBox schemas match the audit baseline. Static inspection found no source
+  import cycles or missing relative paths/exports across source and test files.
 - E2E runs use installed Pi `1.2.0` and Herdr `0.9.5`; the documented Herdr
   `0.9.4` binary is not installed, so that exact version remains unverified.

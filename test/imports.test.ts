@@ -28,6 +28,40 @@ async function sourceFiles(dir: string): Promise<string[]> {
   return found;
 }
 
+// Relative import specifiers in either quote style; matching one style only
+// made this check pass vacuously once.
+function relativeImportSpecifiers(source: string): string[] {
+  const patterns = [
+    /from\s+['"](\.[^'"]+)['"]/g,
+    /import\(\s*['"](\.[^'"]+)['"]\s*\)/g,
+    /import\s+['"](\.[^'"]+)['"]/g,
+  ];
+  return patterns.flatMap((pattern) =>
+    [...source.matchAll(pattern)].map((match) => match[1] as string),
+  );
+}
+
+// Real files, so scanning this test's own source stays clean.
+const SUPPORTED_IMPORTS = [
+  `import { pane } from '../test-support/state-fixture.ts';`,
+  `import { withHarness } from "../test-support/integration-harness.ts";`,
+  `const { MockLlm } = await import('../test-support/mock-llm.ts');`,
+  `const { createMockHost } = await import("../test-support/mock-extension.ts");`,
+  `import '../test-support/herdr-shim.mjs';`,
+  `import "../test-support/harness.ts";`,
+];
+
+test('the import matcher reads static, dynamic and side-effect imports in both quote styles', () => {
+  assert.deepEqual(relativeImportSpecifiers(SUPPORTED_IMPORTS.join('\n')), [
+    '../test-support/state-fixture.ts',
+    '../test-support/integration-harness.ts',
+    '../test-support/mock-llm.ts',
+    '../test-support/mock-extension.ts',
+    '../test-support/herdr-shim.mjs',
+    '../test-support/harness.ts',
+  ]);
+});
+
 test('every relative import in the extension resolves to a real file', async () => {
   const files = await sourceFiles(EXTENSION_DIR);
   assert.ok(
@@ -36,12 +70,11 @@ test('every relative import in the extension resolves to a real file', async () 
   );
 
   const dangling: string[] = [];
+  let found = 0;
   for (const file of files) {
     const source = await fs.readFile(file, 'utf8');
-    const specifiers = [
-      ...source.matchAll(/from\s+"(\.[^"]+)"/g),
-      ...source.matchAll(/import\("(\.[^"]+)"\)/g),
-    ].map((match) => match[1] as string);
+    const specifiers = relativeImportSpecifiers(source);
+    found += specifiers.length;
 
     for (const specifier of specifiers) {
       const resolved = path.resolve(path.dirname(file), specifier);
@@ -51,6 +84,7 @@ test('every relative import in the extension resolves to a real file', async () 
     }
   }
 
+  assert.ok(found > 10, `expected relative import specifiers, found ${found}`);
   assert.deepEqual(dangling, []);
 });
 

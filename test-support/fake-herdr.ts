@@ -4,6 +4,22 @@ import { createServer, type Server, type Socket } from 'node:net';
 import * as path from 'node:path';
 
 import { SESSION_META_ENV } from '../src/artifacts.ts';
+import {
+  computeRects,
+  removeFromNode,
+  splitNode,
+} from './fake-herdr/layout.ts';
+import type {
+  ChildBehavior,
+  ChildOutcome,
+  ChildTurn,
+  CliResponse,
+  FakeAgent,
+  FakePane,
+  FakeTab,
+  FakeWorkspace,
+  LayoutNode,
+} from './fake-herdr/types.ts';
 
 /**
  * In-process Herdr simulator for integration tests.
@@ -15,108 +31,6 @@ import { SESSION_META_ENV } from '../src/artifacts.ts';
  * scripted behaviour that writes the same result/question artifacts a real Pi
  * child would write.
  */
-
-export type LayoutNode =
-  | { type: 'pane'; pane_id: string }
-  | {
-      type: 'split';
-      direction: 'right' | 'down';
-      ratio: number;
-      first: LayoutNode;
-      second: LayoutNode;
-    };
-
-export interface FakePane {
-  pane_id: string;
-  tab_id: string;
-  workspace_id: string;
-  terminal_id: string;
-  label?: string;
-  focused?: boolean;
-  agent?: string;
-  agent_status?: string;
-  cwd?: string;
-  env: Record<string, string>;
-}
-
-export interface FakeTab {
-  tab_id: string;
-  label: string;
-  focused?: boolean;
-}
-
-export interface FakeWorkspace {
-  workspace_id: string;
-  label?: string;
-  focused?: boolean;
-  active_tab_id?: string;
-}
-
-export interface FakeAgent {
-  name: string;
-  paneId: string;
-  kind: string;
-  status: string;
-  stateChangeSeq: number;
-  completionSeq?: number;
-  interactiveReady: boolean;
-  piArgs: string[];
-  turns: number;
-  /** Result artifact from the most recent prompt. */
-  resultFile?: string;
-  childSessionId?: string;
-  childSessionFile?: string;
-}
-
-/** What a simulated child does with one prompt. */
-export interface ChildOutcome {
-  /** Written to the result artifact. */
-  result?: string;
-  /** Written to question.md instead of finishing (ask_question). */
-  question?: string;
-  /**
-   * How long the child stays `working`. The default is long enough that the
-   * extension observes `working` and goes through `herdr agent wait`, which is
-   * the real path; a very short one would settle before the first poll.
-   */
-  delayMs?: number;
-  /** Prompt submission never starts a turn. */
-  stalled?: boolean;
-  /** Never leaves `working`, so waits time out or get aborted. */
-  neverSettle?: boolean;
-  /** Settle as `done` rather than `idle`. Both mean "finished" to Herdr. */
-  settleStatus?: 'idle' | 'done';
-  /**
-   * Keep reporting the *previous* turn's status and `state_change_seq` for this
-   * long after the prompt is submitted, before starting the new turn.
-   *
-   * Reproduces the reused-agent race: a persistent child still exposes its
-   * prior settled state, and a poller that accepts any `idle` would collect the
-   * previous turn's output as if it answered the new prompt.
-   */
-  staleWindowMs?: number;
-}
-
-export interface ChildTurn {
-  prompt: string;
-  resultFile?: string;
-  agentName: string;
-  paneId: string;
-  /** 1 for the first prompt this agent receives. */
-  turn: number;
-}
-
-export type ChildBehavior = (
-  turn: ChildTurn,
-) => ChildOutcome | Promise<ChildOutcome>;
-
-interface CliResponse {
-  stdout?: string;
-  stderr?: string;
-  code?: number;
-}
-
-const VIEWPORT = { width: 120, height: 40 };
 
 /**
  * Default time a simulated child stays `working`. It has to outlast the
@@ -706,7 +620,7 @@ export class FakeHerdr {
       const pane = this.paneById(paneId);
       const root = pane ? this.layouts.get(pane.tab_id) : undefined;
       if (!root) return fail('pane_not_found', `unknown pane ${paneId}`);
-      return ok({ layout: { panes: this.computeRects(root) } });
+      return ok({ layout: { panes: computeRects(root) } });
     }
 
     if (command === 'split') {
@@ -726,7 +640,7 @@ export class FakeHerdr {
       this.panes.push(pane);
       this.layouts.set(
         parent.tab_id,
-        this.splitNode(root, parent.pane_id, {
+        splitNode(root, parent.pane_id, {
           direction: (flag(argv, '--direction') as 'right' | 'down') ?? 'right',
           ratio: Number(flag(argv, '--ratio') ?? 0.5),
           newPaneId: pane.pane_id,
@@ -1037,77 +951,9 @@ export class FakeHerdr {
     }
     const root = this.layouts.get(pane.tab_id);
     if (!root) return;
-    const pruned = this.removeFromNode(root, paneId);
+    const pruned = removeFromNode(root, paneId);
     if (pruned) this.layouts.set(pane.tab_id, pruned);
     else this.layouts.delete(pane.tab_id);
-  }
-
-  private splitNode(
-    node: LayoutNode,
-    targetPaneId: string,
-    split: {
-      direction: 'right' | 'down';
-      ratio: number;
-      newPaneId: string;
-    },
-  ): LayoutNode {
-    if (node.type === 'pane') {
-      if (node.pane_id !== targetPaneId) return node;
-      return {
-        type: 'split',
-        direction: split.direction,
-        ratio: split.ratio,
-        first: node,
-        second: { type: 'pane', pane_id: split.newPaneId },
-      };
-    }
-    return {
-      ...node,
-      first: this.splitNode(node.first, targetPaneId, split),
-      second: this.splitNode(node.second, targetPaneId, split),
-    };
-  }
-
-  private removeFromNode(
-    node: LayoutNode,
-    paneId: string,
-  ): LayoutNode | undefined {
-    if (node.type === 'pane') {
-      return node.pane_id === paneId ? undefined : node;
-    }
-    const first = this.removeFromNode(node.first, paneId);
-    const second = this.removeFromNode(node.second, paneId);
-    if (!first) return second;
-    if (!second) return first;
-    return { ...node, first, second };
-  }
-
-  private computeRects(
-    node: LayoutNode,
-    rect = { x: 0, y: 0, ...VIEWPORT },
-  ): Array<{ pane_id: string; rect: typeof rect }> {
-    if (node.type === 'pane') return [{ pane_id: node.pane_id, rect }];
-
-    if (node.direction === 'right') {
-      const width = Math.round(rect.width * node.ratio);
-      return [
-        ...this.computeRects(node.first, { ...rect, width }),
-        ...this.computeRects(node.second, {
-          ...rect,
-          x: rect.x + width,
-          width: rect.width - width,
-        }),
-      ];
-    }
-    const height = Math.round(rect.height * node.ratio);
-    return [
-      ...this.computeRects(node.first, { ...rect, height }),
-      ...this.computeRects(node.second, {
-        ...rect,
-        y: rect.y + height,
-        height: rect.height - height,
-      }),
-    ];
   }
 
   private track(promise: Promise<void>): void {

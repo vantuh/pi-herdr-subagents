@@ -7,8 +7,8 @@ import { GUARDED_STATE_PATH } from './test-support/state-path-guard.ts';
 const stateEnv = { HERDR_AGENTS_STATE_PATH: GUARDED_STATE_PATH };
 // Suites that drive the extension through the fake-Herdr harness.
 const integrationFiles = [
-  'test/integration.test.ts',
-  'test/contract.test.ts',
+  'test/integration-*.test.ts',
+  'test/contract-*.test.ts',
   'test/ui-boundary.test.ts',
 ];
 

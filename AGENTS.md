@@ -53,7 +53,8 @@ flow, config and profiles. Keep those in sync when behavior changes.
 - `src/ui/detached-outcomes.ts` — detached outcome delivery: result/question formatting, fresh settled-status recheck, claim, notification and one-shot close.
 - `src/ui/poller.ts` — per-second poller: widget lifecycle and the tick that hands agents to delivery.
 - `src/ui/widget.ts`, `src/ui/manager.ts`, `src/ui/renderers.ts` — widget, `/herdr-agents` overlay, message renderers.
-- `test-support/` — test harnesses (see Tests).
+- `test-support/` — test harnesses and fixtures (see Tests). `fake-herdr/`
+  holds the simulator's own types and pure pane-tree operations.
 
 ## Structure
 
@@ -114,9 +115,9 @@ npm run typecheck         # tsc over src/ only; tests are not type-checked
 npm run lint              # oxlint
 npm run format            # oxfmt (Markdown is excluded)
 npm run test:unit         # pure helpers, ~3s
-npm run test:integration  # extension against a fake Herdr, ~2min
+npm run test:integration  # extension against a fake Herdr, ~30s
 npm run test:e2e          # real Herdr server and real Pi children; needs pi and herdr on PATH
-npx vitest run test/herdr.test.ts  # one file
+npx vitest run test/herdr-cli.test.ts  # one file
 ```
 
 There is no aggregate `npm test`; each project runs on its own.
@@ -139,17 +140,19 @@ pi -e ./src/index.ts --no-context-files --no-skills --no-prompt-templates --no-t
 Three Vitest projects in `vitest.config.ts`:
 
 - **unit** — `test/*.test.ts` except the files below. Pure helpers, schemas,
-  state records, widget rendering, profile discovery, child mode, and the Pi SDK
-  boundary. `imports.test.ts` catches a dangling relative import, which breaks
-  Pi at load time and fails nothing else.
-- **integration** — `integration.test.ts` (user-facing flows),
-  `contract.test.ts` (exact `details` keys, Herdr argv, failure paths, file
-  permissions) and `ui-boundary.test.ts`. The real extension runs through a mock
-  `ExtensionAPI` against `FakeHerdr`: `HERDR_BIN_PATH` points at
+  state records (`state-*.test.ts`), Herdr parsing/placement (`herdr-*.test.ts`),
+  widget rendering, profile discovery, child mode, and the Pi SDK boundary.
+  `imports.test.ts` catches a dangling relative import, which breaks Pi at load
+  time and fails nothing else.
+- **integration** — `integration-*.test.ts` (user-facing flows, one file per
+  topic), `contract-*.test.ts` (exact `details` keys, Herdr argv, failure paths,
+  file permissions) and `ui-boundary.test.ts`. The real extension runs through a
+  mock `ExtensionAPI` against `FakeHerdr`: `HERDR_BIN_PATH` points at
   `test-support/herdr-shim.mjs`, which forwards each `herdr` call over a socket to
   the fake server inside the test. Simulated children write the same
   `result.md` / `question.md` artifacts as real ones. Start here when
-  refactoring: if `contract.test.ts` stays green, callers keep working.
+  refactoring: if the `contract-*.test.ts` files stay green, callers keep
+  working.
 - **e2e** — `e2e/flow.test.ts`: a real `herdr server` and real Pi children. Only
   the model (`MockLlm`, an `openai-completions` server) and the Orchestrator's
   own Pi process are simulated.
@@ -159,9 +162,14 @@ Isolation: the harnesses redirect `TMPDIR`, `HERDR_AGENTS_STATE_PATH` and
 state path to a sentinel file for the whole run and fails the run if anything
 wrote to it.
 
-Writing an integration test: `test/integration.test.ts` and
-`test/contract.test.ts` each define a local `withHarness` around
-`createHarness` from `test-support/harness.ts`.
+Writing an integration test: `test/integration-*.test.ts` imports `withHarness`
+from `test-support/integration-harness.ts`, which clears injected state-save
+failures before `dispose()`; `test/contract-*.test.ts` imports its own
+`withHarness` from `test-support/contract-harness.ts`, which only disposes. Both
+wrap `createHarness` from `test-support/harness.ts`. State-file suites use
+`createTempStateFixture` and the `pane`/`history` fixtures from
+`test-support/state-fixture.ts`, which keeps every temp dir registered for that
+file's single teardown.
 
 ```ts
 await withHarness({}, async (harness) => {
