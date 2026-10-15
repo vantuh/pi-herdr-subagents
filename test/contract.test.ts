@@ -167,6 +167,37 @@ test('reports a malformed snapshot instead of guessing the current pane', async 
   });
 });
 
+test('rejects a snapshot whose pane has a wrongly typed known field', async () => {
+  await withHarness({}, async (harness) => {
+    harness.fake.malformCommand(
+      'api snapshot',
+      JSON.stringify({
+        result: {
+          snapshot: {
+            panes: [
+              {
+                pane_id: 'w1:p1',
+                tab_id: 'w1:t1',
+                workspace_id: 'w1',
+                focused: 'yes',
+              },
+            ],
+            tabs: [],
+          },
+        },
+      }),
+    );
+
+    await assert.rejects(
+      () => harness.call({ agent: 'scout', task: 'Find it' }),
+      (error: unknown) => {
+        assert.match(String(error), /Malformed Herdr api snapshot response/);
+        return true;
+      },
+    );
+  });
+});
+
 test('refuses to work when it cannot identify its own pane', async () => {
   await withHarness({ paneIdEnv: 'w1:does-not-exist' }, async (harness) => {
     // Nothing focused either, so there is no fallback.

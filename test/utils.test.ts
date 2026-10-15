@@ -279,6 +279,7 @@ test('validates a Pi session JSONL header against stored metadata', async () => 
   );
 
   assert.deepEqual(await readPiSessionHeader(sessionFile), {
+    type: 'session',
     id: 'sid-1',
     cwd: '/tmp/repo',
   });

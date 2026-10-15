@@ -846,6 +846,111 @@ test('quarantines malformed versions instead of migrating them', async () => {
   await fs.access(`${filePath}.quarantine.vtwo`);
 });
 
+test('a record missing defaultable fields keeps its siblings and gets defaults', async () => {
+  const filePath = await tempStatePath();
+  const now = new Date().toISOString();
+  await fs.writeFile(
+    filePath,
+    `${JSON.stringify({
+      version: 2,
+      agents: {
+        'terminal:undated': { lifecycle: 'oneshot', tabLabel: 'Undated' },
+      },
+      closedHistory: [
+        {
+          id: 'h-undated',
+          ownerSessionId: 'orch-a',
+          profileName: 'scout',
+          tabLabel: 'Scout',
+          childSessionFile: '/isolated/child.jsonl',
+          childSessionId: 'child-1',
+          cwd: '/isolated',
+          layout: 'tab',
+          lifecycle: 'oneshot',
+          closedAt: now,
+          status: 'resumable',
+        },
+      ],
+    })}\n`,
+  );
+  const loaded = await loadHerdrAgentsState(filePath);
+  assert.equal(
+    loaded.agents['terminal:undated']?.updatedAt,
+    new Date(0).toISOString(),
+  );
+  assert.deepEqual(
+    loaded.closedHistory.map((record) => [
+      record.id,
+      record.createdAt,
+      record.claimGeneration,
+    ]),
+    [['h-undated', new Date(0).toISOString(), 0]],
+  );
+});
+
+test('drops a record with a wrongly typed optional field, keeping its siblings', async () => {
+  const filePath = await tempStatePath();
+  const now = new Date().toISOString();
+  await fs.writeFile(
+    filePath,
+    `${JSON.stringify({
+      version: 2,
+      agents: {
+        'terminal:good': {
+          lifecycle: 'oneshot',
+          tabLabel: 'Keep',
+          updatedAt: now,
+        },
+        'terminal:bad': {
+          lifecycle: 'oneshot',
+          tabLabel: 'Drop',
+          detached: 'yes',
+          updatedAt: now,
+        },
+      },
+      closedHistory: [
+        {
+          id: 'h-good',
+          ownerSessionId: 'orch-a',
+          profileName: 'scout',
+          tabLabel: 'Scout',
+          childSessionFile: '/isolated/child.jsonl',
+          childSessionId: 'child-1',
+          cwd: '/isolated',
+          layout: 'tab',
+          lifecycle: 'oneshot',
+          createdAt: now,
+          closedAt: now,
+          status: 'resumable',
+          claimGeneration: 0,
+        },
+        {
+          id: 'h-bad',
+          ownerSessionId: 'orch-a',
+          profileName: 'scout',
+          tabLabel: 'Scout',
+          childSessionFile: '/isolated/child.jsonl',
+          childSessionId: 'child-2',
+          cwd: '/isolated',
+          layout: 'tab',
+          lifecycle: 'oneshot',
+          createdAt: now,
+          closedAt: now,
+          status: 'resumable',
+          claimGeneration: 0,
+          claimedAt: 42,
+        },
+      ],
+    })}\n`,
+  );
+  const loaded = await loadHerdrAgentsState(filePath);
+  assert.deepEqual(Object.keys(loaded.agents), ['terminal:good']);
+  assert.deepEqual(
+    loaded.closedHistory.map((record) => record.id),
+    ['h-good'],
+  );
+});
+
 test('releases stale claimed history that has no live generation', async () => {
   const filePath = await tempStatePath();
   const archived = await resumableHistory(filePath);

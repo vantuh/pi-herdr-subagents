@@ -36,6 +36,25 @@ async function withProfileDirs(
   }
 }
 
+test('a profile with non-string tools or skills items is skipped', async () => {
+  await withProfileDirs(async ({ userAgents, projectRoot }) => {
+    await fs.writeFile(
+      path.join(userAgents, 'scout.md'),
+      '---\nname: scout\ndescription: valid scout\n---\n\nBODY\n',
+    );
+    await fs.writeFile(
+      path.join(userAgents, 'numeric.md'),
+      '---\nname: numeric\ndescription: numeric tools\ntools: [1, 2]\n---\n\nBODY\n',
+    );
+
+    const agents = await discoverAgents(projectRoot);
+    assert.deepEqual(
+      agents.map((agent) => agent.name),
+      ['scout'],
+    );
+  });
+});
+
 test('a project profile overrides a user profile with the same name', async () => {
   await withProfileDirs(async ({ userAgents, projectRoot }) => {
     await fs.writeFile(
