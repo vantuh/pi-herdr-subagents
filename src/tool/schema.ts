@@ -58,7 +58,7 @@ export function buildHerdrAgentParams(
     resumeClosed: Type.Optional(
       Type.Boolean({
         description:
-          'Continue a closed one-shot agent owned by this Orchestrator session with its accumulated context, matched by exact tabLabel. Requires a non-empty task and tabLabel. This is the way to give a follow-up task to a previous agent. Never resumes over a live agent: parked questions are answered in place, working agents are checked with the same tabLabel and no task, and settled results arrive as messages. Omitting task checks status and never resurrects a closed agent.',
+          'Give a follow-up task to a closed agent from this session, keeping its context. Matched by exact tabLabel; requires a non-empty task.',
       }),
     ),
   });

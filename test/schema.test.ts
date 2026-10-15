@@ -68,9 +68,9 @@ test('resumeClosed description names the continuation contract', () => {
   const resume = HerdrAgentParams.properties.resumeClosed as {
     description?: string;
   };
-  assert.match(resume.description ?? '', /accumulated context/);
-  assert.match(resume.description ?? '', /tabLabel/);
-  assert.match(resume.description ?? '', /Never resumes over a live agent/);
+  assert.match(resume.description ?? '', /follow-up task to a closed agent/);
+  assert.match(resume.description ?? '', /Matched by exact tabLabel/);
+  assert.match(resume.description ?? '', /requires a non-empty task/);
 });
 
 test('describes every parameter for the model', () => {

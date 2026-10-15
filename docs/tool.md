@@ -32,7 +32,7 @@ No parameter is required by the schema. `agent` is required to start a new agent
 | `agent` | string | to start a new agent | — | Profile name from `~/.pi/agent/agents/*.md` (project profiles in `.pi/agents/` override same-named user profiles). Schema description: `Agent profile name from ~/.pi/agent/agents/*.md or the project .pi/agents.` plus the dynamic `Available:` list. Omit it when `tabLabel` addresses an existing agent: the profile comes from this session's live record, or with `resumeClosed: true` from the owned closed-history record. An unresolved label is an error, never a spawn. |
 | `task` | string | no | — | Self-contained task for the agent. Omit it to check a live agent matched by `tabLabel`: the call returns status and a preview of the latest captured assistant text, and does not send a new prompt. |
 | `tabLabel` | string | no* | Title-cased profile name, e.g. `Researcher` | Agent label. Identifies the agent for status checks, parked-question answers and `resumeClosed`. *Required when `task` is omitted, and when `resumeClosed` is `true`. |
-| `resumeClosed` | boolean | no | `false` | Continue a closed one-shot with its prior context. Requires a non-empty `task` and an explicit `tabLabel`. Never resumes over a live agent. |
+| `resumeClosed` | boolean | no | `false` | Continue a closed one-shot from this session with its prior context, matched by exact `tabLabel`. Requires a non-empty `task` and an explicit `tabLabel`. |
 
 There are no `layout`, `lifecycle`, `wait`, or `timeoutMs` parameters. Layout comes from `herdr-agents.json` ([config.md](config.md)). A call with a task returns when the prompt is submitted; the widget poller delivers the outcome. A status check returns right after its lookup.
 
