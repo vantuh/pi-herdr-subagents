@@ -1,5 +1,6 @@
 import {
   DynamicBorder,
+  type ExtensionAPI,
   type ExtensionCommandContext,
 } from '@earendil-works/pi-coding-agent';
 import {
@@ -12,11 +13,18 @@ import {
 } from '@earendil-works/pi-tui';
 
 import { readAgentQuestion } from '../artifacts.ts';
+import { getHerdrAgentsLayout } from '../config.ts';
+import type { HerdrAgentLayout, HerdrAgentsConfig } from '../config/schema.ts';
 import { isSettledAgentStatus } from '../herdr/agent.ts';
 import { execHerdr } from '../herdr/cli.ts';
+import { listManagedWorkspaceAgents } from '../herdr/placement.ts';
+import { loadContextWithState } from '../herdr/snapshot.ts';
 import type { HerdrAgentInfo } from '../herdr/types.ts';
+import { listOwnedResumableHistory } from '../state/closed-history.ts';
+import type { ClosedAgentHistoryRecord } from '../state/schema.ts';
+import { orchestratorIdentity } from '../tool/child-args.ts';
 import { closeOneShot } from '../tool/one-shot.ts';
-import { loadCurrentAgents } from './poller.ts';
+import { openClosedAgent } from '../tool/spawn/flow.ts';
 
 async function showNoAgentsDialog(ctx: ExtensionCommandContext): Promise<void> {
   await ctx.ui.custom<void>(
@@ -44,18 +52,20 @@ async function showNoAgentsDialog(ctx: ExtensionCommandContext): Promise<void> {
   );
 }
 
-interface AgentMenuAction {
-  action: 'focus' | 'close';
-  agent: HerdrAgentInfo;
-}
+type AgentMenuAction =
+  | { action: 'focus' | 'close'; agent: HerdrAgentInfo }
+  | { action: 'open'; record: ClosedAgentHistoryRecord };
+
+const CLOSED_PREFIX = 'closed:';
 
 async function pickAgentAction(
   ctx: ExtensionCommandContext,
   agents: HerdrAgentInfo[],
+  closed: ClosedAgentHistoryRecord[],
 ): Promise<AgentMenuAction | undefined> {
   const result = await ctx.ui.custom<{
     action: 'focus' | 'close';
-    tabId: string;
+    value: string;
   } | null>(
     (tui, theme, _kb, done) => {
       const colorStatus = (status: string) => {
@@ -77,6 +87,17 @@ async function pickAgentAction(
           .filter(Boolean)
           .join(' • '),
       }));
+      for (const record of closed) {
+        items.push({
+          value: `${CLOSED_PREFIX}${record.id}`,
+          label: `${record.tabLabel} (${record.profileName})`,
+          description: [
+            theme.fg('dim', 'closed'),
+            new Date(record.closedAt).toLocaleString(),
+            record.cwd,
+          ].join(' • '),
+        });
+      }
 
       const container = new Container();
       container.addChild(
@@ -94,7 +115,7 @@ async function pickAgentAction(
         noMatch: (text) => theme.fg('warning', text),
       });
       selectList.onSelect = (item) =>
-        done({ action: 'focus', tabId: item.value });
+        done({ action: 'focus', value: item.value });
       selectList.onCancel = () => done(null);
 
       container.addChild(selectList);
@@ -102,7 +123,7 @@ async function pickAgentAction(
         new Text(
           theme.fg(
             'dim',
-            '↑↓ navigate • enter focus • d/ctrl+d close • esc close',
+            '↑↓ navigate • enter focus/open • d/ctrl+d close • esc close',
           ),
           1,
           0,
@@ -118,7 +139,9 @@ async function pickAgentAction(
         handleInput: (data: string) => {
           if (data === 'd' || matchesKey(data, Key.ctrl('d'))) {
             const selected = selectList.getSelectedItem();
-            if (selected) done({ action: 'close', tabId: selected.value });
+            if (selected && !selected.value.startsWith(CLOSED_PREFIX)) {
+              done({ action: 'close', value: selected.value });
+            }
             return;
           }
 
@@ -135,37 +158,82 @@ async function pickAgentAction(
 
   if (!result) return undefined;
 
-  const agent = agents.find((agent) => agent.tabId === result.tabId);
+  if (result.value.startsWith(CLOSED_PREFIX)) {
+    const id = result.value.slice(CLOSED_PREFIX.length);
+    const record = closed.find((item) => item.id === id);
+    return record ? { action: 'open', record } : undefined;
+  }
+
+  const agent = agents.find((agent) => agent.tabId === result.value);
   if (!agent) return undefined;
 
   return { action: result.action, agent };
 }
 
+async function focusAgent(
+  layout: HerdrAgentLayout | undefined,
+  paneId: string,
+  tabId: string,
+): Promise<void> {
+  await execHerdr(
+    layout === 'pane'
+      ? ['agent', 'focus', paneId]
+      : // Tab ids are workspace-qualified, so this reaches Agents-workspace
+        // agents too and makes Herdr switch to that workspace.
+        ['tab', 'focus', tabId],
+  );
+}
+
 export async function showHerdrAgentsManager(
+  pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
+  configPromise: Promise<HerdrAgentsConfig>,
 ): Promise<void> {
   if (ctx.mode !== 'tui') {
     ctx.ui.notify('/herdr-agents requires TUI mode', 'error');
     return;
   }
+  const { ownerSessionId } = orchestratorIdentity(ctx);
 
   while (true) {
-    const agents = await loadCurrentAgents();
-    if (agents.length === 0) {
+    const { context, state } = await loadContextWithState();
+    const agents = listManagedWorkspaceAgents(context, state);
+    const closed = ownerSessionId
+      ? listOwnedResumableHistory(state, ownerSessionId)
+      : [];
+    if (agents.length === 0 && closed.length === 0) {
       await showNoAgentsDialog(ctx);
       return;
     }
 
-    const selected = await pickAgentAction(ctx, agents);
+    const selected = await pickAgentAction(ctx, agents, closed);
     if (!selected) return;
 
+    if (selected.action === 'open') {
+      const config = await configPromise;
+      const opened = await openClosedAgent(pi, ctx, config, selected.record);
+      const text = opened.content.find((part) => part.type === 'text');
+      if (opened.isError) {
+        ctx.ui.notify(
+          `Could not open Herdr agent "${selected.record.tabLabel}": ${text?.type === 'text' ? text.text : 'unknown error'}`,
+          'error',
+        );
+        continue;
+      }
+      const { paneId, tabId } = opened.details as {
+        paneId: string;
+        tabId: string;
+      };
+      await focusAgent(getHerdrAgentsLayout(config), paneId, tabId);
+      ctx.ui.notify(`Opened Herdr agent "${selected.record.tabLabel}"`, 'info');
+      return;
+    }
+
     if (selected.action === 'focus') {
-      await execHerdr(
-        selected.agent.layout === 'pane'
-          ? ['agent', 'focus', selected.agent.paneId]
-          : // Tab ids are workspace-qualified, so this reaches Agents-workspace
-            // agents too and makes Herdr switch to that workspace.
-            ['tab', 'focus', selected.agent.tabId],
+      await focusAgent(
+        selected.agent.layout,
+        selected.agent.paneId,
+        selected.agent.tabId,
       );
       ctx.ui.notify(`Focused Herdr agent "${selected.agent.tabLabel}"`, 'info');
       return;

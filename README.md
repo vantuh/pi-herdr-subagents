@@ -135,6 +135,12 @@ for the same profile starts another agent with a suffixed label, such as
 `Enter` focuses an agent, `d` or `Ctrl+D` closes it, `Esc` exits. Only finished
 agents can be closed; a working agent or one waiting on a question is kept.
 
+Below the live agents it lists the closed one-shots of the current Orchestrator
+session. `Enter` on one reopens its Pi session in a new pane or tab without
+sending a task, so you can read what it did; close it with `d` to archive it
+again. Anything typed into the reopened agent extends its session, and
+`resumeClosed` on that label is rejected while it stays open.
+
 ## Configuration
 
 Optional settings live in `~/.pi/agent/herdr-agents.json`. The file is read

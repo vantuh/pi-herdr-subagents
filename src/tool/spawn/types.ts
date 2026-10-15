@@ -2,7 +2,7 @@ import type {
   AgentToolResult,
   AgentToolUpdateCallback,
   ExtensionAPI,
-  ExtensionToolContext,
+  ExtensionContext,
 } from '@earendil-works/pi-coding-agent';
 
 import type { AgentProfile } from '../../agents/types.ts';
@@ -27,10 +27,11 @@ export interface SpawnTarget {
 export interface TaskInvocation {
   pi: ExtensionAPI;
   params: HerdrAgentParams;
-  task: string;
+  /** Absent when reopening a closed agent for reading: no turn is sent. */
+  task?: string;
   signal: AbortSignal | undefined;
   onUpdate: AgentToolUpdateCallback<Record<string, unknown>> | undefined;
-  ctx: ExtensionToolContext;
+  ctx: ExtensionContext;
 }
 
 export interface SpawnSettings {

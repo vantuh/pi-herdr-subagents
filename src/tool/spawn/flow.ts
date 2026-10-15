@@ -1,13 +1,23 @@
-import type { AgentToolResult } from '@earendil-works/pi-coding-agent';
+import type {
+  AgentToolResult,
+  ExtensionAPI,
+  ExtensionContext,
+} from '@earendil-works/pi-coding-agent';
 
+import { discoverAgents } from '../../agents.ts';
 import { createAgentTempFiles, removeAgentTempFiles } from '../../artifacts.ts';
+import { getHerdrAgentsLayout } from '../../config.ts';
+import type { HerdrAgentsConfig } from '../../config/schema.ts';
 import { execHerdr } from '../../herdr/cli.ts';
 import { listPanes } from '../../herdr/snapshot.ts';
 import { CHILD_PROTOCOL } from '../../prompts.ts';
 import { releaseClosedHistory } from '../../state/closed-history.ts';
+import type { ClosedAgentHistoryRecord } from '../../state/schema.ts';
 import { ensureAgentsWidget } from '../../ui/poller.ts';
 import { bestEffort } from '../../utils.ts';
+import { orchestratorIdentity } from '../child-args.ts';
 import { closeTargetArgs, independentCleanupSignal } from '../one-shot.ts';
+import { textResult } from '../result.ts';
 import {
   claimClosedHistoryForResume,
   reuseParkedAgent,
@@ -95,7 +105,57 @@ export async function runAgentTask(
 
   ensureAgentsWidget(invocation.pi, invocation.ctx);
 
-  return await runAgentTurn(invocation, spawn, target);
+  if (invocation.task === undefined) {
+    return textResult(`Herdr agent ${spawn.tabLabel} opened.`, {
+      tabId: target.tabId,
+      paneId: target.paneId,
+      tabLabel: spawn.tabLabel,
+    });
+  }
+  return await runAgentTurn(invocation, spawn, target, invocation.task);
+}
+
+/**
+ * Reopens a closed one-shot through the resumeClosed spawn path without
+ * sending a task, so the user can read its session.
+ */
+export async function openClosedAgent(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  config: HerdrAgentsConfig,
+  record: ClosedAgentHistoryRecord,
+): Promise<AgentToolResult<Record<string, unknown>>> {
+  const agent = (await discoverAgents(record.cwd)).find(
+    (item) => item.name === record.profileName,
+  );
+  if (!agent) {
+    return textResult(
+      `Unknown Herdr agent profile: ${record.profileName}.`,
+      {},
+      true,
+    );
+  }
+  return await runAgentTask(
+    {
+      pi,
+      params: {
+        agent: agent.name,
+        tabLabel: record.tabLabel,
+        resumeClosed: true,
+      },
+      signal: undefined,
+      onUpdate: undefined,
+      ctx,
+    },
+    {
+      agent,
+      config,
+      layout: getHerdrAgentsLayout(config),
+      baseLabel: record.tabLabel,
+      resumeClosed: true,
+      owner: orchestratorIdentity(ctx),
+    },
+  );
 }
 
 async function prepareSpawnTarget(

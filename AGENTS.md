@@ -36,7 +36,7 @@ flow, config and profiles. Keep those in sync when behavior changes.
 - `src/tool/one-shot.ts` — one-shot close, collected spawn-warning cleanup, state cleanup.
 - `src/tool/spawn/types.ts` — spawn types: invocation, settings, shared spawn state, placement, target results.
 - `src/tool/spawn/schema.ts` — Herdr tab-create, pane-split and pane-layout response schemas.
-- `src/tool/spawn/flow.ts` — `runAgentTask`: placement lock, spawn rollback, temp-file sequencing, prompt handoff.
+- `src/tool/spawn/flow.ts` — `runAgentTask`: placement lock, spawn rollback, temp-file sequencing, prompt handoff; `openClosedAgent` for the overlay.
 - `src/tool/spawn/targets.ts` — placement resolution, tab creation, pane split/rename.
 - `src/tool/spawn/continuation.ts` — parked-question reuse, live-label refusal, closed-history resume claim.
 - `src/tool/spawn/lifecycle.ts` — child start/record with mandatory resumed persistence, and the task prompt turn.

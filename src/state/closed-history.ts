@@ -250,6 +250,21 @@ export async function markClosedHistoryInvalid(
   });
 }
 
+/** Closed one-shots of this owner that can be reopened now, newest first. */
+export function listOwnedResumableHistory(
+  state: HerdrAgentsState,
+  ownerSessionId: string,
+): ClosedAgentHistoryRecord[] {
+  return state.closedHistory
+    .filter(
+      (record) =>
+        record.ownerSessionId === ownerSessionId &&
+        record.status === 'resumable' &&
+        !liveAgentForHistory(state, record.id),
+    )
+    .toSorted((a, b) => historyRecency(b) - historyRecency(a));
+}
+
 export function findOwnedClosedHistory(
   state: HerdrAgentsState,
   ownerSessionId: string,

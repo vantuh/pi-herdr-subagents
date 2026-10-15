@@ -123,7 +123,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
     description: 'Show, focus, and close managed Herdr agents',
     handler: async (_args, ctx) => {
       try {
-        await showHerdrAgentsManager(ctx);
+        await showHerdrAgentsManager(pi, ctx, configPromise);
       } catch (error) {
         ctx.ui.notify(
           `Failed to load Herdr agents: ${errorMessage(error)}`,

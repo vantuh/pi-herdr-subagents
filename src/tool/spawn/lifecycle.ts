@@ -99,7 +99,8 @@ export async function startAndRecordAgent(
         ...(spawn.spawnWarnings.length > 0
           ? { spawnWarnings: spawn.spawnWarnings }
           : {}),
-        detached: true,
+        // A reopened closed agent gets no task, so no outcome is pending.
+        detached: invocation.task !== undefined,
         ownerPaneId: placement.current.currentPane.pane_id,
         ...(placement.current.currentPane.terminal_id
           ? { ownerTerminalId: placement.current.currentPane.terminal_id }
@@ -134,8 +135,9 @@ export async function runAgentTurn(
   invocation: TaskInvocation,
   spawn: SpawnState,
   target: SpawnTarget,
+  task: string,
 ): Promise<AgentToolResult<Record<string, unknown>>> {
-  const { task, signal, onUpdate } = invocation;
+  const { signal, onUpdate } = invocation;
   const { tabId, paneId } = target;
   const tabLabel = spawn.tabLabel;
 

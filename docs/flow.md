@@ -37,7 +37,10 @@ placement lock, the rollback of partially spawned resumed agents and the prompt
 handoff; `spawn/targets.ts` resolves placement and creates the tab or split
 pane; `spawn/continuation.ts` reuses a parked question and claims closed
 history for `resumeClosed`; `spawn/lifecycle.ts` starts the child, records its
-lifecycle and runs the prompt turn.
+lifecycle and runs the prompt turn. `openClosedAgent` in `spawn/flow.ts` runs the
+same `resumeClosed` path for the `/herdr-agents` overlay but stops before the
+prompt turn and records the agent with `detached: false`, so the poller never
+delivers or closes it.
 
 Layout comes from `herdr-agents.json` ([config.md](config.md)), never the tool
 parameters.

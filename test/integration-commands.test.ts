@@ -4,7 +4,7 @@ import * as path from 'node:path';
 
 import { test } from 'vitest';
 
-import { withHarness } from '../test-support/integration-harness.ts';
+import { flagValue, withHarness } from '../test-support/integration-harness.ts';
 
 /**
  * Orchestrator instructions and the /herdr-agents manager.
@@ -184,5 +184,112 @@ test('/herdr-agents refuses to close an active resumed one-shot', async () => {
     );
     const history = (await harness.readState()).closedHistory ?? [];
     assert.equal(history[0]?.status, 'claimed');
+  });
+});
+
+test('/herdr-agents lists and reopens a closed one-shot of this session without a task', async () => {
+  // enter opens the closed row; the second run closes the reopened agent
+  await withHarness({ dialogInputs: [['\r'], ['d']] }, async (harness) => {
+    await harness.call({
+      agent: 'scout',
+      task: 'first',
+      tabLabel: 'Scout Read',
+    });
+    await harness.collect('Scout Read');
+    const state = await harness.readState();
+    const archived = state.closedHistory[0]!;
+    state.closedHistory.push({
+      ...archived,
+      id: 'ch_foreign',
+      ownerSessionId: 'another-session',
+      tabLabel: 'Foreign',
+    });
+    await fs.writeFile(harness.statePath, JSON.stringify(state));
+    const prompts = harness.fake.callsMatching('agent', 'prompt').length;
+    const messages = harness.messages.length;
+
+    await harness.runCommand('herdr-agents');
+
+    const start = harness.fake.callsMatching('agent', 'start').at(-1) ?? [];
+    const piArgs = start.slice(start.indexOf('--') + 1);
+    assert.equal(flagValue(piArgs, '--session'), archived.childSessionFile);
+    assert.equal(harness.fake.callsMatching('agent', 'prompt').length, prompts);
+    assert.match(
+      harness.notifications.at(-1)?.message ?? '',
+      /Opened Herdr agent "Scout Read"/,
+    );
+    const opened = await harness.readState();
+    const live = Object.values(opened.agents)[0];
+    assert.equal(live?.closedHistoryId, archived.id);
+    assert.equal(live?.detached, false);
+    assert.equal(
+      opened.closedHistory.find((item) => item.id === archived.id)?.status,
+      'claimed',
+    );
+
+    // Two poller ticks must neither deliver nor close the reopened agent.
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    assert.equal(harness.messages.length, messages);
+    assert.equal(harness.fake.panes.length, 2);
+
+    await harness.runCommand('herdr-agents');
+
+    assert.equal(harness.fake.panes.length, 1);
+    const closed = (await harness.readState()).closedHistory;
+    assert.equal(
+      closed.find((item) => item.id === archived.id)?.status,
+      'resumable',
+    );
+    assert.equal(
+      closed.find((item) => item.id === 'ch_foreign')?.status,
+      'resumable',
+    );
+  });
+});
+
+test('/herdr-agents does not list closed one-shots of another session', async () => {
+  // enter would open a listed closed row
+  await withHarness({ dialogInputs: [['\r']] }, async (harness) => {
+    await harness.call({
+      agent: 'scout',
+      task: 'first',
+      tabLabel: 'Scout Read',
+    });
+    await harness.collect('Scout Read');
+    const state = await harness.readState();
+    state.closedHistory[0]!.ownerSessionId = 'another-session';
+    await fs.writeFile(harness.statePath, JSON.stringify(state));
+
+    await harness.runCommand('herdr-agents');
+
+    // No rows: the empty-list dialog is shown and nothing is started.
+    assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
+    assert.deepEqual(harness.notifications, []);
+  });
+});
+
+test('/herdr-agents reports a closed one-shot whose session file is gone', async () => {
+  await withHarness({ dialogInputs: [['\r']] }, async (harness) => {
+    await harness.call({
+      agent: 'scout',
+      task: 'first',
+      tabLabel: 'Scout Read',
+    });
+    await harness.collect('Scout Read');
+    const archived = (await harness.readState()).closedHistory[0]!;
+    await fs.rm(archived.childSessionFile);
+
+    await harness.runCommand('herdr-agents');
+
+    assert.match(
+      harness.notifications.at(-1)?.message ?? '',
+      /Could not open Herdr agent "Scout Read": .*missing, corrupt/,
+    );
+    assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
+    assert.equal(harness.fake.panes.length, 1);
+    assert.equal(
+      (await harness.readState()).closedHistory[0]?.status,
+      'invalid',
+    );
   });
 });

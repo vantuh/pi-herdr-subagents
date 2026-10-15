@@ -77,7 +77,7 @@ Notes:
 - An agent whose outcome was already delivered returns that it was already collected. If the target is still open, close it with `/herdr-agents`, then continue with `resumeClosed`.
 - A blank `task` is treated as omitted.
 - Errors: `tabLabel is required when task is omitted.`, `No running Herdr agent named "<label>" found.`, and, when `agent` is omitted too, `No agent labeled "<label>" found for this session. Pass agent to start a new one.`
-- Omitting `task` never reopens a closed agent. Use `resumeClosed` for that.
+- Omitting `task` never reopens a closed agent. Use `resumeClosed` for that. The user can also reopen one for reading from `/herdr-agents`; it is then a live agent, so `resumeClosed` on its label is rejected until it is closed again.
 
 #### Answer a parked question
 
