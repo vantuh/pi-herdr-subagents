@@ -638,7 +638,7 @@ test('/run completes agent names, then stops offering completions', async () => 
     const all = command.getArgumentCompletions('') ?? [];
     assert.deepEqual(
       all.map((item) => item.value.trim()),
-      ['scout', 'researcher', 'planner', 'worker', 'reviewer'],
+      ['scout', 'researcher', 'worker', 'reviewer'],
     );
     assert.deepEqual(
       (command.getArgumentCompletions('re') ?? []).map((i) => i.value.trim()),

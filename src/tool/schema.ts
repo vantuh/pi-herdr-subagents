@@ -1,7 +1,7 @@
 import { Type } from 'typebox';
 
 export const DEFAULT_AGENT_PARAM_DESCRIPTION =
-  'Agent profile name from ~/.pi/agent/agents/*.md, e.g. researcher, scout, reviewer, planner, worker.';
+  'Agent profile name from ~/.pi/agent/agents/*.md, e.g. researcher, scout, reviewer, worker.';
 
 /**
  * The `agent` parameter is model-facing: profiles marked

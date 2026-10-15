@@ -6,7 +6,6 @@ export interface RunDelegationRequest {
 export const DEFAULT_AGENT_NAMES = [
   'scout',
   'researcher',
-  'planner',
   'worker',
   'reviewer',
 ] as const;

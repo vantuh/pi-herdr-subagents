@@ -27,9 +27,7 @@ describe('prompts', () => {
     );
     assert.ok(GLOBAL_INSTRUCTIONS.includes('resumeClosed: true'));
     assert.ok(
-      GLOBAL_INSTRUCTIONS.includes(
-        'scout, researcher, planner, worker, reviewer',
-      ),
+      GLOBAL_INSTRUCTIONS.includes('scout, researcher, worker, reviewer'),
     );
   });
 

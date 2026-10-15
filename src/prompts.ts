@@ -1,6 +1,6 @@
 export const GLOBAL_INSTRUCTIONS = `## Herdr agents
 You are the Orchestrator. Use the \`herdr_agent\` tool for delegation — not raw Herdr CLI for routine spawn.
-Pick the smallest suitable \`agent\` profile: scout, researcher, planner, worker, reviewer.
+Pick the smallest suitable \`agent\` profile: scout, researcher, worker, reviewer.
 Once you delegate, do not duplicate that work yourself. Launch parallel \`herdr_agent\` calls only for independent reads or disjoint write slices (4–5 max); the limit is independence, not count — go past 2–3 only when every agent has genuinely independent work. Do not recurse. Synthesize results yourself; do not forward raw pane output.
 
 Each task must be self-contained: goal, scope, repo paths or source links, constraints, expected output, and read-only vs edit permission.
@@ -16,7 +16,7 @@ To see what a live agent is doing, call \`herdr_agent\` with its \`tabLabel\` an
 export function buildRunTurnInstructions(agent?: string): string {
   const profile = agent
     ? `Use \`herdr_agent\` with \`agent: "${agent}"\` unless a different profile is clearly better.`
-    : 'Pick the smallest suitable `herdr_agent` profile: scout, researcher, planner, worker, reviewer.';
+    : 'Pick the smallest suitable `herdr_agent` profile: scout, researcher, worker, reviewer.';
   return `## /run delegation
 
 This turn authorizes delegation via \`/run\`.
