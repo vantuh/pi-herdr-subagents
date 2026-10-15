@@ -91,9 +91,10 @@ filesystem order, which is not defined; keep names unique.
 ## Choosing a model
 
 In a TUI session, run `/herdr-agent-models`, select a profile, then select a
-model. The model step shows `Scoped` / `All` tabs; press Tab to switch without
-losing the search filter. `Scoped` contains only Pi's scoped models. `All`
-contains scoped models first, followed by the remaining available models. The
+model. The model step shows `Scope: all | scoped`, with the active scope colored
+like Pi's model selector. Press Tab to switch without losing the search filter.
+`Scoped` contains only Pi's scoped models. `All` contains scoped models first,
+followed by the remaining available models. The
 picker starts on `Scoped` when it is non-empty, otherwise `All`, and remembers
 the selected tab until the overlay closes. Tab does nothing on the profile step.
 A scoped model without configured credentials is marked `no auth`. Profiles

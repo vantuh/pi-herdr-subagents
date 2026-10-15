@@ -304,14 +304,15 @@ test('Tab switches model scope without saving, preserving the search and focus',
   const h = createPicker();
   h.picker.focused = true;
   h.picker.handleInput('\t');
-  assert.doesNotMatch(h.text(), /\[Scoped\]|\[All\]/);
+  assert.doesNotMatch(h.text(), /Scope: all \| scoped/);
   h.picker.handleInput('\r');
-  assert.match(h.text(), /\[Scoped\]  All/);
+  assert.match(h.text(), /Scope: all \| scoped/);
+  assert.match(h.text(), /tab scope \(all\/scoped\)/);
   assert.doesNotMatch(h.text(), /provider\/all-only/);
   assert.match(h.text(), /clear model/);
 
   h.picker.handleInput('\t');
-  assert.match(h.text(), /Scoped  \[All\]/);
+  assert.match(h.text(), /Scope: all \| scoped/);
   assert.match(h.text(), /provider\/new-model/);
   assert.match(h.text(), /provider\/all-only/);
   assert.match(h.text(), /clear model/);
@@ -319,7 +320,7 @@ test('Tab switches model scope without saving, preserving the search and focus',
   assert.match(h.text(), /provider\/all-only/);
   assert.doesNotMatch(h.text(), /provider\/new-model/);
   h.picker.handleInput('\t');
-  assert.match(h.text(), /\[Scoped\]  All/);
+  assert.match(h.text(), /Scope: all \| scoped/);
   assert.doesNotMatch(h.text(), /provider\/all-only|provider\/new-model/);
   h.picker.handleInput('\t');
   assert.match(h.text(), /provider\/all-only/);
@@ -339,7 +340,8 @@ test('All-only models can be saved and the scope persists when returning to mode
   );
   assert.deepEqual(h.applied, [{ agent, model: 'provider/all-only' }]);
   h.picker.handleInput('\r');
-  assert.match(h.text(), /Scoped  \[All\]/);
+  assert.match(h.text(), /Scope: all \| scoped/);
+  assert.match(h.text(), /provider\/all-only/);
 });
 
 test('without scoped models, All is selected initially and an empty Scoped tab remains usable', () => {
@@ -349,10 +351,10 @@ test('without scoped models, All is selected initially and an empty Scoped tab r
     agents: [{ ...agent, model: undefined }],
   });
   h.picker.handleInput('\r');
-  assert.match(h.text(), /Scoped  \[All\]/);
+  assert.match(h.text(), /Scope: all \| scoped/);
   assert.match(h.text(), /provider\/all-only/);
   h.picker.handleInput('\t');
-  assert.match(h.text(), /\[Scoped\]  All/);
+  assert.match(h.text(), /Scope: all \| scoped/);
   assert.doesNotMatch(
     h.text(),
     /provider\/all-only|provider\/new-model|clear model/,
@@ -469,7 +471,7 @@ test('command orders scoped models first, edits the winning profile and refreshe
           const picker = factory(tui, theme, getKeybindings(), () => {});
           picker.handleInput('\r');
           const scopedText = picker.render(160).join('\n');
-          assert.match(scopedText, /\[Scoped\]  All/);
+          assert.match(scopedText, /Scope: all \| scoped/);
           assert.match(scopedText, /z\/scoped/);
           assert.doesNotMatch(scopedText, /a\/first|b\/last/);
           picker.handleInput('\t');

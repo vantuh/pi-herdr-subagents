@@ -115,17 +115,18 @@ export class AgentModelPicker extends Container {
     if (step === 'model') {
       this.addChild(
         new Text(
-          (['scoped', 'all'] as const)
-            .map((scope) => {
-              const label = scope === 'scoped' ? 'Scoped' : 'All';
-              return this.theme.fg(
-                scope === this.modelScope ? 'accent' : 'dim',
-                scope === this.modelScope ? `[${label}]` : label,
-              );
-            })
-            .join('  '),
+          this.theme.fg('muted', 'Scope: ') +
+            (['all', 'scoped'] as const)
+              .map((scope) =>
+                this.theme.fg(
+                  scope === this.modelScope ? 'accent' : 'muted',
+                  scope,
+                ),
+              )
+              .join(this.theme.fg('muted', ' | ')),
         ),
       );
+      this.addChild(new Text(this.theme.fg('dim', 'tab scope (all/scoped)')));
     }
     this.statusLine = new Text('', 0, 0);
     this.updateStatus();
@@ -143,7 +144,7 @@ export class AgentModelPicker extends Container {
           'dim',
           step === 'agent'
             ? 'type to filter · ↑↓ move · enter select · esc close'
-            : 'type to filter · ↑↓ move · enter save · tab scope · esc back',
+            : 'type to filter · ↑↓ move · enter save · esc back',
         ),
       ),
     );
