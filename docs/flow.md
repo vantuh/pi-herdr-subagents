@@ -70,9 +70,10 @@ Every task uses atomic `herdr agent prompt` without `--wait`. The upstream
 `--wait` path has a five-second activity gate, which is too short for some
 Pi transitions. The extension does not poll for prompt acceptance and does not
 call `herdr agent wait`. The tool returns as soon as the prompt is submitted.
-The per-second widget poller is the only collector: it delivers a settled
-result or question and closes a finished one-shot. The extension never sends
-an extra Enter.
+The per-second widget poller (`src/ui/poller.ts`) is the only collector: each
+tick hands the managed agents to `deliverDetachedOutcomes` in
+`src/ui/detached-outcomes.ts`, which delivers a settled result or question and
+closes a finished one-shot. The extension never sends an extra Enter.
 
 `herdr_agent` requires TUI mode. RPC, JSON, and print sessions are rejected
 before any Herdr call, because they have no widget poller. The profile is
@@ -105,8 +106,10 @@ Agent output comes only from artifacts: terminal scrollback is never read, becau
 is mostly TUI chrome (banner, resource lists, redraw frames, status bar).
 
 Detached claims use the shared state lock so background collection does not
-deliver the same outcome twice. Outcomes found in one poller tick are batched;
-only the final custom message triggers a turn.
+deliver the same outcome twice. `deliverDetachedOutcomes` re-checks each
+agent's settled status before claiming, because a tick's snapshot can predate
+the prompt. Outcomes found in one poller tick are batched; only the final
+custom message triggers a turn.
 
 ## Close and resume
 

@@ -32,9 +32,13 @@ file map in `AGENTS.md` and affected documentation/imports with each step.
   rollback, target placement, continuation/reuse, and start/prompt lifecycle.
   Keep internal types/schemas beside the spawn feature. Preserve partial-progress
   cleanup, pane/workspace lock release points and resume-claim durability.
-- [ ] 5. Extract detached outcome delivery from widget polling. Preserve question
+- [x] 5. Extract detached outcome delivery from widget polling. Preserve question
   precedence, fresh status checks, durable claims, notification/close ordering,
   batching and awaited shutdown.
+- [ ] 5a. Finish the audit's artifact/session boundary before reorganizing tests.
+  Separate native Pi session validation from managed artifact IO, and move
+  artifact/message schemas plus their derived types beside the feature. Preserve
+  all path checks, file permissions, JSONL validation and resume behavior.
 - [ ] 6. Align test organization with the new boundaries. First extract the fake
   Herdr's pure layout model/operations. Split oversized scenario suites by
   existing topics only where this improves navigation; update Vitest project
@@ -77,5 +81,11 @@ and 127 integration tests pass. E2E has not yet been run for this task.
   phases, contracts and response schemas beside it. Independent diff review
   confirmed unchanged bodies, lock scope and rollback ordering. Typecheck,
   lint, 190 unit, 127 integration and 13 E2E tests pass.
+- Step 5: separated detached outcome delivery from widget polling; `poller.ts`
+  is now 129 lines. Independent diff review found no issues. Typecheck, lint,
+  190 unit, 127 integration and 13 E2E tests pass.
+- Added the audit's smaller artifact/session extraction before test organization:
+  `artifacts.ts` is the only remaining source file above 300 lines, and native
+  session-file validation has a distinct responsibility from managed artifact IO.
 - E2E runs use installed Pi `1.2.0` and Herdr `0.9.5`; the documented Herdr
   `0.9.4` binary is not installed, so that exact version remains unverified.

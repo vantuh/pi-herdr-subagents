@@ -48,7 +48,8 @@ flow, config and profiles. Keep those in sync when behavior changes.
 - `src/state/live-records.ts` — live-record ownership and snapshot pruning.
 - `src/state/lifecycle.ts` — lifecycle record writes, spawned-warning cleanup and the detached-delivery claim.
 - `src/state/closed-history.ts` — archive and claim of closed one-shots for `resumeClosed`.
-- `src/ui/poller.ts` — per-second poller: delivers results and questions, closes finished one-shots.
+- `src/ui/detached-outcomes.ts` — detached outcome delivery: result/question formatting, fresh settled-status recheck, claim, notification and one-shot close.
+- `src/ui/poller.ts` — per-second poller: widget lifecycle and the tick that hands agents to delivery.
 - `src/ui/widget.ts`, `src/ui/manager.ts`, `src/ui/renderers.ts` — widget, `/herdr-agents` overlay, message renderers.
 - `test-support/` — test harnesses (see Tests).
 

@@ -30,7 +30,7 @@ import {
 } from '../src/herdr/snapshot.ts';
 import type { HerdrContext } from '../src/herdr/types.ts';
 import { emptyHerdrAgentsState } from '../src/state/store.ts';
-import { buildAgentFinishedNotificationArgs } from '../src/ui/poller.ts';
+import { buildAgentFinishedNotificationArgs } from '../src/ui/detached-outcomes.ts';
 
 test('maps agent_blocked prompt failures to an actionable orchestrator error', () => {
   const secret = 'SECRET_PROMPT_TEXT';
