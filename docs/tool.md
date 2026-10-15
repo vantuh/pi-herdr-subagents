@@ -173,7 +173,7 @@ On every Orchestrator turn the extension appends `GLOBAL_INSTRUCTIONS` (`src/pro
 - Pick the smallest suitable profile from the `Available:` list; the instructions name no profiles.
 - Do not duplicate delegated work. Do not recurse.
 - Run parallel calls only for independent reads or disjoint write slices (4–5 at most).
-- Make each task self-contained: goal, scope, paths or links, constraints, expected output, read-only vs edit permission.
+- Make each task self-contained: goal, scope, paths or links, constraints, expected output, read-only vs edit permission, and, for edits, the check to run.
 - Synthesize results yourself; do not forward raw pane output.
 - Every call returns when the prompt is submitted. Do not start the delegated work yourself meanwhile; end the turn or do unrelated work. The result or question arrives as a message. `herdr_agent` requires TUI mode.
 
