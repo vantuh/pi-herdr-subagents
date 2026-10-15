@@ -29,6 +29,28 @@ Goal: one TypeBox schema per JSON/`unknown` boundary, TS types derived with
   agent / history record never discards the file or its siblings.
 - **`Value.Check`, never `Value.Parse`.** `Parse` runs Convert/Default/Clean and
   would silently coerce (`"1"` to `1`).
+- **Input and in-memory shapes differ where defaults exist.** `updatedAt`,
+  `createdAt`, `closedAt`, `claimGeneration` are required in the value type
+  (`HerdrAgentStateRecord`, `ClosedAgentHistoryRecord`) but optional in the
+  reading schema (`HerdrAgentStateRecordInput`, `ClosedAgentHistoryRecordInput`
+  built from the same property map with an explicit `required` list). State
+  files from older versions may omit them; the defaults (`epoch`, `0`) stay
+  code after the check.
+- **User config leaves stay untyped** (`Type.Unknown`) because one wrong-typed
+  field must not discard its siblings: `layout` switching orphans live agents,
+  so `{"layout":"tab","workspace":{"label":42}}` keeps `layout`. Normalization
+  (`normalizeLayout`, `normalizeLabel`) is the semantic layer.
+- **`CreatedPane` is `PaneInfo` with optional `tab_id`**: `tab create` /
+  `pane split` responses may omit it (contract pins the fallback via `listPanes`).
+- **Recursive `PortableLayoutNode` uses `Type.Cyclic({ node: … }, 'node')` with
+  `Type.Ref('node')`** (definition names, not JSON pointers). `Type.Ref('#/$defs/node')`
+  and a pointer `$ref` make `Value.Check` return false. `Static<>` resolves the
+  recursion, including nested literal narrowing.
+- Builders are functions: `Type.String()`, `Type.Literal('pane')`,
+  `Type.Enum(['right','down'])`. `Type.StringLiteral` does not exist in 1.3.37.
+  `Static` is a type-only export: `import type { Static } from 'typebox'`.
+- **`Type.Any()` replaced by `Type.Unknown()`** so `any` stays out of exported
+  types; `agents` uses `Type.Record(Type.String(), Type.Unknown())`.
 - **Semantic rules stay as code after the check**: `.trim()`, non-empty after
   trim, `path.isAbsolute`, layout normalization (`" Tab "` to `tab`),
   `updatedAt ?? epoch` defaults. The schema replaces only shape/type checks.
@@ -88,6 +110,26 @@ array items in the state file) use `Value.Check` directly.
    `getSessionSnapshot` ("Malformed Herdr api snapshot response") instead of
    passing through untyped.
 
+4. Workspace list: a workspace item with a wrong-typed `label` keeps its
+   `workspace_id` (reader variant `WorkspaceListItem`); only a missing/invalid
+   `workspace_id` drops the item.
+5. Non-JSON `pane layout` output no longer throws: split-target selection falls
+   back to the first managed pane.
+6. `readPiSessionHeader` returns `type: 'session'` in its header (test updated).
+7. A state file whose `agents` is not an object is now quarantined instead of
+   ignored.
+8. `layout.export` still requires a non-empty `tab_id` (kept as a semantic
+   check; `Type.String()` alone would accept `""`).
+
+## Rejected / left as-is
+
+- `model` and `thinking` in profile frontmatter stay `typeof`-guarded: they are
+  not part of the plan's schema and making them strict would skip profiles that
+  today load.
+- Extra unknown keys in state records are retained on read (`{ ...fields }`).
+- `assistantText` envelope allows `Array(Type.Unknown())` so one image part does
+  not delete the text parts.
+
 ## Reuse
 
 - `typebox` `Type` already imported in `src/tool/schema.ts`, `src/child.ts`.
@@ -97,20 +139,30 @@ array items in the state file) use `Value.Check` directly.
 
 ## Steps
 
-- [ ] `src/json.ts` + unit test (`test/json.test.ts`: non-JSON, wrong shape,
+- [x] `src/json.ts` + unit test (`test/json.test.ts`: non-JSON, wrong shape,
       extra fields allowed, optional wrong type rejected)
-- [ ] Herdr schemas in `src/types.ts`; migrate `snapshot.ts`, `agent.ts`,
+- [x] Herdr schemas in `src/types.ts`; migrate `snapshot.ts`, `agent.ts`,
       `cli.ts`, `placement.ts`, `execute.ts`
-- [ ] `config.ts`, `artifacts.ts`
-- [ ] `store.ts` state/history schemas, per-record check; add test for
+- [x] `config.ts`, `artifacts.ts`
+- [x] `store.ts` state/history schemas, per-record check; tests for
       behavior change 1 (bad optional field drops record, siblings survive)
-- [ ] `agents.ts` frontmatter + `utils.ts` `normalizeTools`
-- [ ] Remove now-unused hand-written guards (`isLifecycle`, `isLayout`,
+      and for the restored defaults (missing `updatedAt`/`createdAt`/`claimGeneration`)
+- [x] `agents.ts` frontmatter + `normalizeTools` (it lives in `agents.ts`, not `utils.ts`)
+- [x] Remove now-unused hand-written guards (`isLifecycle`, `isLayout`,
       `isClosedHistoryStatus`, local `ParsedAgentGet`-style casts)
-- [ ] Fix any existing test that pinned old lenient behavior only where the
-      change is one of the accepted ones above
+- [x] Fix existing tests only where the change is accepted above
+- [x] Boundary tests for accepted changes 2 and 3: `test/agents.test.ts`
+      (non-string `tools` items skip the profile), `test/contract.test.ts`
+      (pane with a wrong-typed `focused` fails `getSessionSnapshot`)
 
 ## Verification
+
+Result: `typecheck` clean; unit fast subset 191/191; contract 41/41; e2e 13/13;
+integration 80/81 with one pre-existing flake (`status check previews the child
+assistant text…` fails 3/7 runs on untouched HEAD too — harness timing, not
+parsing). The runtime `typebox` Pi bundles is 1.3.27 (`@earendil-works/pi-ai`
+nested copy); `Type.Cyclic`/`Type.Ref`, `Type.Unknown`, `Type.Record`,
+`Type.Literal`, `Type.Enum` and `Value.Check` were verified against that copy.
 
 - `npm run typecheck`
 - `npm test` (contract layer pins malformed-output errors, state-file
