@@ -21,12 +21,13 @@ import {
   findReusableAgentTab,
   listManagedWorkspaceAgents,
 } from '../src/herdr/placement.ts';
+import type { PaneInfo, TabInfo } from '../src/herdr/schema.ts';
 import {
   parseCreatedWorkspace,
   parseWorkspaceListOutput,
 } from '../src/herdr/snapshot.ts';
+import type { HerdrContext } from '../src/herdr/types.ts';
 import { emptyHerdrAgentsState } from '../src/state/store.ts';
-import type { HerdrContext, PaneInfo, TabInfo } from '../src/types.ts';
 import { buildAgentFinishedNotificationArgs } from '../src/ui/poller.ts';
 
 test('maps agent_blocked prompt failures to an actionable orchestrator error', () => {

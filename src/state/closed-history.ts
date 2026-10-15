@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 
-import type { PaneInfo } from '../types.ts';
+import type { PaneInfo } from '../herdr/schema.ts';
+import type { ClosedAgentHistoryRecord, HerdrAgentsState } from './schema.ts';
 import {
   getHerdrAgentsStatePath,
   historyRecency,
@@ -9,8 +10,6 @@ import {
   paneStateKey,
   pruneClosedHistory,
   reconcileHerdrAgentsState,
-  type ClosedAgentHistoryRecord,
-  type HerdrAgentsState,
 } from './store.ts';
 
 function newHistoryId(): string {

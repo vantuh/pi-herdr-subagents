@@ -16,7 +16,7 @@ and normalized schemas remain distinct where their validation differs.
 Each implementation step is a separate reviewed and verified commit. Update the
 file map in `AGENTS.md` and affected documentation/imports with each step.
 
-- [ ] 1. Give contracts feature owners. Replace `src/types.ts` with focused
+- [x] 1. Give contracts feature owners. Replace `src/types.ts` with focused
   profile types, Herdr schemas/runtime types, configuration schemas and state
   schemas. Move the state/history schemas out of `store.ts`. Preserve names and
   validation semantics; update every source/test importer without compatibility
@@ -60,3 +60,10 @@ and 127 integration tests pass. E2E has not yet been run for this task.
 ## Progress
 
 - Recorded the agreed schema composition rule in `AGENTS.md`.
+- Step 1: moved contracts to feature-owned modules and removed `src/types.ts`.
+  Independent review found no blocking issues; corrected a test-only type import
+  and a migration-oriented comment. All 15 moved public TypeBox schemas compare
+  exactly with their pre-refactor values. Typecheck, lint, 190 unit tests,
+  127 integration tests and all 13 E2E tests pass.
+- E2E runs use installed Pi `1.2.0` and Herdr `0.9.5`; the documented Herdr
+  `0.9.4` binary is not installed, so that exact version remains unverified.

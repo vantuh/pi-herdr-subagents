@@ -8,6 +8,7 @@ import { getAgentSnapshot, isSettledAgentStatus } from '../herdr/agent.ts';
 import { execHerdr } from '../herdr/cli.ts';
 import { listManagedWorkspaceAgents } from '../herdr/placement.ts';
 import { loadContextWithState } from '../herdr/snapshot.ts';
+import type { HerdrAgentInfo } from '../herdr/types.ts';
 import { formatAgentQuestion } from '../prompts.ts';
 import { claimDetachedAgent } from '../state/store.ts';
 import {
@@ -15,7 +16,6 @@ import {
   dropCollectedSpawnWarnings,
   spawnWarningDetails,
 } from '../tool/one-shot.ts';
-import type { HerdrAgentInfo } from '../types.ts';
 import {
   bestEffort,
   formatCollectedOutput,

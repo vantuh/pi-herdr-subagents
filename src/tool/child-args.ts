@@ -1,8 +1,8 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { resolveProfileSkills, resolveThinkingLevel } from '../agents.ts';
+import type { AgentProfile } from '../agents/types.ts';
 import { ASK_QUESTION_TOOL, SESSION_META_ENV } from '../artifacts.ts';
-import type { AgentProfile } from '../types.ts';
 
 export function herdrChildEnvArgs(sessionMetaFile?: string): string[] {
   const args = [

@@ -13,7 +13,7 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import type { AgentProfile } from './types.ts';
+import type { AgentProfile } from './agents/types.ts';
 
 function isDirectory(filePath: string): boolean {
   try {

@@ -4,77 +4,19 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-import { Type } from 'typebox';
-import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { readIfExists } from '../artifacts.ts';
+import type { HerdrNamedAgent, PaneInfo } from '../herdr/schema.ts';
 import { parseJson } from '../json.ts';
 import {
+  ClosedAgentHistoryRecordInput,
   HerdrAgentStateRecordInput,
-  HerdrAgentLayout,
+  StateEnvelope,
+  type ClosedAgentHistoryRecord,
   type HerdrAgentStateRecord,
-  type HerdrNamedAgent,
-  type PaneInfo,
-} from '../types.ts';
-
-export const ClosedHistoryStatus = Type.Union([
-  Type.Literal('resumable'),
-  Type.Literal('claimed'),
-  Type.Literal('invalid'),
-  Type.Literal('staged'),
-]);
-export type ClosedHistoryStatus = Static<typeof ClosedHistoryStatus>;
-
-const closedHistoryFields = {
-  id: Type.String(),
-  ownerSessionId: Type.String(),
-  ownerSessionFile: Type.Optional(Type.String()),
-  profileName: Type.String(),
-  tabLabel: Type.String(),
-  childSessionFile: Type.String(),
-  childSessionId: Type.String(),
-  cwd: Type.String(),
-  layout: HerdrAgentLayout,
-  lifecycle: Type.Literal('oneshot'),
-  createdAt: Type.String(),
-  closedAt: Type.String(),
-  status: ClosedHistoryStatus,
-  claimGeneration: Type.Number(),
-  claimedAt: Type.Optional(Type.String()),
-};
-const closedHistoryRequired = [
-  'id',
-  'ownerSessionId',
-  'profileName',
-  'tabLabel',
-  'childSessionFile',
-  'childSessionId',
-  'cwd',
-  'layout',
-  'lifecycle',
-  'status',
-];
-
-export const ClosedAgentHistoryRecord = Type.Object(closedHistoryFields, {
-  required: [
-    ...closedHistoryRequired,
-    'createdAt',
-    'closedAt',
-    'claimGeneration',
-  ],
-});
-/** Reading an older state file: timestamps and the generation are defaulted. */
-export const ClosedAgentHistoryRecordInput = Type.Object(closedHistoryFields, {
-  required: closedHistoryRequired,
-});
-export type ClosedAgentHistoryRecord = Static<typeof ClosedAgentHistoryRecord>;
-
-export interface HerdrAgentsState {
-  version: 2;
-  agents: Record<string, HerdrAgentStateRecord>;
-  closedHistory: ClosedAgentHistoryRecord[];
-}
+  type HerdrAgentsState,
+} from './schema.ts';
 
 export const CLOSED_HISTORY_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 export const CLOSED_HISTORY_MAX_PER_OWNER = 32;
@@ -269,12 +211,6 @@ export async function mutateHerdrAgentsState<T>(
     options.signal,
   );
 }
-
-const StateEnvelope = Type.Object({
-  version: Type.Optional(Type.Unknown()),
-  agents: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
-  closedHistory: Type.Optional(Type.Unknown()),
-});
 
 /** A record stamped by a different Herdr server is not this Orchestrator's. */
 function isForeignServerRecord(

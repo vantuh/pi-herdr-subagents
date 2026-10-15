@@ -10,13 +10,17 @@ flow, config and profiles. Keep those in sync when behavior changes.
 
 - `src/index.ts` — extension wiring: events, commands, tool registration, config load.
 - `src/agents.ts` — profile discovery from user and project agent directories.
-- `src/config.ts` — `herdr-agents.json` loading.
+- `src/agents/types.ts` — `AgentProfile`.
+- `src/config.ts` — `herdr-agents.json` loading and normalization.
+- `src/config/schema.ts` — layout, configuration and tolerant input schemas.
 - `src/run.ts` — `/run` argument parsing and the injected user message.
 - `src/prompts.ts` — Orchestrator instructions and the child-agent protocol.
 - `src/json.ts` — `parseJson`: JSON parsing validated against a TypeBox schema.
 - `src/artifacts.ts` — result, question and session-meta file IO.
 - `src/child.ts` — child mode: `ask_question` and the result writer.
-- `src/utils.ts`, `src/types.ts` — shared helpers and types.
+- `src/utils.ts` — shared helpers.
+- `src/herdr/schema.ts` — Herdr CLI/API schemas: pane, created pane, tab, workspace, named agent, session snapshot.
+- `src/herdr/types.ts` — runtime projections: `HerdrContext`, `ReusableAgentTab`, `HerdrAgentInfo`.
 - `src/herdr/cli.ts` — Herdr CLI/API process wrappers, argument redaction, error parsing.
 - `src/herdr/snapshot.ts` — session snapshot, pane/tab/workspace discovery, subagents-workspace resolution.
 - `src/herdr/placement.ts` — label uniqueness, reusable tab/pane lookup, managed-agent listing, split ratios.
@@ -27,6 +31,7 @@ flow, config and profiles. Keep those in sync when behavior changes.
 - `src/tool/one-shot.ts` — one-shot close, placement lock, output formatting, state cleanup.
 - `src/tool/child-args.ts` — child Pi argv/env and tool allowlist.
 - `src/tool/result.ts` — `textResult` helper.
+- `src/state/schema.ts` — state-file schemas: live agent record/input, closed-history status/record/input, `HerdrAgentsState`, `StateEnvelope`.
 - `src/state/store.ts` — managed-agent records, state lock, load/save/migrate/prune.
 - `src/state/closed-history.ts` — archive and claim of closed one-shots for `resumeClosed`.
 - `src/ui/poller.ts` — per-second poller: delivers results and questions, closes finished one-shots.

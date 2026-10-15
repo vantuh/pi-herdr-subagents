@@ -1,4 +1,5 @@
 import { Type } from 'typebox';
+import type { Static } from 'typebox';
 
 export const DEFAULT_AGENT_PARAM_DESCRIPTION =
   'Agent profile name from ~/.pi/agent/agents/*.md or the project .pi/agents.';
@@ -26,6 +27,8 @@ export function describeAgentProfiles(
   const listing = names.length > 0 ? ` Available: ${names.join(', ')}.` : '';
   return `${DEFAULT_AGENT_PARAM_DESCRIPTION}${listing}`;
 }
+
+export type HerdrAgentParams = Static<ReturnType<typeof buildHerdrAgentParams>>;
 
 export function buildHerdrAgentParams(
   agentDescription: string = DEFAULT_AGENT_PARAM_DESCRIPTION,

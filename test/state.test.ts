@@ -7,13 +7,14 @@ import { fileURLToPath } from 'node:url';
 
 import { afterAll, test } from 'vitest';
 
+import type { PaneInfo } from '../src/herdr/schema.ts';
 import {
   claimClosedHistory,
   finalizeStagedClosedOneShot,
   releaseClosedHistory,
   stageClosedOneShot,
-  type ClosedAgentHistoryRecord,
 } from '../src/state/closed-history.ts';
+import type { ClosedAgentHistoryRecord } from '../src/state/schema.ts';
 import {
   CLOSED_HISTORY_MAX_GLOBAL,
   CLOSED_HISTORY_MAX_PER_OWNER,
@@ -33,7 +34,6 @@ import {
   setFailNextStateSaves,
   withStateFileLock,
 } from '../src/state/store.ts';
-import type { PaneInfo } from '../src/types.ts';
 
 function pane(overrides: Partial<PaneInfo> = {}): PaneInfo {
   return {

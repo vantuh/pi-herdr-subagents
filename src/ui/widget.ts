@@ -1,4 +1,4 @@
-import type { HerdrAgentInfo } from '../types.ts';
+import type { HerdrAgentInfo } from '../herdr/types.ts';
 
 export const AGENTS_WIDGET_ID = 'herdr-agents';
 export const AGENTS_WIDGET_TICK_MS = 1000;

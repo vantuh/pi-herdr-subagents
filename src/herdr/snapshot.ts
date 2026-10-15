@@ -2,15 +2,20 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { parseJson } from '../json.ts';
+import type { HerdrAgentsState } from '../state/schema.ts';
 import {
   emptyHerdrAgentsState,
   persistPrunedAgentsState,
-  type HerdrAgentsState,
 } from '../state/store.ts';
-import { HerdrSessionSnapshot, TabInfo, WorkspaceInfo } from '../types.ts';
-import { type HerdrContext, type PaneInfo } from '../types.ts';
 import { bestEffort } from '../utils.ts';
 import { execHerdr } from './cli.ts';
+import {
+  HerdrSessionSnapshot,
+  type PaneInfo,
+  TabInfo,
+  WorkspaceInfo,
+} from './schema.ts';
+import type { HerdrContext } from './types.ts';
 
 const SnapshotResponse = Type.Object({
   result: Type.Object({ snapshot: HerdrSessionSnapshot }),

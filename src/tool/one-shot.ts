@@ -3,6 +3,7 @@ import {
   removeAgentTempFiles,
   validateResumableSessionFile,
 } from '../artifacts.ts';
+import type { HerdrAgentLayout } from '../config/schema.ts';
 import { execHerdr } from '../herdr/cli.ts';
 import {
   buildEqualAgentSplitRatios,
@@ -10,6 +11,7 @@ import {
   listManagedWorkspaceAgents,
   setLayoutSplitRatio,
 } from '../herdr/placement.ts';
+import type { PaneInfo } from '../herdr/schema.ts';
 import { getSessionSnapshot, loadContextWithState } from '../herdr/snapshot.ts';
 import {
   finalizeStagedClosedOneShot,
@@ -22,7 +24,6 @@ import {
   paneStateKey,
   persistPrunedAgentsState,
 } from '../state/store.ts';
-import type { HerdrAgentLayout, PaneInfo } from '../types.ts';
 import { bestEffort, errorMessage } from '../utils.ts';
 
 const RESUME_CLEANUP_TIMEOUT_MS = 8_000;

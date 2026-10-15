@@ -14,8 +14,8 @@ import {
 import { readAgentQuestion } from '../artifacts.ts';
 import { isSettledAgentStatus } from '../herdr/agent.ts';
 import { execHerdr } from '../herdr/cli.ts';
+import type { HerdrAgentInfo } from '../herdr/types.ts';
 import { closeOneShot } from '../tool/one-shot.ts';
-import type { HerdrAgentInfo } from '../types.ts';
 import { loadCurrentAgents } from './poller.ts';
 
 async function showNoAgentsDialog(ctx: ExtensionCommandContext): Promise<void> {

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 
 import { isSettledAgentStatus } from '../src/herdr/agent.ts';
-import type { HerdrAgentInfo } from '../src/types.ts';
+import type { HerdrAgentInfo } from '../src/herdr/types.ts';
 import {
   agentStatusView,
   formatElapsed,

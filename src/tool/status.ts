@@ -1,27 +1,22 @@
+import type { AgentProfile } from '../agents/types.ts';
 import { readAgentQuestion, readAgentResult } from '../artifacts.ts';
-import {
-  getHerdrAgentsWorkspaceLabel,
-  type HerdrAgentsConfig,
-} from '../config.ts';
+import { getHerdrAgentsWorkspaceLabel } from '../config.ts';
+import type { HerdrAgentLayout, HerdrAgentsConfig } from '../config/schema.ts';
 import { getAgentSnapshot, isSettledAgentStatus } from '../herdr/agent.ts';
 import {
   findReusableAgentPane,
   findReusableAgentTab,
   findUnresolvedOwnedAgent,
 } from '../herdr/placement.ts';
+import type { PaneInfo } from '../herdr/schema.ts';
 import {
   findAgentsWorkspaceId,
   listTabs,
   loadContextWithState,
 } from '../herdr/snapshot.ts';
 import { formatAgentQuestion } from '../prompts.ts';
+import type { HerdrAgentStateRecord } from '../state/schema.ts';
 import { paneStateKey } from '../state/store.ts';
-import type {
-  AgentProfile,
-  HerdrAgentLayout,
-  HerdrAgentStateRecord,
-  PaneInfo,
-} from '../types.ts';
 import { formatAssistantPreview, formatSpawnWarnings } from '../utils.ts';
 import { spawnWarningDetails } from './one-shot.ts';
 import { textResult } from './result.ts';

@@ -98,6 +98,7 @@ unknown-agent error. The profile is still spawnable by exact name.
 
 - [README.md](../README.md#agent-profiles) — overview of profiles.
 - `src/agents.ts` — parsing, tool normalization and discovery;
+  `src/agents/types.ts` — `AgentProfile`;
   `src/tool/child-args.ts` — `buildChildPiArgs`, `buildChildToolAllowlist`;
   `src/tool/execute.ts` — the spawn flow that starts the child with those args;
   `src/tool/schema.ts` and `src/index.ts` — the advertised profile list.

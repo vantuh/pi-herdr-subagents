@@ -4,9 +4,9 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import type { HerdrSessionSnapshot } from '../src/herdr/schema.ts';
 import herdrAgentsExtension from '../src/index.ts';
-import type { HerdrAgentsState } from '../src/state/store.ts';
-import type { HerdrSessionSnapshot } from '../src/types.ts';
+import type { HerdrAgentsState } from '../src/state/schema.ts';
 import {
   type AgentProfileFixture,
   applyEnv,

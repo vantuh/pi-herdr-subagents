@@ -6,7 +6,7 @@ directory. The default path is `~/.pi/agent/herdr-agents.json`.
 The file is read once when the extension is loaded, so it is not re-read per
 spawn. An edit takes effect on `/reload` (or after restarting Pi), never
 mid-session. It is not part of the `herdr_agent` tool
-schema. Source: `src/config.ts`.
+schema. Source: `src/config.ts`; schema: `src/config/schema.ts`.
 
 ## Example
 

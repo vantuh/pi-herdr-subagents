@@ -4,10 +4,10 @@ import type {
   ExtensionAPI,
   ExtensionToolContext,
 } from '@earendil-works/pi-coding-agent';
-import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
 import { discoverAgents } from '../agents.ts';
+import type { AgentProfile } from '../agents/types.ts';
 import {
   resumableSessionDirError,
   clearAgentQuestion,
@@ -22,8 +22,8 @@ import {
 import {
   getHerdrAgentsLayout,
   getHerdrAgentsWorkspaceLabel,
-  type HerdrAgentsConfig,
 } from '../config.ts';
+import type { HerdrAgentLayout, HerdrAgentsConfig } from '../config/schema.ts';
 import { promptAgent, startAgent } from '../herdr/agent.ts';
 import { execHerdr } from '../herdr/cli.ts';
 import {
@@ -35,12 +35,14 @@ import {
   uniqueLabel,
   PaneLayout,
 } from '../herdr/placement.ts';
+import { CreatedPane, type PaneInfo, type TabInfo } from '../herdr/schema.ts';
 import {
   getCurrentContext,
   listPanes,
   listTabs,
   resolveAgentsWorkspace,
 } from '../herdr/snapshot.ts';
+import type { HerdrContext } from '../herdr/types.ts';
 import { parseJson } from '../json.ts';
 import { CHILD_PROTOCOL } from '../prompts.ts';
 import {
@@ -49,22 +51,16 @@ import {
   markClosedHistoryInvalid,
   releaseClosedHistory,
 } from '../state/closed-history.ts';
+import type {
+  ClosedAgentHistoryRecord,
+  HerdrAgentsState,
+} from '../state/schema.ts';
 import {
   emptyHerdrAgentsState,
   paneStateKey,
   persistPrunedAgentsState,
   recordAgentLifecycle,
-  type ClosedAgentHistoryRecord,
-  type HerdrAgentsState,
 } from '../state/store.ts';
-import { CreatedPane } from '../types.ts';
-import type {
-  AgentProfile,
-  HerdrAgentLayout,
-  HerdrContext,
-  PaneInfo,
-  TabInfo,
-} from '../types.ts';
 import { ensureAgentsWidget } from '../ui/poller.ts';
 import {
   bestEffort,
@@ -85,10 +81,8 @@ import {
   spawnWarningDetails,
 } from './one-shot.ts';
 import { textResult } from './result.ts';
-import { buildHerdrAgentParams } from './schema.ts';
+import type { HerdrAgentParams } from './schema.ts';
 import { executeAgentStatus, resumeClosedLiveDecision } from './status.ts';
-
-type HerdrAgentParams = Static<ReturnType<typeof buildHerdrAgentParams>>;
 
 const TabCreateResponse = Type.Object({
   result: Type.Object({ root_pane: Type.Optional(CreatedPane) }),

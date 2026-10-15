@@ -2,22 +2,23 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
+import type {
+  HerdrAgentStateInfoFields,
+  HerdrAgentStateRecord,
+  HerdrAgentsState,
+} from '../state/schema.ts';
 import {
   isAgentOwnedBy,
   liveAgentWithAutomationName,
   paneStateKey,
-  type HerdrAgentsState,
 } from '../state/store.ts';
+import { execHerdrApi } from './cli.ts';
+import type { PaneInfo, TabInfo } from './schema.ts';
 import type {
   HerdrAgentInfo,
-  HerdrAgentStateInfoFields,
-  HerdrAgentStateRecord,
   HerdrContext,
-  PaneInfo,
   ReusableAgentTab,
-  TabInfo,
-} from '../types.ts';
-import { execHerdrApi } from './cli.ts';
+} from './types.ts';
 
 export function findUnresolvedOwnedAgent(
   context: HerdrContext,
