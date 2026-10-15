@@ -4,6 +4,7 @@ import * as path from 'node:path';
 
 import { test } from 'vitest';
 
+import { setProfileModel } from '../src/ui/agent-models/write.ts';
 import { flagValue, withHarness } from '../test-support/contract-harness.ts';
 
 /**
@@ -20,6 +21,31 @@ async function writeSkill(dir: string, name: string): Promise<string> {
   );
   return filePath;
 }
+
+test('a profile pin reaches the next child argv and clearing it omits --model without reload', async () => {
+  await withHarness({}, async (harness) => {
+    const filePath = path.join(harness.cwd, '.pi', 'agents', 'scout.md');
+    assert.equal(
+      await setProfileModel(filePath, 'provider/pinned-model'),
+      null,
+    );
+    const pinned = await harness.call({ agent: 'scout', task: 'Use the pin' });
+    assert.equal(pinned.isError, undefined);
+    const first = harness.fake.callsMatching('agent', 'start')[0];
+    assert.ok(first);
+    assert.equal(flagValue(first, '--model'), 'provider/pinned-model');
+
+    assert.equal(await setProfileModel(filePath, null), null);
+    const cleared = await harness.call({
+      agent: 'scout',
+      task: 'Use Pi default',
+    });
+    assert.equal(cleared.isError, undefined);
+    const second = harness.fake.callsMatching('agent', 'start')[1];
+    assert.ok(second);
+    assert.equal(second.includes('--model'), false);
+  });
+});
 
 test('a profile without the optional frontmatter fields produces byte-for-byte the previous argv', async () => {
   await withHarness({}, async (harness) => {

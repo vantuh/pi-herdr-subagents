@@ -22,7 +22,8 @@ the Orchestrator as a message when the child finishes.
 - **Layouts.** Agents open in a dedicated Herdr workspace (default), as split
   panes, or as tabs in the current workspace.
 - **Commands.** `/run` delegates a task explicitly. `/herdr-agents` lists and
-  focuses your agents, and closes finished ones.
+  focuses your agents, and closes finished ones. `/herdr-agent-models` chooses
+  models by editing profile frontmatter; new spawns use the pin without reload.
 
 ## Requirements
 

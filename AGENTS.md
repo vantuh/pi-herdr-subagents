@@ -53,6 +53,9 @@ flow, config and profiles. Keep those in sync when behavior changes.
 - `src/ui/detached-outcomes.ts` — detached outcome delivery: result/question formatting, fresh settled-status recheck, claim, notification and one-shot close.
 - `src/ui/poller.ts` — per-second poller: widget lifecycle and the tick that hands agents to delivery.
 - `src/ui/widget.ts`, `src/ui/manager.ts`, `src/ui/renderers.ts` — widget, `/herdr-agents` overlay, message renderers.
+- `src/ui/agent-models/command.ts` — `/herdr-agent-models`: profile/model snapshots and save/refresh wiring.
+- `src/ui/agent-models/picker.ts` — two-step agent/model overlay with filtering and save status.
+- `src/ui/agent-models/write.ts` — atomic, symlink-preserving profile `model:` edits.
 - `test-support/` — test harnesses and fixtures (see Tests). `fake-herdr/`
   holds the simulator's own types and pure pane-tree operations.
 

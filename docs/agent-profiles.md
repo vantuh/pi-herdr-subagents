@@ -88,6 +88,34 @@ Profiles are keyed by `name`. A project profile replaces a user profile with the
 same name. Within one directory, two files with the same `name` resolve in
 filesystem order, which is not defined; keep names unique.
 
+## Choosing a model
+
+In a TUI session, run `/herdr-agent-models`, select a profile, then select a
+model. Scoped models appear first, followed by the remaining available models.
+A scoped model without configured credentials is marked `no auth`. Profiles
+with `disable-model-invocation: true` remain selectable and carry a dim note.
+Select `clear model` to remove an existing pin and use Pi's default.
+
+The command edits the top-level `model:` line in the profile file selected by
+[discovery](#discovery-and-precedence). A project profile overrides its user
+counterpart, so saving that profile changes a file in the project's git tree.
+The save status includes the file path. Saving returns to the profile list with
+the new model; Escape goes back from models or closes the profile list.
+
+No Pi reload is needed: the next `herdr_agent` spawn reads the updated file.
+Already-running panes keep their current model. The command does not write
+`settings.json`, `subagents.agentOverrides`, or `subagents.modelScope`.
+
+Writes preserve the profile's line endings and permissions. Model values are
+JSON-quoted so YAML reads them back as strings. Quoted model keys and unsupported
+multiline model values produce an error without changing the file; use a single
+top-level `model: value` line instead. A symlinked profile keeps its link: the
+command resolves the target before replacing it atomically.
+If chezmoi manages the profile as a copied regular file, run `chezmoi re-add`
+after changing its model, or the next `chezmoi apply` will overwrite the pin.
+Per-file symlinks to source profiles avoid that drift; do not symlink the whole
+`agents` directory if another integration writes runtime files there.
+
 ## Visibility
 
 `disable-model-invocation: true` removes the profile from the list in the

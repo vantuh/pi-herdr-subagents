@@ -64,9 +64,10 @@ The old picker called `buildData()` synchronously on every access (`this.data` g
 - More than one top-level `model:` line → error, file untouched.
 - Set: replace the matched line, or insert `model: <value>` right after the opening `---`.
 - Clear: delete the matched line only. No line → no-op.
-- Value: written plain when it is a safe YAML plain scalar (`/^[A-Za-z0-9._\/:@+-]+$/` and not ending in `:`), otherwise `JSON.stringify(value)`.
+- Value: always `JSON.stringify(value)`. The originally proposed plain-scalar regex also accepted invalid YAML (`@local/model`) and non-string scalars (`true`, `123`).
+- Reject existing quoted model keys and unsupported multiline model values without writing. Parse the original and edited frontmatter and verify the result changes only `model`; the line scan still determines edit positions.
 - Keep the file's line ending (`\r\n` if the original uses it).
-- Atomic write: `target = realpath(filePath)`, write `${target}.herdr-agent-models.tmp` with the original file mode, then `rename` onto `target`.
+- Atomic write: `target = realpath(filePath)`, exclusively create `${target}.herdr-agent-models.tmp` with the original file mode, then `rename` onto `target`. Record temporary-file ownership immediately after opening, close the handle on failure, and clean up owned temporary files. Never remove another writer's file.
 - Errors return a message for the picker status line; nothing throws out of the overlay.
 
 ## Files to modify
@@ -93,17 +94,35 @@ No change to spawn, `herdr_agent` parameters, or `src/agents.ts` parsing.
 
 ## Steps
 
-- [ ] Add `write.ts` with the rules above.
-- [ ] Copy `picker.ts`; drop scope; replace `buildData` with a snapshot field updated from `apply`.
-- [ ] Add `command.ts`: TUI guard, empty-roster notify, model list, `apply`.
-- [ ] Register the command in `src/index.ts`.
-- [ ] Tests: `agent-models.test.ts`, `contract-commands.test.ts`, `contract-profile-argv.test.ts` cases.
-- [ ] Docs: `docs/agent-profiles.md`, `README.md`, `AGENTS.md`.
+- [x] Add `write.ts` with the rules above.
+- [x] Copy `picker.ts`; drop scope; replace `buildData` with a snapshot field updated from `apply`.
+- [x] Add `command.ts`: TUI guard, empty-roster notify, model list, `apply`.
+- [x] Register the command in `src/index.ts`.
+- [x] Tests: `agent-models.test.ts`, `contract-commands.test.ts`, `contract-profile-argv.test.ts` cases.
+- [x] Docs: `docs/agent-profiles.md`, `README.md`, `AGENTS.md`.
 
 ## Verification
 
 - `npm run typecheck`, `npm run lint`, `npm run test:unit`, `npm run test:integration`.
-- Unit (`write.ts`): set replaces one line and keeps `thinking` and the body; set inserts after `---` when absent; clear removes only `model`; nested `  model:` and a `model:` in the body are untouched; duplicate top-level `model:` errors without writing; CRLF preserved; file mode preserved; a symlinked file keeps the link and the target changes; an unsafe value is quoted and `parseFrontmatter` reads it back unchanged.
+- Unit (`write.ts`): set replaces one line and keeps `thinking` and the body; set inserts after `---` when absent; clear removes only `model`; nested `  model:` and a `model:` in the body are untouched; duplicate top-level `model:` errors without writing; CRLF preserved; file mode preserved; a symlinked file keeps the link and the target changes; values including `@local/model`, `true` and `123` round-trip as strings; quoted model keys and unsupported multiline values error without writing; failed writes/renames leave the profile intact and clean up owned temporary files.
 - Unit (picker): select agent → model → save returns to the agent list with the refreshed description; `clear model` row only when a model is set; Esc on the model step goes back, on the agent step closes; a write error stays on screen.
 - Integration: see `contract-*` cases above.
 - Manual, in a TUI session: `/herdr-agent-models`, pin one profile, run `herdr_agent` for it, confirm the child starts with the new `--model`.
+
+## Completion
+
+Implemented and independently reviewed. All code was written by the Orchestrator;
+read-only agents supplied reconnaissance and review.
+
+- Passed: `npm run typecheck`, `npm run lint`, `git diff --check`.
+- Passed: 213 unit tests and 138 integration tests.
+- Passed: 15 real Pi/Herdr E2E tests on an isolated final run. One earlier run,
+  concurrent with unit/integration checks, failed the unchanged cold-shell test
+  with `agent_pane_busy`; no retry logic or test changes were added.
+- Not performed: manual interaction with `/herdr-agent-models` in a live TUI.
+  Picker behavior and profile-to-child argv are covered by automated tests.
+- Not included: the separate dotfiles/chezmoi symlink migration.
+
+Review-driven corrections to the original write rules: always quote model
+values, reject unsupported YAML without changing files, and clean up temporary
+files even after a partial write.

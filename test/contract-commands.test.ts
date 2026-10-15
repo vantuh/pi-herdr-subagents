@@ -2,16 +2,73 @@ import assert from 'node:assert/strict';
 
 import { test } from 'vitest';
 
+import herdrAgentsExtension from '../src/index.ts';
 import {
   AGENT_QUESTION_MESSAGE_TYPE,
   AGENT_RESULT_MESSAGE_TYPE,
 } from '../src/ui/renderers.ts';
 import { withHarness } from '../test-support/contract-harness.ts';
+import { applyEnv, createMockHost } from '../test-support/mock-extension.ts';
 
 /**
  * Commands and renderers: /run, /herdr-agents, and the result/question
  * message blocks.
  */
+
+test('/herdr-agent-models is registered only in parent mode', async () => {
+  await withHarness({}, async (harness) => {
+    assert.ok(harness.commands.has('herdr-agent-models'));
+    const restore = applyEnv({ HERDR_AGENT_CHILD: '1' });
+    try {
+      const child = createMockHost({ cwd: harness.cwd });
+      herdrAgentsExtension(child.pi);
+      assert.equal(child.commands.has('herdr-agent-models'), false);
+    } finally {
+      restore();
+    }
+  });
+});
+
+test('/herdr-agent-models requires TUI mode before discovering profiles or accessing the model registry', async () => {
+  await withHarness({}, async (harness) => {
+    const command = harness.commands.get('herdr-agent-models');
+    assert.ok(command);
+    await command.handler('', {
+      mode: 'rpc',
+      ui: {
+        notify: (message: string, level?: string) =>
+          harness.notifications.push({ message, level }),
+      },
+    });
+    assert.equal(
+      harness.notifications.at(-1)?.message,
+      '/herdr-agent-models requires TUI mode',
+    );
+    assert.equal(harness.fake.callsMatching('agent', 'start').length, 0);
+  });
+});
+
+test('/herdr-agent-models reports an empty roster without opening the overlay', async () => {
+  await withHarness({ profiles: [] }, async (harness) => {
+    const command = harness.commands.get('herdr-agent-models');
+    assert.ok(command);
+    await command.handler('', {
+      mode: 'tui',
+      cwd: harness.cwd,
+      scopedModels: [],
+      modelRegistry: { getAvailable: () => [] },
+      ui: {
+        notify: (message: string, level?: string) =>
+          harness.notifications.push({ message, level }),
+        custom: () => assert.fail('No profiles should not open the overlay'),
+      },
+    });
+    assert.equal(
+      harness.notifications.at(-1)?.message,
+      'No Herdr agent profiles found',
+    );
+  });
+});
 
 test('/run refuses to delegate while a turn is in flight', async () => {
   await withHarness({ isIdle: false }, async (harness) => {

@@ -12,6 +12,7 @@ import {
 } from './run.ts';
 import { executeHerdrAgent } from './tool/execute.ts';
 import { buildHerdrAgentParams, describeAgentProfiles } from './tool/schema.ts';
+import { showAgentModelPicker } from './ui/agent-models/command.ts';
 import { showHerdrAgentsManager } from './ui/manager.ts';
 import {
   ensureAgentsWidget,
@@ -131,6 +132,11 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
         );
       }
     },
+  });
+
+  pi.registerCommand('herdr-agent-models', {
+    description: 'Choose models for Herdr agents (edits profile frontmatter)',
+    handler: async (_args, ctx) => showAgentModelPicker(ctx),
   });
 
   async function refreshAgentListing(cwd: string): Promise<void> {
