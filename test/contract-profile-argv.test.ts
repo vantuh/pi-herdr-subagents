@@ -197,7 +197,10 @@ test('session_start refreshes the agent listing in the schema description', asyn
       const description = (
         tool.parameters.properties.agent as { description?: string }
       ).description;
-      assert.match(description ?? '', /Available: scout\./);
+      assert.match(
+        description ?? '',
+        /Available: scout \(scout test profile\)\./,
+      );
       assert.doesNotMatch(description ?? '', /secret/);
     },
   );
@@ -237,7 +240,10 @@ test('session_start reload reason refreshes the agent listing', async () => {
       const description = (
         tool.parameters.properties.agent as { description?: string }
       ).description;
-      assert.match(description ?? '', /Available: scout\./);
+      assert.match(
+        description ?? '',
+        /Available: scout \(scout test profile\)\./,
+      );
       assert.doesNotMatch(description ?? '', /secret/);
     },
   );

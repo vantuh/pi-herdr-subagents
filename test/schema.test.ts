@@ -90,11 +90,30 @@ test('the dynamic agent listing drops disable-model-invocation profiles', () => 
   assert.doesNotMatch(description, /scout, scout/);
 });
 
+test('the dynamic agent listing shows each profile description', () => {
+  const description = describeAgentProfiles([
+    { name: 'scout', description: 'Fast codebase recon' },
+    { name: 'ghost', description: '  ' },
+  ]);
+  assert.match(
+    description,
+    /Available: scout \(Fast codebase recon\), ghost\./,
+  );
+});
+
 test('the agent listing falls back to the plain description', () => {
   assert.match(describeAgentProfiles([]), /Agent profile name/);
   assert.doesNotMatch(describeAgentProfiles([]), /Available:/);
   assert.match(
-    describeAgentProfiles([{ name: 'ghost', disableModelInvocation: true }]),
+    describeAgentProfiles([
+      { name: 'ghost', description: 'hidden', disableModelInvocation: true },
+    ]),
     /Agent profile name/,
+  );
+  assert.doesNotMatch(
+    describeAgentProfiles([
+      { name: 'ghost', description: 'hidden', disableModelInvocation: true },
+    ]),
+    /hidden/,
   );
 });

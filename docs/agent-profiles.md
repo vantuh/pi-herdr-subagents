@@ -94,6 +94,9 @@ filesystem order, which is not defined; keep names unique.
 `agent` parameter description and from the `Available:` list in the
 unknown-agent error. The profile is still spawnable by exact name.
 
+The parameter description lists each visible profile as `name (description)`,
+using the frontmatter `description`; a profile without one is listed by name.
+
 ## Related
 
 - [README.md](../README.md#agent-profiles) — overview of profiles.

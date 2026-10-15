@@ -13,18 +13,22 @@ export const DEFAULT_AGENT_PARAM_DESCRIPTION =
 export function describeAgentProfiles(
   profiles: ReadonlyArray<{
     name: string;
+    description?: string;
     disableModelInvocation?: boolean;
   }>,
 ): string {
-  const names = [
-    ...new Set(
-      profiles
-        .filter((profile) => profile.name && !profile.disableModelInvocation)
-        .map((profile) => profile.name),
-    ),
-  ];
+  const listable = new Map<string, string | undefined>();
+  for (const profile of profiles) {
+    if (!profile.name || profile.disableModelInvocation) continue;
+    if (listable.has(profile.name)) continue;
+    listable.set(profile.name, profile.description?.trim() || undefined);
+  }
 
-  const listing = names.length > 0 ? ` Available: ${names.join(', ')}.` : '';
+  const entries = [...listable].map(([name, description]) =>
+    description ? `${name} (${description})` : name,
+  );
+  const listing =
+    entries.length > 0 ? ` Available: ${entries.join(', ')}.` : '';
   return `${DEFAULT_AGENT_PARAM_DESCRIPTION}${listing}`;
 }
 

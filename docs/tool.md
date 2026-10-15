@@ -19,7 +19,7 @@ The document has two parts:
 | `promptSnippet` | `Delegate exploration, research, planning, review, and isolated implementation to a one-shot Herdr agent.` |
 | `promptGuidelines` | `Use herdr_agent when isolated context helps, after /run, or on an explicit delegation request.` and `Follow the Herdr agents system instructions for self-contained tasks, independent parallel calls, avoiding duplicate work, status checks, and resume.` |
 
-The tool is registered with a static `agent` description at load. On `session_start` (including `/reload`) it is registered again, replacing the first registration, with the profile names discovered from the working directory appended as ` Available: a, b, c.` Profiles with `disable-model-invocation` are left out of that listing but can still be spawned by exact name.
+The tool is registered with a static `agent` description at load. On `session_start` (including `/reload`) it is registered again, replacing the first registration, with the profiles discovered from the working directory appended as ` Available: scout (Fast codebase recon), worker (Isolated implementation).` — each entry is the profile name plus its frontmatter `description` in parentheses, omitted when the profile has none. Profiles with `disable-model-invocation` are left out of that listing but can still be spawned by exact name.
 
 Child Pi panes (`HERDR_AGENT_CHILD=1`) never get this tool.
 
@@ -170,7 +170,7 @@ Herdr CLI failures and malformed Herdr output are thrown as tool errors with the
 On every Orchestrator turn the extension appends `GLOBAL_INSTRUCTIONS` (`src/prompts.ts`) to the system prompt through `before_agent_start`. It repeats the usage rules above and adds policy that is not enforced by the schema:
 
 - Use `herdr_agent` for delegation instead of raw Herdr CLI commands.
-- Pick the smallest suitable profile from the `Available:` list; the instructions name no profiles.
+- Pick the smallest suitable profile from the `Available:` list, which shows each profile's description; the instructions name no profiles.
 - Agents do not see the conversation, so each task is self-contained: goal, scope, paths or links, constraints, expected output, read-only vs edit permission, and, for edits, the check to run.
 - Run parallel calls only for independent reads or disjoint write slices (at most 4), each with a distinct `tabLabel`.
 - Every call returns when the task is submitted; the result or question arrives as a message. Never wait with status checks or `sleep`, and do not redo delegated work; end the turn or do unrelated work.
