@@ -122,9 +122,13 @@ invalid file falls back to the defaults:
 | `pane` | The first agent splits the orchestrator pane 60/40; further agents stack in the right column. |
 | `tab` | One tab per agent in the current workspace. |
 
-The file is read on every spawn. **Do not change `layout` while agents are
-live:** they become orphaned. They stay visible and closable through
-`/herdr-agents`, but status checks and reuse only find agents of the configured layout.
+The file is read once when the extension is loaded, not on every spawn.
+Config changes only take effect on `/reload` (or after restarting Pi); editing it
+mid-session has no effect. **Do not change `layout` while agents are
+live:** the running session keeps the old layout until reload, and after the
+reload the agents of the previous layout become orphaned. They stay visible and
+closable through `/herdr-agents`, but status checks and reuse only find agents of
+the configured layout.
 
 ## Development
 

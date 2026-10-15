@@ -3,7 +3,9 @@
 User settings live in one JSON file, `herdr-agents.json`, in the Pi agent
 directory. The default path is `~/.pi/agent/herdr-agents.json`.
 
-The file is read on every spawn. It is not part of the `herdr_agent` tool
+The file is read once when the extension is loaded, so it is not re-read per
+spawn. An edit takes effect on `/reload` (or after restarting Pi), never
+mid-session. It is not part of the `herdr_agent` tool
 schema. Source: `src/config.ts`.
 
 ## Example
@@ -33,9 +35,10 @@ is not an object yields `{}`, so every field falls back to its default.
 | `pane` | The first agent splits the Orchestrator pane 60/40. Later agents stack in the right column. |
 | `tab` | One tab per agent in the Orchestrator's current workspace. |
 
-Do not change `layout` while agents are live. Existing agents stay visible and
-closable through `/herdr-agents`, but status checks and reuse only find agents of the layout
-now in the file.
+Do not change `layout` while agents are live. The running session keeps the old
+layout until reload, and after that reload existing agents stay visible and
+closable through `/herdr-agents`, but status checks and reuse only find agents of
+the layout now in the file.
 
 `workspace.label` must not be the label of the Orchestrator's own workspace.
 A match fails the spawn and leaves the Orchestrator workspace unchanged.

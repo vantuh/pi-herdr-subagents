@@ -1,7 +1,7 @@
 import { readAgentQuestion, readAgentResult } from '../artifacts.ts';
 import {
   getHerdrAgentsWorkspaceLabel,
-  loadHerdrAgentsConfig,
+  type HerdrAgentsConfig,
 } from '../config.ts';
 import { getAgentSnapshot, isSettledAgentStatus } from '../herdr/agent.ts';
 import {
@@ -57,6 +57,7 @@ export async function executeAgentStatus(args: {
   tabLabel: string | undefined;
   baseLabel: string;
   layout: HerdrAgentLayout;
+  config: HerdrAgentsConfig;
   ownerSessionId?: string;
   signal?: AbortSignal;
 }) {
@@ -73,7 +74,7 @@ export async function executeAgentStatus(args: {
   const agentsWorkspaceId =
     layout === 'workspace'
       ? await findAgentsWorkspaceId(
-          getHerdrAgentsWorkspaceLabel(await loadHerdrAgentsConfig()),
+          getHerdrAgentsWorkspaceLabel(args.config),
           signal,
         )
       : undefined;

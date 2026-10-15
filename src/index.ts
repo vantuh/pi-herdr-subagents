@@ -3,6 +3,7 @@ import type { AutocompleteItem } from '@earendil-works/pi-tui';
 
 import { discoverAgents } from './agents.ts';
 import { registerChildMode } from './child.ts';
+import { loadHerdrAgentsConfig } from './config.ts';
 import { buildRunTurnInstructions, GLOBAL_INSTRUCTIONS } from './prompts.ts';
 import {
   formatRunUserMessage,
@@ -29,6 +30,9 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
     registerChildMode(pi);
     return;
   }
+
+  // Read once per extension load: herdr-agents.json changes apply on /reload.
+  const configPromise = loadHerdrAgentsConfig();
 
   registerHerdrAgentTool(pi);
   // A /reload leaves the previous instance's poller running with a stale ctx.
@@ -164,7 +168,14 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       parameters: buildHerdrAgentParams(agentDescription),
 
       async execute(_toolCallId, params, signal, onUpdate, ctx) {
-        return await executeHerdrAgent(pi, params, signal, onUpdate, ctx);
+        return await executeHerdrAgent(
+          pi,
+          params,
+          signal,
+          onUpdate,
+          ctx,
+          configPromise,
+        );
       },
     });
   }

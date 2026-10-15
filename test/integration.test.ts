@@ -1296,23 +1296,19 @@ test('follow-up spawns perform no extra spawn-phase tab close', async () => {
 });
 
 test("refuses a workspace.label that matches the Orchestrator's own workspace", async () => {
-  await withHarness({ layout: 'workspace' }, async (harness) => {
-    const agentDir = process.env.PI_CODING_AGENT_DIR;
-    assert.ok(agentDir, 'expected the harness to set PI_CODING_AGENT_DIR');
-    await fs.writeFile(
-      path.join(agentDir, 'herdr-agents.json'),
-      `${JSON.stringify({ layout: 'workspace', workspace: { label: 'main' } })}\n`,
-    );
-
-    const result = await harness.call({ agent: 'scout', task: 'nope' });
-    assert.equal(result.isError, true);
-    assert.match(
-      result.content[0].text,
-      /workspace\.label matches this Orchestrator's own workspace/,
-    );
-    assert.match(result.content[0].text, /herdr-agents\.json/);
-    assert.equal(harness.fake.callsMatching('tab', 'create').length, 0);
-  });
+  await withHarness(
+    { config: { layout: 'workspace', workspace: { label: 'main' } } },
+    async (harness) => {
+      const result = await harness.call({ agent: 'scout', task: 'nope' });
+      assert.equal(result.isError, true);
+      assert.match(
+        result.content[0].text,
+        /workspace\.label matches this Orchestrator's own workspace/,
+      );
+      assert.match(result.content[0].text, /herdr-agents\.json/);
+      assert.equal(harness.fake.callsMatching('tab', 'create').length, 0);
+    },
+  );
 });
 
 test('resumeClosed archives and resumes in workspace mode', async () => {

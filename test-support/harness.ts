@@ -53,6 +53,11 @@ export interface HarnessOptions {
    * to "pane"; "workspace" exercises the extension's real default explicitly.
    */
   layout?: 'pane' | 'tab' | 'workspace';
+  /**
+   * Full herdr-agents.json content, written before activation. Overrides
+   * `layout` when present.
+   */
+  config?: Record<string, unknown>;
   hasUI?: boolean;
   mode?: ExtensionMode;
   isIdle?: boolean;
@@ -120,7 +125,7 @@ export async function createHarness(
   // Layout config lives in the agent dir (herdr-agents.json), not in env.
   await fs.writeFile(
     path.join(agentDir, 'herdr-agents.json'),
-    `${JSON.stringify({ layout: options.layout ?? 'pane' })}\n`,
+    `${JSON.stringify(options.config ?? { layout: options.layout ?? 'pane' })}\n`,
     'utf8',
   );
 

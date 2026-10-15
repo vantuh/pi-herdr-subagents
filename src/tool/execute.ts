@@ -22,7 +22,6 @@ import {
 import {
   getHerdrAgentsLayout,
   getHerdrAgentsWorkspaceLabel,
-  loadHerdrAgentsConfig,
   type HerdrAgentsConfig,
 } from '../config.ts';
 import { promptAgent, startAgent } from '../herdr/agent.ts';
@@ -182,6 +181,7 @@ export async function executeHerdrAgent(
   signal: AbortSignal | undefined,
   onUpdate: AgentToolUpdateCallback<Record<string, unknown>> | undefined,
   ctx: ExtensionToolContext,
+  configPromise: Promise<HerdrAgentsConfig>,
 ): Promise<AgentToolResult<Record<string, unknown>>> {
   const agents = await discoverAgents(ctx.cwd);
   const agent = agents.find((item) => item.name === params.agent);
@@ -205,7 +205,7 @@ export async function executeHerdrAgent(
     );
   }
 
-  const config = await loadHerdrAgentsConfig();
+  const config = await configPromise;
   const layout = getHerdrAgentsLayout(config);
   const baseLabel = params.tabLabel?.trim() || titleCase(agent.name);
   const resumeClosed = params.resumeClosed === true;
@@ -238,6 +238,7 @@ export async function executeHerdrAgent(
       tabLabel: params.tabLabel,
       baseLabel,
       layout,
+      config,
       ownerSessionId: owner.ownerSessionId,
       signal,
     });
