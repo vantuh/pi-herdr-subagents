@@ -1,7 +1,8 @@
 # herdr_agent flow
 
-Current runtime: Pi `1.2.0`, Herdr client/server `0.9.5`, official Pi integration
-`v9`. See [README.md](../README.md) for loading and tool parameters.
+Current runtime: Pi `1.3.0`, Herdr client/server `0.9.5`, official Pi integration
+`v9`. See [README.md](../README.md) for loading, tool parameters, and the current
+development SDK version mismatch.
 
 ## Loading and profiles
 

@@ -1,8 +1,12 @@
 # AGENTS.md — pi-herdr-subagents
 
 Pi extension that adds the `herdr_agent` tool: one-shot delegation to child Pi
-agents running in Herdr. Targets Pi `1.2.0`, Herdr client/server `0.9.5`, and
-Herdr's Pi integration `v9`; no compatibility layer for older versions.
+agents running in Herdr. Targets the installed Pi `1.3.0`, Herdr client/server
+`0.9.5`, and Herdr's Pi integration `v9`; no compatibility layer for older
+versions. The development dependency `@earendil-works/pi-coding-agent` is
+`1.2.0` in `package-lock.json`, and type-checking plus the unit/integration
+suites compile against that SDK: revalidate `1.2.0`-source findings against
+`1.3.0` before relying on them.
 [README.md](README.md) covers usage; `docs/` covers the tool contract, runtime
 flow, config and profiles. Keep those in sync when behavior changes.
 

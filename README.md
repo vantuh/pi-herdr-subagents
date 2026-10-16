@@ -31,11 +31,18 @@ the Orchestrator as a message when the child finishes.
 
 ## Requirements
 
-- Pi `1.2.0`.
+- Pi `1.3.0`.
 - Herdr client and server `0.9.5`.
 - Herdr's Pi integration `v9`: `herdr integration install pi`.
 - The Orchestrator Pi session runs inside a Herdr pane, in interactive (TUI)
   mode. RPC, JSON and print modes are not supported.
+
+The runtime Pi is `1.3.0`. The development dependency
+`@earendil-works/pi-coding-agent` is still `1.2.0` in `package-lock.json`, and
+that is the SDK `npm run typecheck` and the unit/integration suites resolve from
+`node_modules`. Findings read from that `1.2.0` source, and compatibility with
+it, are not revalidated against `1.3.0`; treat them as unconfirmed until the
+dependency is aligned.
 
 ## Installation
 
