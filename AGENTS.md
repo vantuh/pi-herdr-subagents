@@ -22,6 +22,9 @@ flow, config and profiles. Keep those in sync when behavior changes.
 - `src/child.ts` — child mode: `ask_question` and the result writer.
 - `src/utils.ts` — shared helpers: agent naming, title casing, error messages, best-effort state persistence.
 - `src/output.ts` — child output, status-preview and spawn-warning formatting.
+- `src/reports.ts` — durable result reports: agent-dir reports directory policy,
+  immutable report naming and write protocol, TTL prune, report-write failure
+  hook.
 - `src/herdr/schema.ts` — Herdr CLI/API schemas: pane, created pane, tab, workspace, named agent, session snapshot.
 - `src/herdr/types.ts` — runtime projections: `HerdrContext`, `ReusableAgentTab`, `HerdrAgentInfo`.
 - `src/herdr/cli.ts` — Herdr CLI/API process wrappers, argument redaction, error parsing.
@@ -92,6 +95,13 @@ Easy to break and not obvious from one file:
   The parent clears old result/interruption artifacts before a new task.
 - `herdr_agent` refuses to run outside TUI mode before any Herdr call, because
   only the TUI poller delivers outcomes.
+- A delivered result is copied to an immutable report under
+  `<getAgentDir()>/herdr-agents-results` between the claim and the close, so the
+  temp artifact never holds the only plain-text copy. Delivery truncates only
+  when that report exists: a failed save delivers the full text with a warning.
+  The directory is a real `0700` directory (never a symlink leaf), reports are
+  `0600` created with `wx`, and pruning removes only own names stamped 30 days
+  back — never by a timer, and never a name it cannot date.
 - `HERDR_PANE_ID` identifies the Orchestrator pane, not the focused pane: focus
   can move while a tool runs.
 - Children start with `HERDR_AGENT_CHILD=1`, which registers only

@@ -120,6 +120,17 @@ question delivery does not terminate the turn. The parent
 returns/delivers the question and leaves the one-shot open. Answer by sending
 a normal `task` with the same `tabLabel`.
 
+After the claim and before the notification, the close and the temp cleanup, the
+complete result is copied once to a report file under
+`<agent dir>/herdr-agents-results` (`src/reports.ts`). The delivered text is
+bounded only when that copy exists: above 6 000 retained source characters it is
+the first 4 000 and the last 2 000 around an exact `… N characters omitted …`
+marker plus the report path. A report write that fails delivers the complete
+text with a warning, never a silent truncation. Questions and interrupted runs
+write no report. Report retention (30 days from the stamp in the file name,
+pruned at load and after each save) is separate from the closed-history
+retention, and neither one re-delivers the other's data.
+
 If the agent settled without a result artifact, a status check reports
 `finished without a result`; the poller does not deliver that case and the agent
 stays open. A working agent without an artifact reports its Herdr status.
@@ -139,8 +150,10 @@ target instead of spawning. Historical persistent records remain stored but
 unmanaged; they are never converted to closable one-shots or claimed for delivery.
 Successful collection stages continuation
 metadata before closing the owned pane/tab. Only then does the extension
-finalize the archived history and clean up temporary files. Close failures
-return the collected output with a warning and leave the target inspectable.
+finalize the archived history and clean up temporary files. The durable report
+is written before that close, so closing never discards the delivered text. Close
+failures return the collected output with a warning and leave the target
+inspectable.
 
 `resumeClosed: true` requires an explicit `tabLabel` and a non-empty `task`.
 The extension validates session ID/cwd against the native JSONL header and

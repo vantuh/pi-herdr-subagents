@@ -872,3 +872,44 @@ test('delivers an unseen real child that finishes in the background', async () =
     assert.deepEqual((await harness.readState()).agents, {});
   });
 });
+
+test('archives a long real child result and delivers an excerpt with its report path', async () => {
+  // A real Pi child writing a report longer than the retained budget: the
+  // delivered message must carry the excerpt and the path, and the file must
+  // still hold the whole text after the child's own pane has closed.
+  await withE2e({}, async (harness) => {
+    const report = [
+      'FINDINGS',
+      ...Array.from(
+        { length: 60 },
+        (_, index) => `finding ${index}: ${'evidence '.repeat(20).trim()}`,
+      ),
+      'HERDR_RESULT: done — MOCK_CHILD_OK',
+    ].join('\n');
+    harness.llm.setScript(() => ({ text: report, delayMs: 0 }));
+
+    await harness.call({ agent: 'scout', task: 'Write a long report.' });
+    await harness.waitFor(
+      () => harness.messages.length > 0,
+      'detached delivery of a long real result',
+      60000,
+    );
+
+    const [message] = harness.messages;
+    assert.equal(message?.customType, 'herdr_agent_result');
+    assert.match(message?.content ?? '', /characters omitted/);
+    assert.match(message?.content ?? '', /FINDINGS/);
+    assert.match(message?.content ?? '', /MOCK_CHILD_OK/);
+
+    const reportPath = /Full report saved to (\S+)/.exec(
+      message?.content ?? '',
+    )?.[1];
+    assert.ok(reportPath, 'expected a report path line');
+    assert.equal(
+      path.dirname(reportPath),
+      path.join(harness.root, 'home', '.pi', 'agent', 'herdr-agents-results'),
+      'the report belongs to the hermetic agent dir',
+    );
+    assert.equal(await fs.readFile(reportPath, 'utf8'), report);
+  });
+});

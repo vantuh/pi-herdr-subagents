@@ -434,19 +434,50 @@ environment variable.
 
 ## Steps
 
-- [ ] Slice 1 — `src/reports.ts` plus `test/reports.test.ts` (naming,
+- [x] Slice 1 — `src/reports.ts` plus `test/reports.test.ts` (naming,
       permissions, directory policy, write protocol, TTL, ownership, failure
       injection).
-- [ ] Slice 2 — `src/output.ts` retained-source budget and
+- [x] Slice 2 — `src/output.ts` retained-source budget and
       `formatResultForDelivery` plus `test/output.test.ts` cases.
-- [ ] Slice 3 — wire the save and the bounded body into
+- [x] Slice 3 — wire the save and the bounded body into
       `src/ui/detached-outcomes.ts`; `test/integration-bounded-delivery.test.ts`.
-- [ ] Slice 4 — synchronous capture and startup prune in `src/index.ts` (the
+- [x] Slice 4 — synchronous capture and startup prune in `src/index.ts` (the
       capture-versus-restoration unit case lives in slice 1's file).
-- [ ] Slice 5 — docs: `README.md`, `docs/flow.md`, `docs/tool.md`,
+- [x] Slice 5 — docs: `README.md`, `docs/flow.md`, `docs/tool.md`,
       `docs/config.md`, `AGENTS.md` file list and invariants.
-- [ ] Slice 6 — e2e case for a long real child result; run all four check
+- [x] Slice 6 — e2e case for a long real child result; run all four check
       commands plus `git diff --check`.
+
+## Deviations from the plan
+
+- `fs.writeFile(handle, text, 'utf8')` instead of `handle.writeFile(text,
+  'utf8')`: same call (the type docs alias one to the other), and the promise
+  form is what `@types/node` types on a `FileHandle` path argument.
+- No `clearReportWriteFailures` export: `setFailNextReportWrites(0)` already
+  clears the counter, so the integration harness teardown calls that.
+- `test/reports.test.ts` seeds TTL fixtures through `saveAgentReport` with an
+  injected `now` instead of hand-building file names, which keeps one naming
+  format in the repo. The seeding order is `fresh` before `older` so an
+  intermediate save-clock sweep cannot eat a fixture.
+- The capture-versus-restoration case sets `PI_CODING_AGENT_DIR` to a second
+  temp dir on restore rather than the ambient value, because the ambient value
+  during a unit run is the real `~/.pi/agent` and the case must not write there.
+- `saveAgentReport` resolves `reportsDir` with `path.resolve` so the returned
+  path and the prune target are the same absolute directory.
+- Review follow-ups: `reportSavedAt` now requires the stamp to survive a round
+  trip through `reportStamp`, so a name carrying an impossible time (minute 60,
+  hour 24) is left alone and the unit fixture `20200101T006000000Z-scout-1a2b3c4d.md`
+  pins it; `reportStamp` is `toISOString().replace(/[-:.]/g, '')` instead of a
+  manual `pad`; `pruneExpiredReports` dropped the unused `ttlDays` option, since
+  the TTL is the fixed `REPORT_TTL_DAYS`; and the capture-versus-restoration
+  case restores the original environment in its `finally` before deleting its
+  temp dirs, so no leaked default-directory call resolves a removed path.
+
+## Checks
+
+`npm run typecheck`, `npm run lint`, `npm run test:unit` (234 passed),
+`npm run test:integration` (147 passed), `npm run test:e2e` (16 passed) and
+`git diff --check` all green.
 
 ## Tests
 

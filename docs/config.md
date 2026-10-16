@@ -48,4 +48,7 @@ A match fails the spawn and leaves the Orchestrator workspace unchanged.
 Wait timeout (600 s), profile `model` / `thinking` / `tools`, and state-file
 paths are not JSON settings. `HERDR_AGENTS_STATE_PATH`,
 `HERDR_AGENTS_LOCK_WAIT_MS`, and `HERDR_AGENTS_CLAIM_LEASE_MS` are environment
-variables for tests and debugging.
+variables for tests and debugging. The durable-report directory
+(`<agent dir>/herdr-agents-results`) and its 30-day retention are not
+configurable either: the directory follows `PI_CODING_AGENT_DIR`, and the
+retention is the fixed `REPORT_TTL_DAYS` in `src/reports.ts`.

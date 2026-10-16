@@ -1,6 +1,12 @@
+import { REPORT_TTL_DAYS } from './reports.ts';
+
 /** Display budget for the status preview, not a filter on its content. */
 const PREVIEW_LINES = 30;
 const PREVIEW_CHARS = 2_000;
+
+/** Retained-source budget, not an output budget: the marker and path add their own overhead. */
+export const RESULT_EXCERPT_HEAD_CHARS = 4_000;
+export const RESULT_EXCERPT_TAIL_CHARS = 2_000;
 
 /**
  * Bounded preview of the child's latest captured assistant text. Content is
@@ -16,6 +22,109 @@ export function formatAssistantPreview(text: string): string {
     truncated = true;
   }
   return truncated ? `… (truncated)\n${preview}` : preview;
+}
+
+function isHighSurrogate(code: number): boolean {
+  return code >= 0xd800 && code <= 0xdbff;
+}
+
+function isLowSurrogate(code: number): boolean {
+  return code >= 0xdc00 && code <= 0xdfff;
+}
+
+/** Whole lines from the start within `budget`, or '' when not even one fits. */
+function leadingLines(text: string, budget: number): string {
+  const lines = text.split('\n');
+  let length = 0;
+  let count = 0;
+  for (const line of lines) {
+    const added = count === 0 ? line.length : line.length + 1;
+    if (length + added > budget) break;
+    length += added;
+    count += 1;
+  }
+  return count === 0 ? '' : lines.slice(0, count).join('\n');
+}
+
+/** Whole lines from the end within `budget`, or '' when not even one fits. */
+function trailingLines(text: string, budget: number): string {
+  const lines = text.split('\n');
+  let length = 0;
+  let count = 0;
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const added = count === 0 ? lines[index].length : lines[index].length + 1;
+    if (length + added > budget) break;
+    length += added;
+    count += 1;
+  }
+  return count === 0 ? '' : lines.slice(lines.length - count).join('\n');
+}
+
+/** Character cut that never leaves a lone surrogate at the cut. */
+function cutHead(text: string, budget: number): string {
+  let end = Math.min(budget, text.length);
+  if (
+    end > 0 &&
+    end < text.length &&
+    isHighSurrogate(text.charCodeAt(end - 1)) &&
+    isLowSurrogate(text.charCodeAt(end))
+  ) {
+    end -= 1;
+  }
+  return text.slice(0, end);
+}
+
+function cutTail(text: string, budget: number): string {
+  let start = Math.max(0, text.length - budget);
+  if (
+    start > 0 &&
+    start < text.length &&
+    isLowSurrogate(text.charCodeAt(start)) &&
+    isHighSurrogate(text.charCodeAt(start - 1))
+  ) {
+    start += 1;
+  }
+  return text.slice(start);
+}
+
+function retainedHead(text: string, budget: number): string {
+  return (leadingLines(text, budget) || cutHead(text, budget)).trimEnd();
+}
+
+function retainedTail(text: string, budget: number): string {
+  return (trailingLines(text, budget) || cutTail(text, budget)).trimStart();
+}
+
+/**
+ * The delivered body of a collected result: the full text, or a head/tail
+ * excerpt when a durable report of it exists. Truncation never happens without
+ * `reportPath`, because the report is the only copy of what the excerpt drops.
+ */
+export function formatResultForDelivery(input: {
+  result: string;
+  tabLabel: string;
+  reportPath?: string;
+  reportError?: string;
+}): string {
+  if (input.reportError) {
+    return `${input.result}\n\nWarning: failed to save the full report for Herdr agent ${input.tabLabel}: ${input.reportError}. Delivering the full result instead.`;
+  }
+  if (!input.reportPath) return input.result;
+  if (
+    input.result.length <=
+    RESULT_EXCERPT_HEAD_CHARS + RESULT_EXCERPT_TAIL_CHARS
+  ) {
+    return `${input.result}\n\nFull report saved to ${input.reportPath}`;
+  }
+
+  const head = retainedHead(input.result, RESULT_EXCERPT_HEAD_CHARS);
+  const tail = retainedTail(input.result, RESULT_EXCERPT_TAIL_CHARS);
+  // Exact by construction: head and tail are the slices the excerpt keeps.
+  const omitted = input.result.length - head.length - tail.length;
+  return (
+    `${head}\n\n… ${omitted} characters omitted …\n\n${tail}\n\n` +
+    `Full report saved to ${input.reportPath} (kept ${REPORT_TTL_DAYS} days) — read it when you need the omitted part.`
+  );
 }
 
 export function formatAgentOutput(

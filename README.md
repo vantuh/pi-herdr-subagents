@@ -19,6 +19,10 @@ the Orchestrator as a message when the child finishes.
   and questions arrive exactly once.
 - **File-based results.** Results are written to artifact files, so long output
   does not depend on terminal scrollback.
+- **Durable reports.** Every delivered result is also saved as a plain-text
+  report under `~/.pi/agent/herdr-agents-results` for 30 days. A long result is
+  delivered as a head/tail excerpt plus that path, so one big report cannot
+  flood the Orchestrator's context.
 - **Layouts.** Agents open in a dedicated Herdr workspace (default), as split
   panes, or as tabs in the current workspace.
 - **Commands.** `/run` delegates a task explicitly. `/herdr-agents` lists and
@@ -119,6 +123,18 @@ How an agent runs:
    answer and the same `tabLabel`.
 4. A child that stops without writing a result stays open. Inspect it or close
    it with `/herdr-agents`.
+
+Every delivered result is copied to a report file under
+`~/.pi/agent/herdr-agents-results`, one file per delivered outcome (a `resumeClosed`
+turn writes its own). The delivered message ends with `Full report saved to <path>`;
+read it with `offset`/`limit` to page through the part the message left out. A
+result above 6 000 characters arrives as its first 4 000 and last 2 000
+characters around a `… N characters omitted …` marker — that bound counts
+retained source characters, so the message itself is slightly longer than the
+excerpt. Reports are deleted 30 days after they are written, when the extension
+loads or after a new save; questions and interrupted runs write none. If a
+report cannot be written, the complete result is delivered with a warning
+instead of an excerpt.
 
 If a child hits a model limit, switch models in its pane and send `continue`.
 Manual and steering messages preserve its result channel. Failed or aborted

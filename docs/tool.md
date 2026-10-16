@@ -139,10 +139,22 @@ The tool call itself returns text as soon as the prompt is submitted. The child'
 | Outcome | Text | Notable `details` |
 |---|---|---|
 | Start | `Herdr agent <label> started (<paneId>).` (an answer: `Answer sent to Herdr agent <label> (<paneId>).`) plus the no-wait hint | `tabId`, `paneId`, `tabLabel`, `reused`, `agent`, optional `resumed`, optional `spawnWarnings` |
-| Delivered result (`herdr_agent_result`) | The captured assistant text. A failed close appends `Warning: failed to close one-shot Herdr agent <label>: <error>` | `tabLabel`, `agent`, `paneId` |
+| Delivered result (`herdr_agent_result`) | The captured assistant text plus `Full report saved to <path>`. Above 6 000 characters it is a head/tail excerpt around `… N characters omitted …`. A failed report save appends `Warning: failed to save the full report for Herdr agent <label>: <error>`, a failed close appends `Warning: failed to close one-shot Herdr agent <label>: <error>` | `tabLabel`, `agent`, `paneId` |
 | Delivered question (`herdr_agent_question`) | The question text above | `tabLabel`, `agent`, `paneId`, `question` |
 | Status check | `Herdr agent <label> (<paneId>) status: <status>.` (plus the no-wait hint while not settled), optionally followed by the assistant-text preview, or the question text, or `finished without a result` | `tabId`, `paneId`, `tabLabel`, `agent`, `status`; a question also sets `closed: false` |
 | Profile warnings | Appended `Spawn warnings:` list (unknown thinking level, ignored skills) | `spawnWarnings` |
+
+### Bounded delivery
+
+The full text of a delivered result is written once to a report file in
+`herdr-agents-results` inside the Pi agent directory (`src/reports.ts`), and the
+message states its absolute path. Above 6 000 characters the message keeps the
+first 4 000 and the last 2 000 characters (cut at line boundaries) and names the
+exact number of dropped characters. That bound counts retained source characters,
+not the total message: the marker and the path line are extra. `details` gains no
+key for the path — the model reads it in the message body. Questions, interrupted
+runs and manual closes write no report, and a report save that fails delivers the
+complete text with the warning above instead of an excerpt.
 
 ### Errors
 

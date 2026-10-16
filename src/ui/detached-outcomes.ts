@@ -13,13 +13,15 @@ import { execHerdr } from '../herdr/cli.ts';
 import type { HerdrAgentInfo } from '../herdr/types.ts';
 import {
   formatCollectedOutput,
+  formatResultForDelivery,
   formatSpawnWarnings,
   spawnWarningDetails,
 } from '../output.ts';
 import { formatAgentQuestion } from '../prompts.ts';
+import { saveAgentReport } from '../reports.ts';
 import { claimDetachedAgent } from '../state/lifecycle.ts';
 import { closeOneShot, dropCollectedSpawnWarnings } from '../tool/one-shot.ts';
-import { bestEffort } from '../utils.ts';
+import { bestEffort, errorMessage } from '../utils.ts';
 import {
   AGENT_QUESTION_MESSAGE_TYPE,
   AGENT_RESULT_MESSAGE_TYPE,
@@ -146,6 +148,19 @@ export async function deliverDetachedOutcomes(
     );
     if (!claimed) continue;
 
+    // Archive the complete result before Herdr is notified and the one-shot is
+    // closed, because closing deletes the temp artifact this text came from.
+    let reportPath: string | undefined;
+    let reportError: string | undefined;
+    try {
+      reportPath = await saveAgentReport({
+        text: result,
+        tabLabel: agent.tabLabel,
+      });
+    } catch (error) {
+      reportError = errorMessage(error);
+    }
+
     // Nobody was waiting — that is the definition of this delivery path — so
     // ping the user through Herdr's own notification channel. Pane-layout
     // agents are already visible on screen, so they stay silent. Best effort:
@@ -181,7 +196,12 @@ export async function deliverDetachedOutcomes(
     }
 
     const resultWithWarnings = formatCollectedOutput(
-      result,
+      formatResultForDelivery({
+        result,
+        tabLabel: agent.tabLabel,
+        reportPath,
+        reportError,
+      }),
       agent.tabLabel,
       closeError,
       agent.spawnWarnings ?? [],

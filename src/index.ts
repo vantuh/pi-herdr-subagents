@@ -5,6 +5,7 @@ import { discoverAgents } from './agents.ts';
 import { registerChildMode } from './child.ts';
 import { loadHerdrAgentsConfig } from './config.ts';
 import { buildRunTurnInstructions, GLOBAL_INSTRUCTIONS } from './prompts.ts';
+import { herdrAgentReportsDir, pruneExpiredReports } from './reports.ts';
 import {
   formatRunUserMessage,
   parseRunArgs,
@@ -33,6 +34,12 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
 
   // Read once per extension load: herdr-agents.json changes apply on /reload.
   const configPromise = loadHerdrAgentsConfig();
+  // Sweep expired durable reports at load. The directory is captured
+  // synchronously because the sweep is fire-and-forget: resolving it inside the
+  // sweep would read whatever agent dir the environment holds when it runs.
+  const reportsDir = herdrAgentReportsDir();
+  void pruneExpiredReports({ reportsDir });
+
   // Profile names for /run, discovered on session_start (and /reload).
   let agentNames: string[] = [];
 

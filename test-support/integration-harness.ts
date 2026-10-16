@@ -1,11 +1,12 @@
+import { setFailNextReportWrites } from '../src/reports.ts';
 import { clearStateSaveFailures } from '../src/state/store.ts';
 import { type Harness, type HarnessOptions, createHarness } from './harness.ts';
 
 /**
  * Harness wrapper for the flow suites.
  *
- * Injected state-save failures stay armed for the next mutation, so they are
- * cleared before `dispose()` runs its own shutdown writes.
+ * Injected state-save failures and report-write failures stay armed for the
+ * next mutation, so they are cleared before `dispose()` runs its own writes.
  */
 export async function withHarness(
   options: HarnessOptions,
@@ -16,6 +17,7 @@ export async function withHarness(
     await body(harness);
   } finally {
     clearStateSaveFailures();
+    setFailNextReportWrites(0);
     await harness.dispose();
   }
 }
