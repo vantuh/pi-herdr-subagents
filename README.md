@@ -32,7 +32,7 @@ the Orchestrator as a message when the child finishes.
 ## Requirements
 
 - Pi `1.2.0`.
-- Herdr client and server `0.9.4`.
+- Herdr client and server `0.9.5`.
 - Herdr's Pi integration `v9`: `herdr integration install pi`.
 - The Orchestrator Pi session runs inside a Herdr pane, in interactive (TUI)
   mode. RPC, JSON and print modes are not supported.

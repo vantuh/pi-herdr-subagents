@@ -1,7 +1,7 @@
 # AGENTS.md — pi-herdr-subagents
 
 Pi extension that adds the `herdr_agent` tool: one-shot delegation to child Pi
-agents running in Herdr. Targets Pi `1.2.0`, Herdr client/server `0.9.4`, and
+agents running in Herdr. Targets Pi `1.2.0`, Herdr client/server `0.9.5`, and
 Herdr's Pi integration `v9`; no compatibility layer for older versions.
 [README.md](README.md) covers usage; `docs/` covers the tool contract, runtime
 flow, config and profiles. Keep those in sync when behavior changes.
