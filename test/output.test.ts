@@ -113,20 +113,6 @@ function parseExcerpt(body: string): {
   };
 }
 
-function hasLoneSurrogate(text: string): boolean {
-  for (let index = 0; index < text.length; index += 1) {
-    const code = text.charCodeAt(index);
-    if (code >= 0xd800 && code <= 0xdbff) {
-      const next = text.charCodeAt(index + 1);
-      if (!(next >= 0xdc00 && next <= 0xdfff)) return true;
-      index += 1;
-    } else if (code >= 0xdc00 && code <= 0xdfff) {
-      return true;
-    }
-  }
-  return false;
-}
-
 test('delivers a small result whole plus the report path', () => {
   const body = formatResultForDelivery({
     result: 'Findings\n\nHERDR_RESULT: done — short',
@@ -215,6 +201,72 @@ test('cuts a single over-budget line by characters within each budget', () => {
   assert.equal(excerpt.omitted, report.length - 6_000);
 });
 
+test('keeps a whole line ending exactly at each budget', () => {
+  const atHeadBudget = `${'a'.repeat(RESULT_EXCERPT_HEAD_CHARS)}\n${'b'.repeat(1_000)}\n${'c'.repeat(3_000)}`;
+  const head = parseExcerpt(
+    formatResultForDelivery({
+      result: atHeadBudget,
+      tabLabel: 'Scout',
+      reportPath: '/tmp/reports/h.md',
+    }),
+  ).head;
+  assert.equal(head, 'a'.repeat(RESULT_EXCERPT_HEAD_CHARS));
+  assert.equal(atHeadBudget[head.length], '\n');
+
+  const overHeadBudget = `${'a'.repeat(3_000)}\n${'b'.repeat(1_000)}\n${'c'.repeat(3_000)}`;
+  const shorter = parseExcerpt(
+    formatResultForDelivery({
+      result: overHeadBudget,
+      tabLabel: 'Scout',
+      reportPath: '/tmp/reports/i.md',
+    }),
+  ).head;
+  // The line ending one unit past the budget is dropped whole, not cut.
+  assert.equal(shorter, 'a'.repeat(3_000));
+
+  const atTailBudget = `${'p'.repeat(4_001)}\n${'q'.repeat(1_995)}\nTAIL`;
+  const tail = parseExcerpt(
+    formatResultForDelivery({
+      result: atTailBudget,
+      tabLabel: 'Scout',
+      reportPath: '/tmp/reports/j.md',
+    }),
+  ).tail;
+  assert.equal(tail.length, RESULT_EXCERPT_TAIL_CHARS);
+  assert.equal(atTailBudget[atTailBudget.length - tail.length - 1], '\n');
+  assert.ok(tail.endsWith('TAIL'));
+});
+
+test('falls back to the character cut when the whole-line cut would be empty', () => {
+  const report = `\n${'x'.repeat(9_000)}`;
+  const excerpt = parseExcerpt(
+    formatResultForDelivery({
+      result: report,
+      tabLabel: 'Scout',
+      reportPath: '/tmp/reports/k.md',
+    }),
+  );
+  // A whole-line head would be empty, so the character cut keeps the newline.
+  assert.equal(excerpt.head.length, RESULT_EXCERPT_HEAD_CHARS);
+  assert.equal(excerpt.head[0], '\n');
+  assert.equal(excerpt.tail, 'x'.repeat(RESULT_EXCERPT_TAIL_CHARS));
+  assert.equal(excerpt.omitted, 3_001);
+});
+
+test('trims blank edge lines but still counts them as omitted', () => {
+  const report = `${'a'.repeat(3_000)}\n${'b'.repeat(3_000)}\n   \nTAIL\n\n`;
+  const excerpt = parseExcerpt(
+    formatResultForDelivery({
+      result: report,
+      tabLabel: 'Scout',
+      reportPath: '/tmp/reports/l.md',
+    }),
+  );
+  assert.equal(excerpt.head, 'a'.repeat(3_000));
+  assert.equal(excerpt.tail, 'TAIL\n\n');
+  assert.equal(excerpt.omitted, 3_006);
+});
+
 test('never leaves a lone surrogate at a character cut', () => {
   const report = `a${'😀'.repeat(4_000)}`;
   const body = formatResultForDelivery({
@@ -224,8 +276,8 @@ test('never leaves a lone surrogate at a character cut', () => {
   });
   const excerpt = parseExcerpt(body);
 
-  assert.ok(!hasLoneSurrogate(excerpt.head));
-  assert.ok(!hasLoneSurrogate(excerpt.tail));
+  assert.ok(excerpt.head.isWellFormed());
+  assert.ok(excerpt.tail.isWellFormed());
   assert.ok(excerpt.head.length > 0 && excerpt.tail.length > 0);
   // The cut shrinks inward by one unit so the pair at the cut stays whole.
   assert.equal(excerpt.head.length, RESULT_EXCERPT_HEAD_CHARS - 1);
@@ -242,8 +294,8 @@ test('never leaves a lone surrogate at a character cut', () => {
     reportPath: '/tmp/reports/g.md',
   });
   const linedExcerpt = parseExcerpt(linedBody);
-  assert.ok(!hasLoneSurrogate(linedExcerpt.head));
-  assert.ok(!hasLoneSurrogate(linedExcerpt.tail));
+  assert.ok(linedExcerpt.head.isWellFormed());
+  assert.ok(linedExcerpt.tail.isWellFormed());
   assert.equal(
     linedExcerpt.omitted,
     lined.length - linedExcerpt.head.length - linedExcerpt.tail.length,

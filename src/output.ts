@@ -32,32 +32,17 @@ function isLowSurrogate(code: number): boolean {
   return code >= 0xdc00 && code <= 0xdfff;
 }
 
-/** Whole lines from the start within `budget`, or '' when not even one fits. */
-function leadingLines(text: string, budget: number): string {
-  const lines = text.split('\n');
-  let length = 0;
-  let count = 0;
-  for (const line of lines) {
-    const added = count === 0 ? line.length : line.length + 1;
-    if (length + added > budget) break;
-    length += added;
-    count += 1;
-  }
-  return count === 0 ? '' : lines.slice(0, count).join('\n');
+/** Whole-line cuts fall back to characters when no nonempty prefix fits. */
+function retainedHead(text: string, budget: number): string {
+  const end = text.lastIndexOf('\n', budget);
+  const whole = end > 0 ? text.slice(0, end) : '';
+  return (whole || cutHead(text, budget)).trimEnd();
 }
 
-/** Whole lines from the end within `budget`, or '' when not even one fits. */
-function trailingLines(text: string, budget: number): string {
-  const lines = text.split('\n');
-  let length = 0;
-  let count = 0;
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const added = count === 0 ? lines[index].length : lines[index].length + 1;
-    if (length + added > budget) break;
-    length += added;
-    count += 1;
-  }
-  return count === 0 ? '' : lines.slice(lines.length - count).join('\n');
+function retainedTail(text: string, budget: number): string {
+  const newline = text.indexOf('\n', text.length - budget - 1);
+  const whole = newline >= 0 ? text.slice(newline + 1) : '';
+  return (whole || cutTail(text, budget)).trimStart();
 }
 
 /** Character cut that never leaves a lone surrogate at the cut. */
@@ -85,14 +70,6 @@ function cutTail(text: string, budget: number): string {
     start += 1;
   }
   return text.slice(start);
-}
-
-function retainedHead(text: string, budget: number): string {
-  return (leadingLines(text, budget) || cutHead(text, budget)).trimEnd();
-}
-
-function retainedTail(text: string, budget: number): string {
-  return (trailingLines(text, budget) || cutTail(text, budget)).trimStart();
 }
 
 /**

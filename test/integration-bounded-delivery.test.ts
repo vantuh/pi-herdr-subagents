@@ -91,10 +91,15 @@ test('archives a long result and delivers a head/tail excerpt', async () => {
       'the omission count must match what the excerpt dropped',
     );
 
+    // Delivered once: one archived report, and the same one after more ticks.
+    assert.equal((await reports()).length, 1);
+
     // Delivered once, pane closed, state pruned.
     await harness.fire('session_start');
     await new Promise((resolve) => setTimeout(resolve, 300));
     assert.equal(harness.messages.length, 1);
+    assert.equal((await reports()).length, 1);
+    assert.equal(await fs.readFile(reportPath, 'utf8'), text);
     assert.deepEqual((await harness.readState()).agents, {});
   });
 });
@@ -209,26 +214,6 @@ test('an interrupted run is not delivered and not archived', async () => {
     await new Promise((resolve) => setTimeout(resolve, 500));
     assert.deepEqual(harness.messages, []);
     assert.deepEqual(await reports(), []);
-  });
-});
-
-test('delivers once and keeps exactly one report per outcome', async () => {
-  await withHarness({}, async (harness) => {
-    const text = longReport('HERDR_RESULT: done — once');
-    harness.fake.setBehavior(() => ({ result: text }));
-
-    await harness.call({ agent: 'scout', task: 'Write a long report' });
-    const delivered = await harness.collect('Scout');
-    const reportPath = reportPathIn(delivered.content);
-    assert.ok(reportPath);
-    assert.equal((await reports()).length, 1);
-
-    await harness.fire('session_start');
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    assert.equal(harness.messages.length, 1);
-    assert.equal((await reports()).length, 1);
-    assert.equal(await fs.readFile(reportPath, 'utf8'), text);
-    assert.deepEqual((await harness.readState()).agents, {});
   });
 });
 
