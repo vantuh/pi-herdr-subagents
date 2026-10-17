@@ -47,7 +47,7 @@ test('a profile pin reaches the next child argv and clearing it omits --model wi
   });
 });
 
-test('a profile without the optional frontmatter fields produces byte-for-byte the previous argv', async () => {
+test('a profile without the optional frontmatter fields produces the minimal spawn argv', async () => {
   await withHarness({}, async (harness) => {
     await harness.call({ agent: 'scout', task: 'Find it' });
 
@@ -58,6 +58,8 @@ test('a profile without the optional frontmatter fields produces byte-for-byte t
     const systemFile = flagValue(piArgs, '--append-system-prompt');
     assert.ok(systemFile);
     assert.deepEqual(piArgs, [
+      '--session-dir',
+      path.join(process.env.PI_CODING_AGENT_DIR!, 'herdr-agent-sessions'),
       '--name',
       'Scout',
       '--append-system-prompt',
@@ -103,6 +105,8 @@ test('a profile with every optional frontmatter field drives the exact spawn arg
       const systemFile = flagValue(piArgs, '--system-prompt');
       assert.ok(systemFile);
       assert.deepEqual(piArgs, [
+        '--session-dir',
+        path.join(process.env.PI_CODING_AGENT_DIR!, 'herdr-agent-sessions'),
         '--name',
         'Worker',
         '--model',

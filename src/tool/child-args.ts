@@ -1,4 +1,9 @@
-import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
+import * as path from 'node:path';
+
+import {
+  type ExtensionContext,
+  getAgentDir,
+} from '@earendil-works/pi-coding-agent';
 
 import { resolveProfileSkills, resolveThinkingLevel } from '../agents.ts';
 import type { AgentProfile } from '../agents/types.ts';
@@ -37,7 +42,11 @@ export async function buildChildPiArgs(options: {
   sessionFile?: string;
 }): Promise<{ piArgs: string[]; spawnWarnings: string[] }> {
   const spawnWarnings: string[] = [];
-  const piArgs: string[] = [];
+  // Keep child sessions outside the default /resume history.
+  const piArgs: string[] = [
+    '--session-dir',
+    path.join(getAgentDir(), 'herdr-agent-sessions'),
+  ];
   if (!options.sessionFile) {
     piArgs.push('--name', options.tabLabel);
   } else {

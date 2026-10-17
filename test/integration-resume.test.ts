@@ -199,6 +199,10 @@ test('archives a completed one-shot and resumes it with --session', async () => 
     const separator = resumeStart.indexOf('--');
     const piArgs = resumeStart.slice(separator + 1);
     assert.equal(flagValue(piArgs, '--session'), sessionFile);
+    assert.equal(
+      flagValue(piArgs, '--session-dir'),
+      path.join(process.env.PI_CODING_AGENT_DIR!, 'herdr-agent-sessions'),
+    );
     assert.equal(piArgs.includes('--name'), false);
 
     const after = (await harness.readState()).closedHistory ?? [];

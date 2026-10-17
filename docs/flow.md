@@ -59,10 +59,13 @@ Herdr starts a named Pi agent:
 
 ```bash
 herdr agent start <automation-name> --kind pi --pane <pane-id> --timeout 30000 -- \
+  --session-dir '<agentDir>/herdr-agent-sessions' \
   --name '<label>' --append-system-prompt '<system.md>'
 ```
 
 Profile model, thinking, skills, and tool restrictions add Pi arguments.
+Every child also gets `--session-dir <getAgentDir()>/herdr-agent-sessions`, so
+new child sessions land outside the default `/resume` history.
 The automation name is distinct from the display label and terminal ID.
 Herdr owns cold-shell startup retries and terminal-identity checks. It returns
 only when Pi is detected and ready for input. A current ACP provider may briefly
@@ -160,7 +163,9 @@ inspectable.
 The extension validates session ID/cwd against the native JSONL header and
 claims the matching owner-session history slot. Pi starts with `--session`
 pointing at that file, using the current profile policy from the archived cwd.
-It closes again after the next successful result.
+It closes again after the next successful result. Resumed children also receive
+`--session-dir`, but `--session` keeps the archived file at its existing path.
+Sessions created before directory isolation are not moved.
 
 A live label takes precedence: answer a parked question, check the status of
 active work, or wait for a detached outcome to be delivered. Resume never

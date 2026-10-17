@@ -165,6 +165,11 @@ sending a task, so you can read what it did; close it with `d` to archive it
 again. Anything typed into the reopened agent extends its session, and
 `resumeClosed` on that label is rejected while it stays open.
 
+New child sessions are stored in `<getAgentDir()>/herdr-agent-sessions`
+(default: `~/.pi/agent/herdr-agent-sessions`), outside the default `/resume`
+history. Use `resumeClosed` or `/herdr-agents` to reopen them. Existing child
+sessions are not moved and remain visible in the default history.
+
 ## Configuration
 
 Optional settings live in `~/.pi/agent/herdr-agents.json`. The file is read

@@ -108,6 +108,10 @@ Easy to break and not obvious from one file:
   back — never by a timer, and never a name it cannot date.
 - `HERDR_PANE_ID` identifies the Orchestrator pane, not the focused pane: focus
   can move while a tool runs.
+- Every child starts with `--session-dir <getAgentDir()>/herdr-agent-sessions`,
+  so child sessions stay out of the default project sessions tree the
+  Orchestrator's `/resume` picker reads. `resumeClosed` still reopens an archived
+  child by its explicit `--session` path.
 - Children start with `HERDR_AGENT_CHILD=1`, which registers only
   `ask_question` and the result writer, so children cannot delegate. They also
   get `PROCESS_LAUNCHED_BY_Q=1`, so Kiro's terminal wrapper does not hide the
