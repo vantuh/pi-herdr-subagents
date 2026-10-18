@@ -73,7 +73,7 @@ export function agentMenuItems(
     value: agent.tabId,
     label: `${agent.tabLabel} (${agent.agent})`,
     description: [
-      `status:${paint.status(agent.status)}`,
+      paint.status(agent.status),
       formatContextLabel(agent.context),
     ].join(' • '),
   }));

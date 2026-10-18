@@ -331,7 +331,8 @@ test('/herdr-agents shows a label longer than the default name column', async ()
     );
     assert.ok(row, `the name column clipped the label:\n${rows.join('\n')}`);
     // The description keeps its own column instead of being pushed out.
-    assert.match(row, /status:[a-z]+ • ctx/);
+    assert.match(row, /[a-z]+ • ctx/);
+    assert.doesNotMatch(row, /status:/);
     for (const line of rows) {
       assert.ok(
         visibleWidth(line) <= 120,

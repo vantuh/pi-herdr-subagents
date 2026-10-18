@@ -57,13 +57,13 @@ test('a live row shows status and current context instead of pane and cwd', () =
 
   assert.equal(items.length, 1);
   assert.equal(items[0]?.label, 'Scout (scout)');
-  assert.equal(items[0]?.description, 'status:S(working) • ctx 38k / 200k');
+  assert.equal(items[0]?.description, 'S(working) • ctx 38k / 200k');
 });
 
 test('a live row without a published sample reads as unknown, not as zero', () => {
   const items = agentMenuItems([agent()], [], paint);
 
-  assert.equal(items[0]?.description, 'status:S(working) • ctx —');
+  assert.equal(items[0]?.description, 'S(working) • ctx —');
 });
 
 test('a closed row keeps its status and date without a cwd or context', () => {
