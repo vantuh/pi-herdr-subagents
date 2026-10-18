@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 
+import { visibleWidth } from '@earendil-works/pi-tui';
 import { test } from 'vitest';
 
+import type { Harness } from '../test-support/harness.ts';
 import { flagValue, withHarness } from '../test-support/integration-harness.ts';
 
 /**
@@ -265,6 +267,98 @@ test('/herdr-agents does not list closed one-shots of another session', async ()
     // No rows: the empty-list dialog is shown and nothing is started.
     assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
     assert.deepEqual(harness.notifications, []);
+  });
+});
+
+/**
+ * Draws the real manager overlay at `width` without a TUI, so the test reads
+ * the same rows the terminal would.
+ */
+async function renderAgentRows(
+  harness: Harness,
+  width: number,
+): Promise<string[]> {
+  const command = harness.commands.get('herdr-agents');
+  if (!command) throw new Error('expected a /herdr-agents command');
+  const theme = {
+    fg: (_color: string, text: string) => text,
+    bg: (_color: string, text: string) => text,
+    bold: (text: string) => text,
+  };
+  let rows: string[] = [];
+  const ctx = {
+    mode: 'tui',
+    cwd: harness.cwd,
+    sessionManager: {
+      getSessionId: () => 'test-orch-session',
+      getSessionFile: () => path.join(harness.cwd, 'orchestrator.jsonl'),
+      getCwd: () => harness.cwd,
+    },
+    ui: {
+      theme,
+      notify: () => undefined,
+      custom: (factory: any) => {
+        const component = factory(
+          { requestRender: () => undefined },
+          theme,
+          {},
+          () => undefined,
+        );
+        rows = component.render(width);
+        return Promise.resolve(null);
+      },
+    },
+  };
+
+  await command.handler('', ctx);
+  return rows;
+}
+
+test('/herdr-agents shows a label longer than the default name column', async () => {
+  await withHarness({}, async (harness) => {
+    // A held child keeps the agent listed and its row single-line.
+    harness.fake.holdChildren();
+    await harness.callRaw({
+      agent: 'scout',
+      tabLabel: 'release-audit-specialist',
+      task: 'stay',
+    });
+
+    const rows = await renderAgentRows(harness, 120);
+
+    const row = rows.find((line) =>
+      line.includes('release-audit-specialist (scout)'),
+    );
+    assert.ok(row, `the name column clipped the label:\n${rows.join('\n')}`);
+    // The description keeps its own column instead of being pushed out.
+    assert.match(row, /status:[a-z]+ • ctx/);
+    for (const line of rows) {
+      assert.ok(
+        visibleWidth(line) <= 120,
+        `row overflows 120 columns: ${JSON.stringify(line)}`,
+      );
+    }
+  });
+});
+
+test('/herdr-agents rows stay inside a narrow terminal', async () => {
+  await withHarness({}, async (harness) => {
+    harness.fake.holdChildren();
+    await harness.callRaw({
+      agent: 'scout',
+      tabLabel: 'release-audit-specialist',
+      task: 'stay',
+    });
+
+    const rows = await renderAgentRows(harness, 40);
+
+    assert.ok(rows.length > 0);
+    for (const line of rows) {
+      assert.ok(
+        visibleWidth(line) <= 40,
+        `row overflows 40 columns: ${JSON.stringify(line)}`,
+      );
+    }
   });
 });
 

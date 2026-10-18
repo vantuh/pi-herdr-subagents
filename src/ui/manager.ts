@@ -122,13 +122,20 @@ async function pickAgentAction(
         new Text(theme.fg('accent', theme.bold('Herdr Agents')), 1, 0),
       );
 
-      const selectList = new SelectList(items, Math.min(items.length, 12), {
-        selectedPrefix: (text) => theme.fg('accent', text),
-        selectedText: (text) => theme.fg('accent', text),
-        description: (text) => theme.fg('muted', text),
-        scrollInfo: (text) => theme.fg('dim', text),
-        noMatch: (text) => theme.fg('warning', text),
-      });
+      const selectList = new SelectList(
+        items,
+        Math.min(items.length, 12),
+        {
+          selectedPrefix: (text) => theme.fg('accent', text),
+          selectedText: (text) => theme.fg('accent', text),
+          description: (text) => theme.fg('muted', text),
+          scrollInfo: (text) => theme.fg('dim', text),
+          noMatch: (text) => theme.fg('warning', text),
+        },
+        // Grow the name column to the longest label instead of the 32-column
+        // default, which clipped labels with a profile suffix.
+        { minPrimaryColumnWidth: 32, maxPrimaryColumnWidth: 48 },
+      );
       selectList.onSelect = (item) =>
         done({ action: 'focus', value: item.value });
       selectList.onCancel = () => done(null);
