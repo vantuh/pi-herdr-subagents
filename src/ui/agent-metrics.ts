@@ -5,11 +5,8 @@ import { bestEffort } from '../utils.ts';
 
 const UNKNOWN = '—';
 
-/**
- * Reads each listed agent's published context sample. A missing, unreadable or
- * invalid artifact leaves that row at `ctx —`; it never fails the whole list.
- */
-export async function attachAgentContext(
+/** A missing or unreadable metrics artifact must not hide other agents. */
+export async function attachAgentMetrics(
   agents: HerdrAgentInfo[],
 ): Promise<void> {
   await Promise.all(
@@ -17,7 +14,9 @@ export async function attachAgentContext(
       const meta = await bestEffort(undefined, () =>
         readAgentSessionMeta(agent.resultFile),
       );
-      if (meta?.context) agent.context = meta.context;
+      if (!meta) return;
+      if (meta.context) agent.context = meta.context;
+      if (meta.sessionCost !== undefined) agent.sessionCost = meta.sessionCost;
     }),
   );
 }
@@ -39,4 +38,11 @@ export function formatContextLabel(
   const tokens =
     context.tokens === null ? UNKNOWN : formatTokenCount(context.tokens);
   return `ctx ${tokens} / ${formatTokenCount(context.contextWindow)}`;
+}
+
+/** Approximate recorded session USD; distinguishes unreported cost from zero. */
+export function formatCostLabel(sessionCost: number | undefined): string {
+  if (sessionCost === undefined) return `cost ${UNKNOWN}`;
+  if (sessionCost > 0 && sessionCost < 0.001) return `<$0.001`;
+  return `~$${sessionCost.toFixed(3)}`;
 }

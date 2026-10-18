@@ -62,6 +62,8 @@ export interface FakeAgent {
   childSessionFile?: string;
   /** Context sample the simulated child publishes in `session.json`. */
   childContext?: { tokens: number | null; contextWindow: number };
+  /** Cumulative cost the simulated child publishes in `session.json`. */
+  childCost?: number;
 }
 
 /** What a simulated child does with one prompt. */
@@ -97,6 +99,12 @@ export interface ChildOutcome {
    * which is what a new assignment or a fresh child does.
    */
   context?: { tokens: number | null; contextWindow: number };
+  /**
+   * Cumulative cost published in `session.json` after this turn, as a real
+   * child publishes the sum of its recorded usage. Omit it for a child that
+   * recorded no cost-bearing usage.
+   */
+  cost?: number;
 }
 
 export interface ChildTurn {

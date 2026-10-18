@@ -330,8 +330,10 @@ test('/herdr-agents shows a label longer than the default name column', async ()
       line.includes('release-audit-specialist (scout)'),
     );
     assert.ok(row, `the name column clipped the label:\n${rows.join('\n')}`);
-    // The description keeps its own column instead of being pushed out.
-    assert.match(row, /[a-z]+ • ctx/);
+    // The description keeps its own column instead of being pushed out; the
+    // status and cost cells pad to the listing's widest so the separators stay
+    // aligned and the price stays inside the overlay.
+    assert.match(row, /[a-z]+ +• cost — • ctx/);
     assert.doesNotMatch(row, /status:/);
     for (const line of rows) {
       assert.ok(

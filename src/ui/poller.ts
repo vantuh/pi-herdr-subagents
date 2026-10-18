@@ -7,7 +7,7 @@ import { listManagedWorkspaceAgents } from '../herdr/placement.ts';
 import { loadContextWithState } from '../herdr/snapshot.ts';
 import type { HerdrAgentInfo } from '../herdr/types.ts';
 import { bestEffort } from '../utils.ts';
-import { attachAgentContext } from './agent-context.ts';
+import { attachAgentMetrics } from './agent-metrics.ts';
 import { deliverDetachedOutcomes } from './detached-outcomes.ts';
 import {
   AGENTS_WIDGET_ID,
@@ -105,7 +105,7 @@ async function updateAgentsWidget(
       ctx.ui.setWidget(AGENTS_WIDGET_ID, undefined);
       return;
     }
-    await attachAgentContext(agents);
+    await attachAgentMetrics(agents);
     signal.throwIfAborted();
     ctx.ui.setWidget(
       AGENTS_WIDGET_ID,

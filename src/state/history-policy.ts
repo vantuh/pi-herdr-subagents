@@ -2,6 +2,7 @@ import * as path from 'node:path';
 
 import { Value } from 'typebox/value';
 
+import { isSessionCost } from '../artifacts/schema.ts';
 import {
   ClosedAgentHistoryRecordInput,
   type ClosedAgentHistoryRecord,
@@ -42,9 +43,12 @@ export function parseClosedHistory(raw: unknown): ClosedAgentHistoryRecord[] {
       continue;
     }
     if (!path.isAbsolute(item.childSessionFile)) continue;
-    const { createdAt, closedAt, claimGeneration, ...fields } = item;
+    const { createdAt, closedAt, claimGeneration, sessionCost, ...fields } =
+      item;
     records.push({
       ...fields,
+      // A genuine zero is a measurement; an unreadable cost stays unknown.
+      ...(isSessionCost(sessionCost) ? { sessionCost } : {}),
       createdAt: createdAt ?? new Date(0).toISOString(),
       closedAt: closedAt ?? new Date(0).toISOString(),
       claimGeneration: claimGeneration ?? 0,

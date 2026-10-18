@@ -29,4 +29,6 @@ export interface HerdrAgentInfo extends HerdrAgentStateInfoFields {
   terminalId?: string;
   /** Display-only context sample; never persisted with the agent record. */
   context?: ContextMetrics;
+  /** Display-only child-session USD estimate; only closed history persists it. */
+  sessionCost?: number;
 }

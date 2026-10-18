@@ -9,6 +9,7 @@ import {
   ChildSessionMetaInput,
   ContextMetrics,
   isNonEmptyString,
+  isSessionCost,
   MessageContent,
   TextPart,
 } from './artifacts/schema.ts';
@@ -151,6 +152,9 @@ export async function readAgentSessionMeta(
       : {}),
     ...(Value.Check(ContextMetrics, parsed.context)
       ? { context: parsed.context }
+      : {}),
+    ...(isSessionCost(parsed.sessionCost)
+      ? { sessionCost: parsed.sessionCost }
       : {}),
   };
 }

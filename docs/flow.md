@@ -116,18 +116,40 @@ A successful continuation removes the marker and delivers the accumulated
 output. Before a new task, the parent clears old result/question files and the
 interruption marker.
 Session metadata is stored beside the result for durable resume. It also
-carries the child's current context sample. The child publishes it at `turn_end`
-from `ctx.getContextUsage()` (estimated tokens and the model window), because Pi
-persists the turn before that boundary — `message_end` handlers run before the
-persistence, so a sample taken there would be a turn behind. Starting a new or
-resumed session, and starting a new assignment, clear the stale value first;
-compaction keeps the known window and drops the token count until the next
-response. Both surfaces read the sample through `src/ui/agent-context.ts`:
-the widget on each one-second tick, and the manager when its list opens or
-rebuilds. The manager does not refresh an open list automatically. One missing,
-unreadable or invalid artifact leaves that row at `ctx —` without failing the
-widget or the list. The sample is display-only: managed state and closed history
-store no metrics, so a closed row shows only its status and time.
+carries the child's current context sample and its recorded session cost. The
+child publishes both at `turn_end` from `ctx.getContextUsage()` (estimated
+tokens and the model window) and from the usage recorded in
+`ctx.sessionManager.getEntries()`, because Pi persists the turn before that
+boundary — `message_end` handlers run before the persistence, so a sample taken
+there would be a turn behind. The cost is summed over assistant messages, tool
+results, standalone `usage` entries and compaction/branch-summary entries, once
+per entry, so it is the whole session's cumulative USD estimate; a resumed
+session republishes the same cumulative total because its entries are loaded
+with the session file. A usage entry Pi only sometimes attaches (tool results,
+compaction, branch summaries) is skipped when it is absent, but an entry whose
+recorded cost cannot be read makes the total unknown instead of passing a
+partial sum off as the session total. Starting a new or resumed session, and
+starting a new assignment, clear the stale context first; compaction keeps the
+known window and drops the token count until the next response.
+
+Both surfaces read the samples through `src/ui/agent-metrics.ts` in one artifact
+read per agent: the widget on each one-second tick, and the manager when its
+list opens or on each of its own one-second refreshes while it stays open. The
+manager opens the same watching list even when nothing is listed yet, so a
+spawn that appears in parallel shows up without reopening the command; a
+refresh runs with the overlay's abort signal, so a shutdown cancels the tick and
+the session waits for one in flight instead of leaving the state-file lock
+behind. One missing, unreadable or invalid artifact leaves that row at `ctx —`
+and `cost —` without failing the widget or the list; a session whose recorded
+cost cannot be read as a whole is unknown rather than a partial sum. Context
+stays display-only. The session cost is display-only on live rows too — it is
+never written to the live agent record — and it is the last published snapshot,
+so it can lag the turn in progress. A one-shot freezes it in closed history when
+`stageClosedOneShot` stages the record, before the temp artifacts are removed,
+so a closed row keeps showing it after the artifact is gone. A re-archive
+replaces the frozen value with the newer cumulative one and only falls back to
+it for the same child session, so a reused label never inherits another
+session's cost.
 
 Collection checks `question.md` before `result.md`. `ask_question` writes the
 question and returns `terminate: true`, without a redundant assistant response

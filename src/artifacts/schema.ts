@@ -15,9 +15,14 @@ const childSessionMetaFields = {
   updatedAt: Type.Optional(Type.String()),
 };
 
+/** Pi's recorded USD estimate for the whole child session. */
+export const SessionCost = Type.Number({ minimum: 0 });
+export type SessionCost = Static<typeof SessionCost>;
+
 export const ChildSessionMeta = Type.Object({
   ...childSessionMetaFields,
   context: Type.Optional(ContextMetrics),
+  sessionCost: Type.Optional(SessionCost),
 });
 export type ChildSessionMeta = Static<typeof ChildSessionMeta>;
 
@@ -25,6 +30,7 @@ export type ChildSessionMeta = Static<typeof ChildSessionMeta>;
 export const ChildSessionMetaInput = Type.Object({
   ...childSessionMetaFields,
   context: Type.Optional(Type.Unknown()),
+  sessionCost: Type.Optional(Type.Unknown()),
 });
 export type ChildSessionMetaInput = Static<typeof ChildSessionMetaInput>;
 
@@ -48,4 +54,9 @@ export const MessageContent = Type.Object({
 
 export function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+/** A recorded cost sample: a finite, non-negative number. */
+export function isSessionCost(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }

@@ -14,7 +14,7 @@ import {
   setAgentResultInterrupted,
   writeAgentSessionMeta,
 } from './artifacts.ts';
-import type { ContextMetrics } from './artifacts/schema.ts';
+import { type ContextMetrics, isSessionCost } from './artifacts/schema.ts';
 import { getCurrentContext } from './herdr/snapshot.ts';
 import { textResult } from './tool/result.ts';
 
@@ -30,13 +30,69 @@ export async function captureChildSessionMeta(
   const sessionFile = sessionManager.getSessionFile()?.trim();
   const cwd = sessionManager.getCwd().trim();
   if (!cwd) return undefined;
+  // Recomputed at every publish: the entries of a resumed session carry the
+  // previous generation's usage, so this stays the whole session's total.
+  const sessionCost = sumRecordedSessionCost(sessionManager.getEntries());
   return writeAgentSessionMeta(dest, {
     sessionId,
     cwd,
     updatedAt: new Date().toISOString(),
     ...(sessionFile ? { sessionFile } : {}),
     ...(context ? { context } : {}),
+    ...(sessionCost !== undefined ? { sessionCost } : {}),
   });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+const NO_USAGE = 'no-usage';
+const UNREADABLE_COST = 'unreadable-cost';
+
+// Missing required usage makes the total incomplete; optional SDK usage may be absent.
+function recordedCost(
+  usage: unknown,
+  optional: boolean,
+): number | typeof NO_USAGE | typeof UNREADABLE_COST {
+  if (usage === undefined) return optional ? NO_USAGE : UNREADABLE_COST;
+  if (!isRecord(usage) || !isRecord(usage.cost)) return UNREADABLE_COST;
+  const total = usage.cost.total;
+  return isSessionCost(total) ? total : UNREADABLE_COST;
+}
+
+function entryCost(
+  entry: unknown,
+): number | typeof NO_USAGE | typeof UNREADABLE_COST {
+  if (!isRecord(entry)) return NO_USAGE;
+  if (entry.type === 'usage') return recordedCost(entry.usage, false);
+  if (entry.type === 'branch_summary' || entry.type === 'compaction') {
+    return recordedCost(entry.usage, true);
+  }
+  if (entry.type !== 'message' || !isRecord(entry.message)) return NO_USAGE;
+  const message = entry.message;
+  if (message.role === 'assistant') return recordedCost(message.usage, false);
+  if (message.role === 'toolResult') {
+    return recordedCost(message.usage, true);
+  }
+  return NO_USAGE;
+}
+
+// Recompute the full session so resumed and compacted history counts once.
+// An unreadable recorded cost makes the full total unknown, not a partial sum.
+function sumRecordedSessionCost(
+  entries: readonly unknown[],
+): number | undefined {
+  let measured = false;
+  let total = 0;
+  for (const entry of entries) {
+    const cost = entryCost(entry);
+    if (cost === NO_USAGE) continue;
+    if (cost === UNREADABLE_COST) return undefined;
+    measured = true;
+    total += cost;
+  }
+  return measured ? total : undefined;
 }
 
 /**

@@ -45,6 +45,15 @@ export interface AgentProfileFixture {
 /** The registry is untyped here on purpose: tests only need name + execute. */
 type CapturedTool = any;
 
+export interface HeldDialog {
+  /** The component Pi would show; feed it keystrokes to drive the interaction. */
+  component: any;
+  /** Resolve the interaction, as the component's own `done` would. */
+  finish: (value?: unknown) => void;
+  /** The component's current rendered lines. */
+  render: (width?: number) => string[];
+}
+
 export interface MockHost {
   pi: ExtensionAPI;
   ctx: ExtensionContext;
@@ -56,6 +65,8 @@ export interface MockHost {
   widgets: Map<string, unknown>;
   commands: Map<string, { handler: (args: string, ctx: unknown) => unknown }>;
   renderers: Map<string, unknown>;
+  /** Rendered lines of each `ctx.ui.custom` overlay, before its keys ran. */
+  dialogLines: string[][];
   /** Fire an extension lifecycle event (e.g. `session_start`). */
   fire(event: string, payload?: Record<string, unknown>): Promise<unknown>;
 }
@@ -73,8 +84,17 @@ export function createMockHost(options: {
    * left cancels, which is what ends the manager loop.
    */
   dialogInputs?: string[][];
+  /**
+   * Takes over an overlay instead of the scripted keystrokes, so a test can
+   * inspect or drive it while the command that opened it is still pending.
+   * Nothing resolves the interaction until the test calls `finish`. The host
+   * still records the opening render in `dialogLines`.
+   */
+  onDialog?: (dialog: HeldDialog) => void;
   /** Context usage the mock `ctx.getContextUsage()` reports. Defaults to `undefined`. */
   getContextUsage?: () => ContextUsage | undefined;
+  /** Entries the mock `ctx.sessionManager.getEntries()` reports. Defaults to `[]`. */
+  sessionEntries?: () => readonly unknown[];
 }): MockHost {
   const messages: SentMessage[] = [];
   const userMessages: string[] = [];
@@ -91,6 +111,8 @@ export function createMockHost(options: {
     string,
     Array<(event: unknown, ctx: unknown) => unknown>
   >();
+  /** Rendered lines per `ctx.ui.custom` overlay, captured before its keys run. */
+  const dialogLines: string[][] = [];
 
   const theme = {
     fg: (_color: string, text: string) => text,
@@ -116,6 +138,12 @@ export function createMockHost(options: {
         {},
         done,
       );
+      const render = (width = 120) => component.render?.(width) ?? [];
+      dialogLines.push(render());
+      if (options.onDialog) {
+        options.onDialog({ component, finish: done, render });
+        return;
+      }
       for (const key of keys ?? []) {
         if (settled) break;
         component.handleInput?.(key);
@@ -136,6 +164,7 @@ export function createMockHost(options: {
       getSessionFile: () =>
         options.sessionFile ?? path.join(options.cwd, 'orchestrator.jsonl'),
       getCwd: () => options.cwd,
+      getEntries: () => options.sessionEntries?.() ?? [],
     },
     ui: {
       theme,
@@ -154,6 +183,12 @@ export function createMockHost(options: {
       const list = handlers.get(event) ?? [];
       list.push(handler);
       handlers.set(event, list);
+      return () => {
+        handlers.set(
+          event,
+          (handlers.get(event) ?? []).filter((item) => item !== handler),
+        );
+      };
     },
     registerTool: (tool: CapturedTool) => tools.set(tool.name, tool),
     registerCommand: (
@@ -185,6 +220,7 @@ export function createMockHost(options: {
     widgets,
     commands,
     renderers,
+    dialogLines,
     fire: async (event, payload = {}) => {
       const input = {
         type: event,

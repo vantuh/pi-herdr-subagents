@@ -8,6 +8,7 @@ import {
   CLOSED_HISTORY_MAX_GLOBAL,
   CLOSED_HISTORY_MAX_PER_OWNER,
   CLOSED_HISTORY_TTL_MS,
+  parseClosedHistory,
   pruneClosedHistory,
 } from '../src/state/history-policy.ts';
 import { pruneHerdrAgentsState } from '../src/state/live-records.ts';
@@ -93,4 +94,31 @@ test('caps closed history globally without deleting session files', async () => 
   for (const file of files) {
     await fs.access(file);
   }
+});
+
+test('reads old and malformed costs without dropping a resumable record', () => {
+  const older = history();
+  delete (older as { sessionCost?: number }).sessionCost;
+  const malformed = {
+    ...history({ id: 'bad' }),
+    sessionCost: 'free',
+  };
+  const measuredZero = history({ id: 'zero', sessionCost: 0 });
+
+  const parsed = parseClosedHistory([
+    older,
+    malformed,
+    measuredZero,
+    { ...history({ id: 'negative' }), sessionCost: -1 },
+  ]);
+
+  assert.deepEqual(
+    parsed.map((record) => record.id),
+    [older.id, 'bad', 'zero', 'negative'],
+  );
+  assert.equal(parsed[0]?.sessionCost, undefined);
+  assert.equal(parsed[1]?.sessionCost, undefined);
+  assert.equal(parsed[2]?.sessionCost, 0);
+  assert.equal(parsed[3]?.sessionCost, undefined);
+  assert.equal(parsed[1]?.childSessionFile, '/tmp/child.jsonl');
 });

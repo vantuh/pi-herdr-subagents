@@ -7,15 +7,16 @@ import { test } from 'vitest';
 
 import type { HerdrAgentInfo } from '../src/herdr/types.ts';
 import {
-  attachAgentContext,
+  attachAgentMetrics,
   formatContextLabel,
+  formatCostLabel,
   formatTokenCount,
-} from '../src/ui/agent-context.ts';
+} from '../src/ui/agent-metrics.ts';
 import { applyEnv } from '../test-support/mock-extension.ts';
 
 /**
- * Context samples a managed child publishes: what the widget and the manager
- * render, and how one bad artifact is contained.
+ * Metrics a managed child publishes: what the widget and the manager render,
+ * and how one bad artifact is contained.
  */
 
 function agent(overrides: Partial<HerdrAgentInfo> = {}): HerdrAgentInfo {
@@ -56,6 +57,14 @@ test('renders a measured zero as zero, not as unknown', () => {
   );
 });
 
+test('renders a session cost estimate, a measured zero and an unknown one', () => {
+  assert.equal(formatCostLabel(0.024), '~$0.024');
+  assert.equal(formatCostLabel(1.5), '~$1.500');
+  assert.equal(formatCostLabel(0.0004), '<$0.001');
+  assert.equal(formatCostLabel(0), '~$0.000');
+  assert.equal(formatCostLabel(undefined), 'cost —');
+});
+
 test('reads each published sample once for the whole list', async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'herdr-context-'));
   const restoreEnv = applyEnv({ TMPDIR: tmp });
@@ -67,6 +76,7 @@ test('reads each published sample once for the whole list', async () => {
         sessionId: 'child-1',
         cwd: '/tmp/repo',
         context: { tokens: 4_000, contextWindow: 200_000 },
+        sessionCost: 0.024,
       })}\n`,
       { encoding: 'utf8', mode: 0o600 },
     );
@@ -87,15 +97,19 @@ test('reads each published sample once for the whole list', async () => {
       agent({ tabLabel: 'Research', resultFile: unreadable }),
       agent({ tabLabel: 'Ad-hoc' }),
     ];
-    await attachAgentContext(agents);
+    await attachAgentMetrics(agents);
 
     assert.deepEqual(agents[0]?.context, {
       tokens: 4_000,
       contextWindow: 200_000,
     });
+    assert.equal(agents[0]?.sessionCost, 0.024);
     assert.equal(agents[1]?.context, undefined);
+    assert.equal(agents[1]?.sessionCost, undefined);
     assert.equal(agents[2]?.context, undefined);
+    assert.equal(agents[2]?.sessionCost, undefined);
     assert.equal(agents[3]?.context, undefined);
+    assert.equal(agents[3]?.sessionCost, undefined);
   } finally {
     restoreEnv();
     await fs.rm(tmp, { recursive: true, force: true });

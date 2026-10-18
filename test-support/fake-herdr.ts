@@ -812,6 +812,7 @@ export class FakeHerdr {
     // A new assignment replaces the previous turn's sample, as the child clears
     // it at `before_agent_start`.
     agent.childContext = outcome.context;
+    agent.childCost = outcome.cost;
 
     const run = async () => {
       // Hold the previous turn's status and seq so the extension cannot mistake
@@ -898,6 +899,9 @@ export class FakeHerdr {
         cwd,
         updatedAt: new Date().toISOString(),
         ...(agent.childContext ? { context: agent.childContext } : {}),
+        ...(agent.childCost !== undefined
+          ? { sessionCost: agent.childCost }
+          : {}),
       })}\n`,
       { encoding: 'utf8', mode: 0o600 },
     );

@@ -23,14 +23,21 @@ import { applyEnv, createMockHost } from '../test-support/mock-extension.ts';
 
 async function withChildHost(
   body: (host: ReturnType<typeof createMockHost>, tmp: string) => Promise<void>,
-  getContextUsage?: () => ContextUsage | undefined,
+  options: {
+    getContextUsage?: () => ContextUsage | undefined;
+    sessionEntries?: () => readonly unknown[];
+  } = {},
 ): Promise<void> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'herdr-agents-child-'));
   const tmp = path.join(root, 'tmp');
   await fs.mkdir(tmp, { recursive: true });
   const restoreEnv = applyEnv({ TMPDIR: tmp, HERDR_AGENT_CHILD: '1' });
   try {
-    const host = createMockHost({ cwd: root, getContextUsage });
+    const host = createMockHost({
+      cwd: root,
+      getContextUsage: options.getContextUsage,
+      sessionEntries: options.sessionEntries,
+    });
     herdrAgentsExtension(host.pi);
     await body(host, tmp);
   } finally {
@@ -50,6 +57,11 @@ async function publishedContext(
   metaFile: string,
 ): Promise<{ tokens: number | null; contextWindow: number } | undefined> {
   return JSON.parse(await fs.readFile(metaFile, 'utf8')).context;
+}
+
+/** The session cost the child published, or undefined when it published none. */
+async function publishedCost(metaFile: string): Promise<number | undefined> {
+  return JSON.parse(await fs.readFile(metaFile, 'utf8')).sessionCost;
 }
 
 /** The context usage the mock host reports, as Pi's estimate object. */
@@ -385,7 +397,7 @@ test('a child publishes its context sample at turn_end, not at message_end', asy
         delete process.env[SESSION_META_ENV];
       }
     },
-    () => usage.current,
+    { getContextUsage: () => usage.current },
   );
 });
 
@@ -423,7 +435,7 @@ test('a child drops the previous sample when a new assignment or session starts'
         delete process.env[SESSION_META_ENV];
       }
     },
-    () => usage.current,
+    { getContextUsage: () => usage.current },
   );
 });
 
@@ -463,7 +475,7 @@ test('a child reports unknown tokens over the known window after compaction', as
         delete process.env[SESSION_META_ENV];
       }
     },
-    () => usage.current,
+    { getContextUsage: () => usage.current },
   );
 });
 
@@ -495,7 +507,7 @@ test('a child publishes a measured zero and no sample at all without an estimate
         delete process.env[SESSION_META_ENV];
       }
     },
-    () => usage.current,
+    { getContextUsage: () => usage.current },
   );
 });
 
@@ -553,6 +565,202 @@ test('ask_question republishes metadata without erasing the last sample', async 
         delete process.env[SESSION_META_ENV];
       }
     },
-    () => usage.current,
+    { getContextUsage: () => usage.current },
+  );
+});
+
+test('a child publishes the cost its session entries recorded, once per entry', async () => {
+  const entries = [
+    {
+      type: 'message',
+      message: { role: 'assistant', usage: { cost: { total: 0.01 } } },
+    },
+    {
+      type: 'message',
+      message: { role: 'assistant', usage: { cost: { total: 0.004 } } },
+    },
+    {
+      type: 'message',
+      message: { role: 'toolResult', usage: { cost: { total: 0.005 } } },
+    },
+    { type: 'usage', usage: { cost: { total: 0.002 } } },
+    { type: 'compaction', usage: { cost: { total: 0.003 } } },
+    { type: 'branch_summary', usage: { cost: { total: 0.001 } } },
+    { type: 'message', message: { role: 'user', content: 'hi' } },
+    { type: 'message', message: { role: 'toolResult' } },
+    { type: 'model_change', model: 'other' },
+  ];
+  await withChildHost(
+    async (host, tmp) => {
+      const resultFile = await managedResultFile(tmp);
+      const metaFile = path.join(path.dirname(resultFile), 'session.json');
+      process.env[SESSION_META_ENV] = metaFile;
+      try {
+        await host.fire('before_agent_start', {
+          prompt: `Do the thing.\n${RESULT_FILE_MARKER} ${resultFile}`,
+        });
+        await host.fire('turn_end');
+        assert.equal((await publishedCost(metaFile))?.toFixed(3), '0.025');
+      } finally {
+        delete process.env[SESSION_META_ENV];
+      }
+    },
+    { sessionEntries: () => entries },
+  );
+});
+
+test('an unreadable cost makes the session total unknown, not partial', async () => {
+  const entries = [
+    {
+      type: 'message',
+      message: { role: 'assistant', usage: { cost: { total: 0.004 } } },
+    },
+    // A usage Pi recorded with no readable cost: reporting only the 0.004
+    // above would pass a partial sum off as the whole session's total.
+    { type: 'message', message: { role: 'assistant', usage: {} } },
+    {
+      type: 'message',
+      message: { role: 'assistant', usage: { cost: { total: 'free' } } },
+    },
+    {
+      type: 'message',
+      message: { role: 'toolResult', usage: { cost: { total: -1 } } },
+    },
+    { type: 'usage', usage: { cost: { total: 0.002 } } },
+  ];
+  await withChildHost(
+    async (host, tmp) => {
+      const resultFile = await managedResultFile(tmp);
+      const metaFile = path.join(path.dirname(resultFile), 'session.json');
+      process.env[SESSION_META_ENV] = metaFile;
+      try {
+        await host.fire('before_agent_start', {
+          prompt: `Do the thing.\n${RESULT_FILE_MARKER} ${resultFile}`,
+        });
+        await host.fire('turn_end');
+        assert.equal(await publishedCost(metaFile), undefined);
+        assert.equal(
+          JSON.parse(await fs.readFile(metaFile, 'utf8')).sessionId,
+          'test-orch-session',
+        );
+      } finally {
+        delete process.env[SESSION_META_ENV];
+      }
+    },
+    { sessionEntries: () => entries },
+  );
+});
+
+test('a usage-bearing entry with no cost does not make the rest unknown', async () => {
+  const entries = [
+    {
+      type: 'message',
+      message: { role: 'assistant', usage: { cost: { total: 0.004 } } },
+    },
+    // Pi only sometimes attaches usage here, so an absent one is skipped.
+    { type: 'message', message: { role: 'toolResult' } },
+    { type: 'compaction' },
+    { type: 'branch_summary' },
+    { type: 'message', message: { role: 'user' } },
+  ];
+  await withChildHost(
+    async (host, tmp) => {
+      const resultFile = await managedResultFile(tmp);
+      const metaFile = path.join(path.dirname(resultFile), 'session.json');
+      process.env[SESSION_META_ENV] = metaFile;
+      try {
+        await host.fire('before_agent_start', {
+          prompt: `Do the thing.\n${RESULT_FILE_MARKER} ${resultFile}`,
+        });
+        await host.fire('turn_end');
+        assert.equal(await publishedCost(metaFile), 0.004);
+      } finally {
+        delete process.env[SESSION_META_ENV];
+      }
+    },
+    { sessionEntries: () => entries },
+  );
+});
+
+test('a child with no recorded usage publishes no cost while keeping its identity', async () => {
+  await withChildHost(
+    async (host, tmp) => {
+      const resultFile = await managedResultFile(tmp);
+      const metaFile = path.join(path.dirname(resultFile), 'session.json');
+      process.env[SESSION_META_ENV] = metaFile;
+      try {
+        await host.fire('session_start');
+        assert.equal(await publishedCost(metaFile), undefined);
+        assert.equal(
+          JSON.parse(await fs.readFile(metaFile, 'utf8')).sessionId,
+          'test-orch-session',
+        );
+      } finally {
+        delete process.env[SESSION_META_ENV];
+      }
+    },
+    { sessionEntries: () => [{ type: 'message', message: { role: 'user' } }] },
+  );
+});
+
+test('a recorded zero cost stays a measurement', async () => {
+  await withChildHost(
+    async (host, tmp) => {
+      const resultFile = await managedResultFile(tmp);
+      const metaFile = path.join(path.dirname(resultFile), 'session.json');
+      process.env[SESSION_META_ENV] = metaFile;
+      try {
+        await host.fire('session_start');
+        assert.equal(await publishedCost(metaFile), 0);
+      } finally {
+        delete process.env[SESSION_META_ENV];
+      }
+    },
+    {
+      sessionEntries: () => [
+        {
+          type: 'message',
+          message: { role: 'assistant', usage: { cost: { total: 0 } } },
+        },
+      ],
+    },
+  );
+});
+
+test('a resumed session republishes its cumulative cost, compaction included', async () => {
+  const usage = { current: contextUsage(12_345, 200_000) };
+  const entries: unknown[] = [
+    {
+      type: 'message',
+      message: { role: 'assistant', usage: { cost: { total: 0.02 } } },
+    },
+  ];
+  await withChildHost(
+    async (host, tmp) => {
+      const resultFile = await managedResultFile(tmp);
+      const metaFile = path.join(path.dirname(resultFile), 'session.json');
+      process.env[SESSION_META_ENV] = metaFile;
+      try {
+        // Resuming keeps the earlier generation's entries, so the first
+        // publish is already the whole session's total.
+        await host.fire('session_start', { reason: 'resume' });
+        assert.equal(await publishedCost(metaFile), 0.02);
+
+        entries.push({ type: 'compaction', usage: { cost: { total: 0.005 } } });
+        await host.fire('session_compact');
+        assert.equal(await publishedCost(metaFile), 0.025);
+        // Compaction drops the token count but not the cost.
+        assert.deepEqual(await publishedContext(metaFile), {
+          tokens: null,
+          contextWindow: 200_000,
+        });
+      } finally {
+        delete process.env[SESSION_META_ENV];
+      }
+    },
+    {
+      sessionEntries: () => entries,
+      getContextUsage: () => usage.current,
+    },
   );
 });

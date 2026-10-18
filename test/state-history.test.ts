@@ -338,3 +338,55 @@ test('persistPrunedAgentsState finalizes staged history when the live terminal i
   assert.equal(after.agents['terminal:term-1'], undefined);
   assert.equal(after.closedHistory[0]?.status, 'resumable');
 });
+
+test('freezes the published session cost before the temp artifacts go away', async () => {
+  const filePath = await tempStatePath();
+  const archived = await resumableHistory(filePath, { sessionCost: 0.024 });
+
+  const state = await loadHerdrAgentsState(filePath);
+  assert.equal(state.closedHistory[0]?.sessionCost, 0.024);
+  assert.equal(archived.sessionCost, 0.024);
+});
+
+test('a re-archive replaces the frozen cost instead of adding to it', async () => {
+  const filePath = await tempStatePath();
+  const first = await resumableHistory(filePath, { sessionCost: 0.024 });
+
+  await resumableHistory(filePath, {
+    id: first.id,
+    childSessionFile: '/tmp/a.jsonl',
+    childSessionId: 'sid-a',
+    sessionCost: 0.03,
+  });
+
+  const state = await loadHerdrAgentsState(filePath);
+  assert.equal(state.closedHistory.length, 1);
+  assert.equal(state.closedHistory[0]?.sessionCost, 0.03);
+});
+
+test('keeps a session cost across a re-archive that published none', async () => {
+  const filePath = await tempStatePath();
+  const first = await resumableHistory(filePath, { sessionCost: 0.024 });
+
+  // The same child session republishes a cumulative total; a close that raced
+  // the publish must not lose the frozen value.
+  await resumableHistory(filePath, { id: first.id });
+
+  const state = await loadHerdrAgentsState(filePath);
+  assert.equal(state.closedHistory[0]?.sessionCost, 0.024);
+});
+
+test('a reused label with a new child session inherits no cost', async () => {
+  const filePath = await tempStatePath();
+  const first = await resumableHistory(filePath, { sessionCost: 0.024 });
+
+  await resumableHistory(filePath, {
+    id: first.id,
+    childSessionFile: '/tmp/b.jsonl',
+    childSessionId: 'sid-b',
+  });
+
+  const state = await loadHerdrAgentsState(filePath);
+  assert.equal(state.closedHistory[0]?.childSessionId, 'sid-b');
+  assert.equal(state.closedHistory[0]?.sessionCost, undefined);
+});

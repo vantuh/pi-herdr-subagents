@@ -13,6 +13,7 @@ import {
   applyEnv,
   createMockHost,
   type EmittedEvent,
+  type HeldDialog,
   type SentMessage,
   waitFor,
   writeAgentProfiles,
@@ -63,6 +64,11 @@ export interface HarnessOptions {
   isIdle?: boolean;
   /** Keystrokes per `ctx.ui.custom` overlay, for the `/herdr-agents` manager. */
   dialogInputs?: string[][];
+  /**
+   * Takes over each `ctx.ui.custom` overlay, so a test can drive a modal that
+   * must stay open while it inspects the extension's behavior.
+   */
+  onDialog?: (dialog: HeldDialog) => void;
   /** Orchestrator pane id reported in HERDR_PANE_ID; defaults to the real one. */
   paneIdEnv?: string;
   sessionId?: string;
@@ -80,6 +86,8 @@ export interface Harness {
   widgets: Map<string, unknown>;
   commands: Map<string, { handler: (args: string, ctx: unknown) => unknown }>;
   renderers: Map<string, unknown>;
+  /** Rendered lines of each `ctx.ui.custom` overlay, before its keys ran. */
+  dialogLines: string[][];
   /** Call the registered `herdr_agent` tool. Returns once the prompt is submitted. */
   call(
     params: Record<string, unknown>,
@@ -154,6 +162,7 @@ export async function createHarness(
     mode: options.mode,
     isIdle: options.isIdle,
     dialogInputs: options.dialogInputs,
+    onDialog: options.onDialog,
     sessionId: options.sessionId,
     sessionFile: options.sessionFile,
   });
@@ -173,6 +182,7 @@ export async function createHarness(
     widgets: host.widgets,
     commands: host.commands,
     renderers: host.renderers,
+    dialogLines: host.dialogLines,
     call: (params, callOptions) =>
       tool.execute(
         `call-${Math.random().toString(36).slice(2)}`,

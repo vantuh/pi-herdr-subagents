@@ -1,5 +1,5 @@
 import type { HerdrAgentInfo } from '../herdr/types.ts';
-import { formatContextLabel } from './agent-context.ts';
+import { formatContextLabel } from './agent-metrics.ts';
 
 export const AGENTS_WIDGET_ID = 'herdr-agents';
 export const AGENTS_WIDGET_TICK_MS = 1000;

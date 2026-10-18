@@ -120,6 +120,71 @@ test('a bad context sample does not discard the session identity', async () => {
   await removeAgentTempFiles(files.resultFile);
 });
 
+test('round-trips a recorded session cost, keeping unknown and zero distinct', async () => {
+  const files = await createAgentTempFiles('system');
+  await writeAgentSessionMeta(files.sessionMetaFile, {
+    sessionId: 'child-1',
+    cwd: '/tmp/repo',
+    sessionCost: 0.024,
+  });
+  assert.equal(
+    (await readAgentSessionMeta(files.resultFile))?.sessionCost,
+    0.024,
+  );
+
+  // A recorded zero is a measurement, unlike a child that published none.
+  await writeAgentSessionMeta(files.sessionMetaFile, {
+    sessionId: 'child-1',
+    cwd: '/tmp/repo',
+    sessionCost: 0,
+  });
+  assert.equal((await readAgentSessionMeta(files.resultFile))?.sessionCost, 0);
+
+  await writeAgentSessionMeta(files.sessionMetaFile, {
+    sessionId: 'child-1',
+    cwd: '/tmp/repo',
+  });
+  assert.equal(
+    (await readAgentSessionMeta(files.resultFile))?.sessionCost,
+    undefined,
+  );
+
+  await removeAgentTempFiles(files.resultFile);
+});
+
+test('a bad cost sample does not discard the session identity', async () => {
+  const files = await createAgentTempFiles('system');
+  for (const sessionCost of [
+    'free',
+    -1,
+    Number.POSITIVE_INFINITY,
+    Number.NaN,
+    null,
+    { total: 1 },
+  ]) {
+    await fs.writeFile(
+      files.sessionMetaFile,
+      `${JSON.stringify({
+        sessionId: 'child-1',
+        sessionFile: '/tmp/repo/child.jsonl',
+        cwd: '/tmp/repo',
+        context: { tokens: 5_000, contextWindow: 200_000 },
+        sessionCost,
+      })}\n`,
+      'utf8',
+    );
+    const meta = await readAgentSessionMeta(files.resultFile);
+    const label = JSON.stringify(sessionCost);
+    assert.equal(meta?.sessionId, 'child-1', label);
+    assert.equal(meta?.sessionFile, '/tmp/repo/child.jsonl', label);
+    assert.equal(meta?.cwd, '/tmp/repo', label);
+    assert.equal(meta?.context?.tokens, 5_000, label);
+    assert.equal(meta?.sessionCost, undefined, label);
+  }
+
+  await removeAgentTempFiles(files.resultFile);
+});
+
 test('validates a Pi session JSONL header against stored metadata', async () => {
   const dir = await fs.mkdtemp(path.join(path.sep, 'tmp', 'herdr-session-'));
   const sessionFile = path.join(dir, 'session.jsonl');

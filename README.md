@@ -157,7 +157,12 @@ for the same profile starts another agent with a suffixed label, such as
 
 `/herdr-agents` lists the agents this Orchestrator started, across workspaces:
 `Enter` focuses an agent, `d` or `Ctrl+D` closes it, `Esc` exits. Only finished
-agents can be closed; a working agent or one waiting on a question is kept.
+agents can be closed; a working agent or one waiting on a question is kept. The
+list refreshes once a second while it stays open, so an agent spawned in
+parallel, or a changed context, status or cost, appears without reopening it;
+the selected row is kept by its identity (the pane for a live agent, the
+history record for a closed one). Opening the command with nothing to list
+shows the same watching list, so a spawn in another pane appears there too.
 
 Below the live agents it lists the closed one-shots of the current Orchestrator
 session. `Enter` on one reopens its Pi session in a new pane or tab without
@@ -172,8 +177,20 @@ not finished a turn yet, or whose capacity Pi cannot determine, shows `ctx —`;
 `ctx — / 200k` is a known window with an unknown count, and `ctx 0 / 200k` is a
 measured empty context. The value is published after each finalized child turn,
 so it can lag the turn in progress, and after compaction it stays unknown until
-the next response. Closed rows show `closed` and the time instead; the pane id
-and cwd stay in managed state for focus, close and resume.
+the next response.
+
+The `/herdr-agents` rows also show the child session's recorded cost estimate as
+`~$0.024`: the sum of the usage Pi stored across the whole child session
+(assistant messages, tool results, standalone usage and compaction), not the
+current task's share. `<$0.001` is a recorded amount below that rounding,
+`~$0.000` is a recorded zero, and `cost —` means the child recorded no cost at
+all, or recorded one Pi could not read as a whole — never a fabricated zero and
+never a partial sum. It is a provider-reported USD estimate of the last
+published snapshot, not a subscription or billing total, so it can lag the turn
+in progress. The row reads `status • cost • ctx`, so the price stays visible in
+a narrow overlay. The widget stays context-only. Closed rows show `closed`, the
+frozen cost and the time they were archived; the pane id and cwd stay in managed
+state for focus, close and resume.
 
 New child sessions are stored in `<getAgentDir()>/herdr-agent-sessions`
 (default: `~/.pi/agent/herdr-agent-sessions`), outside the default `/resume`

@@ -86,6 +86,8 @@ const closedHistoryFields = {
   status: ClosedHistoryStatus,
   claimGeneration: Type.Number(),
   claimedAt: Type.Optional(Type.String()),
+  /** Frozen child-session USD estimate; absent when the child recorded none. */
+  sessionCost: Type.Optional(Type.Number({ minimum: 0 })),
 };
 const closedHistoryRequired = [
   'id',
@@ -109,9 +111,14 @@ export const ClosedAgentHistoryRecord = Type.Object(closedHistoryFields, {
   ],
 });
 /** Reading an older state file: timestamps and the generation are defaulted. */
-export const ClosedAgentHistoryRecordInput = Type.Object(closedHistoryFields, {
-  required: closedHistoryRequired,
-});
+export const ClosedAgentHistoryRecordInput = Type.Object(
+  {
+    ...closedHistoryFields,
+    // A malformed optional cost must not drop a resumable record.
+    sessionCost: Type.Optional(Type.Unknown()),
+  },
+  { required: closedHistoryRequired },
+);
 export type ClosedAgentHistoryRecord = Static<typeof ClosedAgentHistoryRecord>;
 
 export interface HerdrAgentsState {

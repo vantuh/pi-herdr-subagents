@@ -25,6 +25,7 @@ type StageClosedOneShotInput = Pick<
   | 'childSessionId'
   | 'cwd'
   | 'layout'
+  | 'sessionCost'
 > & { id?: string };
 
 export async function stageClosedOneShot(
@@ -55,6 +56,15 @@ export async function stageClosedOneShot(
             record.tabLabel === input.tabLabel,
         );
 
+      // The child republishes a cumulative total, so a fresh sample replaces
+      // the frozen one. Only the same child session may fall back to it: a
+      // reused label with a new session must not inherit another run's cost.
+      const priorCost =
+        existing?.childSessionId === input.childSessionId
+          ? existing.sessionCost
+          : undefined;
+      const sessionCost = input.sessionCost ?? priorCost;
+
       const record: ClosedAgentHistoryRecord = {
         id: existing?.id ?? newHistoryId(),
         ownerSessionId: input.ownerSessionId,
@@ -72,6 +82,7 @@ export async function stageClosedOneShot(
         closedAt: now,
         status: 'staged',
         claimGeneration: existing?.claimGeneration ?? 0,
+        ...(sessionCost !== undefined ? { sessionCost } : {}),
       };
 
       state.closedHistory = [

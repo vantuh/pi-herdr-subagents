@@ -185,6 +185,9 @@ async function stageClosedOneShotIfEligible(target: {
       childSessionId: header.id,
       cwd: header.cwd,
       layout: live.layout ?? 'pane',
+      ...(meta.sessionCost !== undefined
+        ? { sessionCost: meta.sessionCost }
+        : {}),
     },
     undefined,
     target.signal,
