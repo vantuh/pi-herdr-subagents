@@ -1,3 +1,4 @@
+import type { ContextMetrics } from '../artifacts/schema.ts';
 import type { HerdrAgentLayout } from '../config/schema.ts';
 import type { HerdrAgentStateInfoFields } from '../state/schema.ts';
 import type { HerdrNamedAgent, PaneInfo, TabInfo } from './schema.ts';
@@ -26,4 +27,6 @@ export interface HerdrAgentInfo extends HerdrAgentStateInfoFields {
   cwd?: string;
   /** Pane terminal id — the state-record key. */
   terminalId?: string;
+  /** Display-only context sample; never persisted with the agent record. */
+  context?: ContextMetrics;
 }

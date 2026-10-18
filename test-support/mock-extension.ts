@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 
 import type {
+  ContextUsage,
   ExtensionAPI,
   ExtensionContext,
 } from '@earendil-works/pi-coding-agent';
@@ -72,6 +73,8 @@ export function createMockHost(options: {
    * left cancels, which is what ends the manager loop.
    */
   dialogInputs?: string[][];
+  /** Context usage the mock `ctx.getContextUsage()` reports. Defaults to `undefined`. */
+  getContextUsage?: () => ContextUsage | undefined;
 }): MockHost {
   const messages: SentMessage[] = [];
   const userMessages: string[] = [];
@@ -126,6 +129,7 @@ export function createMockHost(options: {
     hasUI: options.hasUI ?? true,
     mode: options.mode ?? (options.hasUI === false ? 'print' : 'tui'),
     isIdle: () => options.isIdle ?? true,
+    getContextUsage: options.getContextUsage ?? (() => undefined),
     signal: undefined,
     sessionManager: {
       getSessionId: () => options.sessionId ?? 'test-orch-session',

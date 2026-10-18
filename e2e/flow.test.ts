@@ -264,6 +264,21 @@ test('keeps a real question agent resumable after its workspace tab is renamed',
       assert.equal(question.customType, 'herdr_agent_question');
       assert.match(question.content, /Cookie session or JWT\?/);
 
+      // The real child publishes an absolute context sample at its finalized
+      // turn, which is what the widget and the manager display.
+      await harness.waitFor(async () => {
+        const record = Object.values((await harness.readState()).agents)[0];
+        return (
+          (await readAgentSessionMeta(record?.resultFile))?.context !==
+          undefined
+        );
+      }, 'the child to publish a context sample');
+      const liveRecord = Object.values((await harness.readState()).agents)[0];
+      const sample = (await readAgentSessionMeta(liveRecord?.resultFile))
+        ?.context;
+      assert.equal(typeof sample?.tokens, 'number');
+      assert.ok((sample?.contextWindow ?? 0) > 0);
+
       // The restricted profile still got the question channel.
       assert.ok(
         offeredTools(harness.llm.requests[0] ?? {}).includes('ask_question'),

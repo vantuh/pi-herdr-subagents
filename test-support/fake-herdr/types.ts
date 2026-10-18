@@ -60,6 +60,8 @@ export interface FakeAgent {
   resultFile?: string;
   childSessionId?: string;
   childSessionFile?: string;
+  /** Context sample the simulated child publishes in `session.json`. */
+  childContext?: { tokens: number | null; contextWindow: number };
 }
 
 /** What a simulated child does with one prompt. */
@@ -89,6 +91,12 @@ export interface ChildOutcome {
    * previous turn's output as if it answered the new prompt.
    */
   staleWindowMs?: number;
+  /**
+   * Context sample published in `session.json` after this turn, as a real child
+   * publishes one at `turn_end`. Omit it to publish metadata without a sample,
+   * which is what a new assignment or a fresh child does.
+   */
+  context?: { tokens: number | null; contextWindow: number };
 }
 
 export interface ChildTurn {

@@ -6,6 +6,8 @@ import { Value } from 'typebox/value';
 
 import {
   ChildSessionMeta,
+  ChildSessionMetaInput,
+  ContextMetrics,
   isNonEmptyString,
   MessageContent,
   TextPart,
@@ -132,7 +134,7 @@ export async function readAgentSessionMeta(
   if (!filePath) return undefined;
   const raw = await readTrimmedIfExists(filePath);
   if (!raw) return undefined;
-  const parsed = parseJson(ChildSessionMeta, raw);
+  const parsed = parseJson(ChildSessionMetaInput, raw);
   if (
     !parsed ||
     !isNonEmptyString(parsed.sessionId) ||
@@ -146,6 +148,9 @@ export async function readAgentSessionMeta(
     updatedAt: parsed.updatedAt ?? new Date(0).toISOString(),
     ...(isNonEmptyString(parsed.sessionFile)
       ? { sessionFile: path.resolve(parsed.sessionFile!.trim()) }
+      : {}),
+    ...(Value.Check(ContextMetrics, parsed.context)
+      ? { context: parsed.context }
       : {}),
   };
 }

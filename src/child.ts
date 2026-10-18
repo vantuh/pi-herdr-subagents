@@ -14,11 +14,13 @@ import {
   setAgentResultInterrupted,
   writeAgentSessionMeta,
 } from './artifacts.ts';
+import type { ContextMetrics } from './artifacts/schema.ts';
 import { getCurrentContext } from './herdr/snapshot.ts';
 import { textResult } from './tool/result.ts';
 
 export async function captureChildSessionMeta(
   ctx: ExtensionContext,
+  context?: ContextMetrics,
 ): Promise<string | undefined> {
   const dest = process.env[SESSION_META_ENV]?.trim();
   const sessionManager = ctx.sessionManager;
@@ -33,6 +35,7 @@ export async function captureChildSessionMeta(
     cwd,
     updatedAt: new Date().toISOString(),
     ...(sessionFile ? { sessionFile } : {}),
+    ...(context ? { context } : {}),
   });
 }
 
@@ -65,26 +68,53 @@ async function mirrorPaneLabelAsSessionName(pi: ExtensionAPI): Promise<void> {
  */
 export function registerChildMode(pi: ExtensionAPI): void {
   let resultFile: string | undefined;
+  // Every metadata write republishes this sample, so a path-only publish never
+  // erases it; a new assignment, session or compaction clears it first.
+  let context: ContextMetrics | undefined;
+  const publishSessionMeta = (ctx: ExtensionContext) =>
+    captureChildSessionMeta(ctx, context);
 
   pi.on('session_start', async (_event, ctx) => {
     resultFile = undefined;
-    await captureChildSessionMeta(ctx);
+    context = undefined;
+    await publishSessionMeta(ctx);
     await mirrorPaneLabelAsSessionName(pi);
   });
 
-  pi.on('before_agent_start', async (event) => {
-    if (event.messageType === 'user') {
+  pi.on('before_agent_start', async (event, ctx) => {
+    const assignment = event.messageType === 'user';
+    if (assignment) {
       resultFile = findResultFileMarker(event.prompt) ?? resultFile;
+      // A new assignment invalidates the previous turn's measurement.
+      context = undefined;
     }
-    // Escape skips agent_before_settle, so block delivery before work starts.
+    // Escape skips agent_before_settle, so block delivery before work starts —
+    // before the display metadata, whose write may fail.
     if (resultFile) await setAgentResultInterrupted(resultFile, true);
+    if (assignment && resultFile) await publishSessionMeta(ctx);
   });
 
-  pi.on('message_end', async (event, ctx) => {
+  pi.on('message_end', async (event) => {
     if (!resultFile || event.message.role !== 'assistant') return;
     const output = assistantText(event.message);
     if (output.trim()) await appendAgentResult(resultFile, output);
-    await captureChildSessionMeta(ctx);
+  });
+
+  // message_end runs before persistence; turn_end sees the finalized context.
+  pi.on('turn_end', async (_event, ctx) => {
+    const usage = ctx.getContextUsage();
+    context = usage
+      ? { tokens: usage.tokens, contextWindow: usage.contextWindow }
+      : undefined;
+    await publishSessionMeta(ctx);
+  });
+
+  // Compaction makes the published count stale; Pi still reports the window.
+  pi.on('session_compact', async (_event, ctx) => {
+    const contextWindow =
+      ctx.getContextUsage()?.contextWindow ?? context?.contextWindow;
+    context = contextWindow ? { tokens: null, contextWindow } : undefined;
+    await publishSessionMeta(ctx);
   });
 
   // Herdr reports idle after errors too; preserve partial text for a manual retry.
@@ -129,7 +159,7 @@ export function registerChildMode(pi: ExtensionAPI): void {
         );
       }
 
-      if (ctx) await captureChildSessionMeta(ctx);
+      if (ctx) await publishSessionMeta(ctx);
 
       return {
         ...textResult(

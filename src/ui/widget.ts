@@ -1,4 +1,5 @@
 import type { HerdrAgentInfo } from '../herdr/types.ts';
+import { formatContextLabel } from './agent-context.ts';
 
 export const AGENTS_WIDGET_ID = 'herdr-agents';
 export const AGENTS_WIDGET_TICK_MS = 1000;
@@ -11,12 +12,14 @@ export interface WidgetPaint {
   header(text: string): string;
   elapsed(text: string): string;
   status(text: string, tone: StatusTone): string;
+  context(text: string): string;
 }
 
 const plainPaint: WidgetPaint = {
   header: (text) => text,
   elapsed: (text) => text,
   status: (text) => text,
+  context: (text) => text,
 };
 
 /** `mm:ss` under an hour, `h:mm:ss` above it. */
@@ -84,6 +87,7 @@ export function renderAgentWidgetLines(
     elapsed: elapsedLabel(agent, now),
     label: truncateLabel(agent.tabLabel),
     status: agentStatusView(agent.status),
+    context: formatContextLabel(agent.context),
   }));
 
   const labelWidth = Math.max(...rows.map((row) => row.label.length));
@@ -100,6 +104,8 @@ export function renderAgentWidgetLines(
         row.label.padEnd(labelWidth),
         '  ',
         paint.status(row.status.text, row.status.tone),
+        ' · ',
+        paint.context(row.context),
       ].join(''),
     ),
   ];

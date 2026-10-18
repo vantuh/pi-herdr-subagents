@@ -7,6 +7,7 @@ import { listManagedWorkspaceAgents } from '../herdr/placement.ts';
 import { loadContextWithState } from '../herdr/snapshot.ts';
 import type { HerdrAgentInfo } from '../herdr/types.ts';
 import { bestEffort } from '../utils.ts';
+import { attachAgentContext } from './agent-context.ts';
 import { deliverDetachedOutcomes } from './detached-outcomes.ts';
 import {
   AGENTS_WIDGET_ID,
@@ -81,6 +82,7 @@ function themeWidgetPaint(ctx: ExtensionContext): WidgetPaint {
     header: (text) => theme.fg('muted', text),
     elapsed: (text) => theme.fg('dim', text),
     status: (text, tone) => theme.fg(toneColor[tone], text),
+    context: (text) => theme.fg('dim', text),
   };
 }
 
@@ -103,6 +105,8 @@ async function updateAgentsWidget(
       ctx.ui.setWidget(AGENTS_WIDGET_ID, undefined);
       return;
     }
+    await attachAgentContext(agents);
+    signal.throwIfAborted();
     ctx.ui.setWidget(
       AGENTS_WIDGET_ID,
       renderAgentWidgetLines(agents, Date.now(), themeWidgetPaint(ctx)),

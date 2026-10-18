@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import type { ContextUsage } from '@earendil-works/pi-coding-agent';
 import { test } from 'vitest';
 
 import {
@@ -22,13 +23,14 @@ import { applyEnv, createMockHost } from '../test-support/mock-extension.ts';
 
 async function withChildHost(
   body: (host: ReturnType<typeof createMockHost>, tmp: string) => Promise<void>,
+  getContextUsage?: () => ContextUsage | undefined,
 ): Promise<void> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'herdr-agents-child-'));
   const tmp = path.join(root, 'tmp');
   await fs.mkdir(tmp, { recursive: true });
   const restoreEnv = applyEnv({ TMPDIR: tmp, HERDR_AGENT_CHILD: '1' });
   try {
-    const host = createMockHost({ cwd: root });
+    const host = createMockHost({ cwd: root, getContextUsage });
     herdrAgentsExtension(host.pi);
     await body(host, tmp);
   } finally {
@@ -41,6 +43,25 @@ async function withChildHost(
 async function managedResultFile(tmp: string): Promise<string> {
   const dir = await fs.mkdtemp(path.join(tmp, 'herdr-agent-'));
   return path.join(dir, 'result.md');
+}
+
+/** The context sample the child published, or undefined when it published none. */
+async function publishedContext(
+  metaFile: string,
+): Promise<{ tokens: number | null; contextWindow: number } | undefined> {
+  return JSON.parse(await fs.readFile(metaFile, 'utf8')).context;
+}
+
+/** The context usage the mock host reports, as Pi's estimate object. */
+function contextUsage(
+  tokens: number | null,
+  contextWindow: number,
+): ContextUsage {
+  return {
+    tokens,
+    contextWindow,
+    percent: tokens === null ? null : (tokens / contextWindow) * 100,
+  };
 }
 
 test('a child registers the question channel but never delegation', async () => {
@@ -310,7 +331,7 @@ test('child session_start writes session metadata to the env artifact', async ()
   });
 });
 
-test('child refreshes session metadata after a finalized result', async () => {
+test('child publishes session metadata for a managed task', async () => {
   await withChildHost(async (host, tmp) => {
     const resultFile = await managedResultFile(tmp);
     const metaFile = path.join(path.dirname(resultFile), 'session.json');
@@ -329,4 +350,209 @@ test('child refreshes session metadata after a finalized result', async () => {
     assert.equal(raw.sessionId, 'test-orch-session');
     delete process.env[SESSION_META_ENV];
   });
+});
+
+test('a child publishes its context sample at turn_end, not at message_end', async () => {
+  const usage = { current: contextUsage(12_345, 200_000) };
+  await withChildHost(
+    async (host, tmp) => {
+      const resultFile = await managedResultFile(tmp);
+      const metaFile = path.join(path.dirname(resultFile), 'session.json');
+      process.env[SESSION_META_ENV] = metaFile;
+      try {
+        await host.fire('session_start');
+        assert.equal(await publishedContext(metaFile), undefined);
+
+        await host.fire('before_agent_start', {
+          prompt: `Do the thing.\n${RESULT_FILE_MARKER} ${resultFile}`,
+        });
+        await host.fire('message_end', {
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'done' }],
+          },
+        });
+        // Pi persists the turn after message_end, so a sample taken there would
+        // be one turn behind.
+        assert.equal(await publishedContext(metaFile), undefined);
+
+        await host.fire('turn_end');
+        assert.deepEqual(await publishedContext(metaFile), {
+          tokens: 12_345,
+          contextWindow: 200_000,
+        });
+      } finally {
+        delete process.env[SESSION_META_ENV];
+      }
+    },
+    () => usage.current,
+  );
+});
+
+test('a child drops the previous sample when a new assignment or session starts', async () => {
+  const usage = { current: contextUsage(38_000, 200_000) };
+  await withChildHost(
+    async (host, tmp) => {
+      const resultFile = await managedResultFile(tmp);
+      const metaFile = path.join(path.dirname(resultFile), 'session.json');
+      process.env[SESSION_META_ENV] = metaFile;
+      try {
+        await host.fire('before_agent_start', {
+          prompt: `Do the thing.\n${RESULT_FILE_MARKER} ${resultFile}`,
+        });
+        await host.fire('turn_end');
+        assert.ok(await publishedContext(metaFile));
+
+        await host.fire('before_agent_start', { prompt: 'continue' });
+        assert.equal(await publishedContext(metaFile), undefined);
+        assert.equal(
+          JSON.parse(await fs.readFile(metaFile, 'utf8')).sessionId,
+          'test-orch-session',
+        );
+
+        await host.fire('turn_end');
+        assert.deepEqual(await publishedContext(metaFile), {
+          tokens: 38_000,
+          contextWindow: 200_000,
+        });
+
+        // A resumed or forked session must not inherit the value either.
+        await host.fire('session_start', { reason: 'resume' });
+        assert.equal(await publishedContext(metaFile), undefined);
+      } finally {
+        delete process.env[SESSION_META_ENV];
+      }
+    },
+    () => usage.current,
+  );
+});
+
+test('a child reports unknown tokens over the known window after compaction', async () => {
+  const usage = { current: contextUsage(190_000, 200_000) };
+  await withChildHost(
+    async (host, tmp) => {
+      const resultFile = await managedResultFile(tmp);
+      const metaFile = path.join(path.dirname(resultFile), 'session.json');
+      process.env[SESSION_META_ENV] = metaFile;
+      try {
+        await host.fire('before_agent_start', {
+          prompt: `Do the thing.\n${RESULT_FILE_MARKER} ${resultFile}`,
+        });
+        await host.fire('turn_end');
+        assert.deepEqual(await publishedContext(metaFile), {
+          tokens: 190_000,
+          contextWindow: 200_000,
+        });
+
+        // Pi already reports unknown tokens with the window at this boundary.
+        usage.current = contextUsage(null, 200_000);
+        await host.fire('session_compact');
+        assert.deepEqual(await publishedContext(metaFile), {
+          tokens: null,
+          contextWindow: 200_000,
+        });
+
+        // Without a model Pi cannot name the window; the known one survives.
+        usage.current = undefined;
+        await host.fire('session_compact');
+        assert.deepEqual(await publishedContext(metaFile), {
+          tokens: null,
+          contextWindow: 200_000,
+        });
+      } finally {
+        delete process.env[SESSION_META_ENV];
+      }
+    },
+    () => usage.current,
+  );
+});
+
+test('a child publishes a measured zero and no sample at all without an estimate', async () => {
+  const usage = { current: contextUsage(0, 128_000) };
+  await withChildHost(
+    async (host, tmp) => {
+      const resultFile = await managedResultFile(tmp);
+      const metaFile = path.join(path.dirname(resultFile), 'session.json');
+      process.env[SESSION_META_ENV] = metaFile;
+      try {
+        await host.fire('before_agent_start', {
+          prompt: `Do the thing.\n${RESULT_FILE_MARKER} ${resultFile}`,
+        });
+        await host.fire('turn_end');
+        assert.deepEqual(await publishedContext(metaFile), {
+          tokens: 0,
+          contextWindow: 128_000,
+        });
+
+        usage.current = undefined;
+        await host.fire('turn_end');
+        assert.equal(await publishedContext(metaFile), undefined);
+        assert.equal(
+          JSON.parse(await fs.readFile(metaFile, 'utf8')).sessionId,
+          'test-orch-session',
+        );
+      } finally {
+        delete process.env[SESSION_META_ENV];
+      }
+    },
+    () => usage.current,
+  );
+});
+
+test('a failed metadata publish still leaves the interruption marker', async () => {
+  await withChildHost(async (host, tmp) => {
+    const resultFile = await managedResultFile(tmp);
+    const metaFile = path.join(path.dirname(resultFile), 'session.json');
+    // session.json is a directory, so the publish throws; the marker must be on
+    // disk before it does.
+    await fs.mkdir(metaFile);
+    process.env[SESSION_META_ENV] = metaFile;
+    try {
+      await assert.rejects(
+        host.fire('before_agent_start', {
+          prompt: `Do the thing.\n${RESULT_FILE_MARKER} ${resultFile}`,
+        }),
+      );
+      assert.equal(await isAgentResultInterrupted(resultFile), true);
+    } finally {
+      delete process.env[SESSION_META_ENV];
+    }
+  });
+});
+
+test('ask_question republishes metadata without erasing the last sample', async () => {
+  const usage = { current: contextUsage(5_000, 200_000) };
+  await withChildHost(
+    async (host, tmp) => {
+      const resultFile = await managedResultFile(tmp);
+      const metaFile = path.join(path.dirname(resultFile), 'session.json');
+      process.env[SESSION_META_ENV] = metaFile;
+      try {
+        await host.fire('before_agent_start', {
+          prompt: `Do the thing.\n${RESULT_FILE_MARKER} ${resultFile}`,
+        });
+        await host.fire('turn_end');
+
+        // Deleting the artifact proves the tool republishes it; passing the
+        // host context is what makes the tool reach that publish at all.
+        await fs.rm(metaFile);
+        const tool = host.tools.get('ask_question');
+        const asked = await tool.execute(
+          'call-1',
+          { question: 'Which file next?' },
+          undefined,
+          undefined,
+          host.ctx,
+        );
+        assert.equal(asked.details.delivered, true);
+        assert.deepEqual(await publishedContext(metaFile), {
+          tokens: 5_000,
+          contextWindow: 200_000,
+        });
+      } finally {
+        delete process.env[SESSION_META_ENV];
+      }
+    },
+    () => usage.current,
+  );
 });

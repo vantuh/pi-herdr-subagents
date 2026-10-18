@@ -165,6 +165,16 @@ sending a task, so you can read what it did; close it with `d` to archive it
 again. Anything typed into the reopened agent extends its session, and
 `resumeClosed` on that label is rejected while it stays open.
 
+Above the editor, a widget lists the same agents with their task time, label and
+status. Both surfaces show the child's current context as `ctx 38k / 200k`: the
+estimated tokens of its current context over its model window. A child that has
+not finished a turn yet, or whose capacity Pi cannot determine, shows `ctx —`;
+`ctx — / 200k` is a known window with an unknown count, and `ctx 0 / 200k` is a
+measured empty context. The value is published after each finalized child turn,
+so it can lag the turn in progress, and after compaction it stays unknown until
+the next response. Closed rows show `closed` and the time instead; the pane id
+and cwd stay in managed state for focus, close and resume.
+
 New child sessions are stored in `<getAgentDir()>/herdr-agent-sessions`
 (default: `~/.pi/agent/herdr-agent-sessions`), outside the default `/resume`
 history. Use `resumeClosed` or `/herdr-agents` to reopen them. Existing child

@@ -44,6 +44,82 @@ test('round-trips child session metadata next to the result file', async () => {
   await removeAgentTempFiles(files.resultFile);
 });
 
+test('round-trips a published context sample, keeping unknown and zero distinct', async () => {
+  const files = await createAgentTempFiles('system');
+  await writeAgentSessionMeta(files.sessionMetaFile, {
+    sessionId: 'child-1',
+    cwd: '/tmp/repo',
+    context: { tokens: 38_000, contextWindow: 200_000 },
+  });
+  assert.deepEqual((await readAgentSessionMeta(files.resultFile))?.context, {
+    tokens: 38_000,
+    contextWindow: 200_000,
+  });
+
+  // `null` tokens is a known window with an unknown count, not a missing sample.
+  await writeAgentSessionMeta(files.sessionMetaFile, {
+    sessionId: 'child-1',
+    cwd: '/tmp/repo',
+    context: { tokens: null, contextWindow: 200_000 },
+  });
+  assert.deepEqual((await readAgentSessionMeta(files.resultFile))?.context, {
+    tokens: null,
+    contextWindow: 200_000,
+  });
+
+  // A measured zero stays a zero; only `null` means unknown.
+  await writeAgentSessionMeta(files.sessionMetaFile, {
+    sessionId: 'child-1',
+    cwd: '/tmp/repo',
+    context: { tokens: 0, contextWindow: 128_000 },
+  });
+  assert.deepEqual((await readAgentSessionMeta(files.resultFile))?.context, {
+    tokens: 0,
+    contextWindow: 128_000,
+  });
+
+  await writeAgentSessionMeta(files.sessionMetaFile, {
+    sessionId: 'child-1',
+    cwd: '/tmp/repo',
+  });
+  assert.equal(
+    (await readAgentSessionMeta(files.resultFile))?.context,
+    undefined,
+  );
+
+  await removeAgentTempFiles(files.resultFile);
+});
+
+test('a bad context sample does not discard the session identity', async () => {
+  const files = await createAgentTempFiles('system');
+  for (const context of [
+    { tokens: 'many', contextWindow: 200_000 },
+    { tokens: 1, contextWindow: null },
+    { tokens: -1, contextWindow: 200_000 },
+    { tokens: 1, contextWindow: 0 },
+    { tokens: null, contextWindow: -1 },
+  ]) {
+    await fs.writeFile(
+      files.sessionMetaFile,
+      `${JSON.stringify({
+        sessionId: 'child-1',
+        sessionFile: '/tmp/repo/child.jsonl',
+        cwd: '/tmp/repo',
+        context,
+      })}\n`,
+      'utf8',
+    );
+    const meta = await readAgentSessionMeta(files.resultFile);
+    const label = JSON.stringify(context);
+    assert.equal(meta?.sessionId, 'child-1', label);
+    assert.equal(meta?.cwd, '/tmp/repo', label);
+    assert.equal(meta?.sessionFile, '/tmp/repo/child.jsonl', label);
+    assert.equal(meta?.context, undefined, label);
+  }
+
+  await removeAgentTempFiles(files.resultFile);
+});
+
 test('validates a Pi session JSONL header against stored metadata', async () => {
   const dir = await fs.mkdtemp(path.join(path.sep, 'tmp', 'herdr-session-'));
   const sessionFile = path.join(dir, 'session.jsonl');

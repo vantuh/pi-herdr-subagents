@@ -809,6 +809,9 @@ export class FakeHerdr {
     };
     const outcome = await this.behavior(turn);
     agent.resultFile = turn.resultFile;
+    // A new assignment replaces the previous turn's sample, as the child clears
+    // it at `before_agent_start`.
+    agent.childContext = outcome.context;
 
     const run = async () => {
       // Hold the previous turn's status and seq so the extension cannot mistake
@@ -894,6 +897,7 @@ export class FakeHerdr {
         sessionFile,
         cwd,
         updatedAt: new Date().toISOString(),
+        ...(agent.childContext ? { context: agent.childContext } : {}),
       })}\n`,
       { encoding: 'utf8', mode: 0o600 },
     );

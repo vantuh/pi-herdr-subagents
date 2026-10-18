@@ -25,6 +25,7 @@ import type { ClosedAgentHistoryRecord } from '../state/schema.ts';
 import { orchestratorIdentity } from '../tool/child-args.ts';
 import { closeOneShot } from '../tool/one-shot.ts';
 import { openClosedAgent } from '../tool/spawn/flow.ts';
+import { attachAgentContext, formatContextLabel } from './agent-context.ts';
 
 async function showNoAgentsDialog(ctx: ExtensionCommandContext): Promise<void> {
   await ctx.ui.custom<void>(
@@ -58,6 +59,37 @@ type AgentMenuAction =
 
 const CLOSED_PREFIX = 'closed:';
 
+export interface AgentMenuItemPaint {
+  status(status: string): string;
+  dim(text: string): string;
+}
+
+export function agentMenuItems(
+  agents: HerdrAgentInfo[],
+  closed: ClosedAgentHistoryRecord[],
+  paint: AgentMenuItemPaint,
+): SelectItem[] {
+  const items: SelectItem[] = agents.map((agent) => ({
+    value: agent.tabId,
+    label: `${agent.tabLabel} (${agent.agent})`,
+    description: [
+      `status:${paint.status(agent.status)}`,
+      formatContextLabel(agent.context),
+    ].join(' • '),
+  }));
+  for (const record of closed) {
+    items.push({
+      value: `${CLOSED_PREFIX}${record.id}`,
+      label: `${record.tabLabel} (${record.profileName})`,
+      description: [
+        paint.dim('closed'),
+        new Date(record.closedAt).toLocaleString(),
+      ].join(' • '),
+    });
+  }
+  return items;
+}
+
 async function pickAgentAction(
   ctx: ExtensionCommandContext,
   agents: HerdrAgentInfo[],
@@ -68,36 +100,19 @@ async function pickAgentAction(
     value: string;
   } | null>(
     (tui, theme, _kb, done) => {
-      const colorStatus = (status: string) => {
-        if (status === 'working') return theme.fg('accent', status);
-        if (status === 'blocked') return theme.fg('warning', status);
-        if (status === 'done') return theme.fg('success', status);
-        if (status === 'idle') return theme.fg('success', status);
-        return theme.fg('dim', status);
+      const paint: AgentMenuItemPaint = {
+        status: (status) => {
+          if (status === 'working') return theme.fg('accent', status);
+          if (status === 'blocked') return theme.fg('warning', status);
+          if (status === 'done' || status === 'idle') {
+            return theme.fg('success', status);
+          }
+          return theme.fg('dim', status);
+        },
+        dim: (text) => theme.fg('dim', text),
       };
 
-      const items: SelectItem[] = agents.map((agent) => ({
-        value: agent.tabId,
-        label: `${agent.tabLabel} (${agent.agent})`,
-        description: [
-          `status:${colorStatus(agent.status)}`,
-          `pane:${agent.paneId}`,
-          agent.cwd,
-        ]
-          .filter(Boolean)
-          .join(' • '),
-      }));
-      for (const record of closed) {
-        items.push({
-          value: `${CLOSED_PREFIX}${record.id}`,
-          label: `${record.tabLabel} (${record.profileName})`,
-          description: [
-            theme.fg('dim', 'closed'),
-            new Date(record.closedAt).toLocaleString(),
-            record.cwd,
-          ].join(' • '),
-        });
-      }
+      const items = agentMenuItems(agents, closed, paint);
 
       const container = new Container();
       container.addChild(
@@ -198,6 +213,7 @@ export async function showHerdrAgentsManager(
   while (true) {
     const { context, state } = await loadContextWithState();
     const agents = listManagedWorkspaceAgents(context, state);
+    await attachAgentContext(agents);
     const closed = ownerSessionId
       ? listOwnedResumableHistory(state, ownerSessionId)
       : [];

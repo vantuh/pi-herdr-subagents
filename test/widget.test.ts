@@ -88,9 +88,32 @@ test('renders a header and one row per agent', () => {
 
   assert.deepEqual(lines, [
     'Herdr agents · 2 · 1 working',
-    '   01:23 Scout — message-bus  working',
-    ' 1:02:03 Reviewer             blocked · attach to unblock',
+    '   01:23 Scout — message-bus  working · ctx —',
+    ' 1:02:03 Reviewer             blocked · attach to unblock · ctx —',
   ]);
+});
+
+test('shows each agent current context over its capacity', () => {
+  const lines = renderAgentWidgetLines(
+    [
+      agent({ context: { tokens: 38_000, contextWindow: 200_000 } }),
+      agent({
+        tabLabel: 'Reviewer',
+        context: { tokens: 0, contextWindow: 128_000 },
+      }),
+      agent({
+        tabLabel: 'Research',
+        context: { tokens: null, contextWindow: 200_000 },
+      }),
+      agent({ tabLabel: 'Ad-hoc' }),
+    ],
+    NOW,
+  );
+
+  assert.deepEqual(
+    lines.slice(1).map((line) => line.split(' · ')[1]),
+    ['ctx 38k / 200k', 'ctx 0 / 128k', 'ctx — / 200k', 'ctx —'],
+  );
 });
 
 test('aligns the label column when elapsed widths differ', () => {
@@ -140,6 +163,7 @@ test('applies paint per column and tone', () => {
     header: (text) => `H(${text})`,
     elapsed: (text) => `E(${text})`,
     status: (text, tone) => `S:${tone}(${text})`,
+    context: (text) => `C(${text})`,
   };
 
   const lines = renderAgentWidgetLines(
@@ -151,7 +175,7 @@ test('applies paint per column and tone', () => {
   assert.equal(lines[0], 'H(Herdr agents · 1)');
   assert.equal(
     lines[1],
-    ' E(01:23) Scout  S:attention(blocked · attach to unblock)',
+    ' E(01:23) Scout  S:attention(blocked · attach to unblock) · C(ctx —)',
   );
 });
 

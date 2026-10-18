@@ -115,7 +115,19 @@ status previews. Send a correction in the same child pane to continue its task.
 A successful continuation removes the marker and delivers the accumulated
 output. Before a new task, the parent clears old result/question files and the
 interruption marker.
-Session metadata is stored beside the result for durable resume.
+Session metadata is stored beside the result for durable resume. It also
+carries the child's current context sample. The child publishes it at `turn_end`
+from `ctx.getContextUsage()` (estimated tokens and the model window), because Pi
+persists the turn before that boundary — `message_end` handlers run before the
+persistence, so a sample taken there would be a turn behind. Starting a new or
+resumed session, and starting a new assignment, clear the stale value first;
+compaction keeps the known window and drops the token count until the next
+response. Both surfaces read the sample through `src/ui/agent-context.ts`:
+the widget on each one-second tick, and the manager when its list opens or
+rebuilds. The manager does not refresh an open list automatically. One missing,
+unreadable or invalid artifact leaves that row at `ctx —` without failing the
+widget or the list. The sample is display-only: managed state and closed history
+store no metrics, so a closed row shows only its status and time.
 
 Collection checks `question.md` before `result.md`. `ask_question` writes the
 question and returns `terminate: true`, without a redundant assistant response
