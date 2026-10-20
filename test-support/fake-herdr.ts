@@ -40,6 +40,9 @@ import type {
  */
 const DEFAULT_WORKING_MS = 200;
 
+/** How often the simulated child looks at its control directory. */
+const CONTROL_POLL_MS = 20;
+
 function ok(result: unknown): CliResponse {
   return { stdout: `${JSON.stringify({ result })}\n` };
 }
@@ -129,6 +132,15 @@ export class FakeHerdr {
   private nextTerminal = 1;
   /** Prompts still being simulated; awaited on stop to avoid stray writes. */
   private readonly inFlight = new Set<Promise<void>>();
+  /** Simulated child control consumers, keyed by their control directory. */
+  private readonly controlConsumers = new Map<
+    string,
+    {
+      timer?: ReturnType<typeof setInterval>;
+      handled: Set<string>;
+      closed: boolean;
+    }
+  >();
 
   readonly orchestratorPane: FakePane;
 
@@ -315,6 +327,9 @@ export class FakeHerdr {
   }
 
   async stop(): Promise<void> {
+    for (const dir of [...this.controlConsumers.keys()]) {
+      this.stopControlConsumer(dir);
+    }
     await Promise.allSettled([...this.inFlight]);
     await Promise.all(
       [this.cliServer, this.apiServer].map(
@@ -813,6 +828,9 @@ export class FakeHerdr {
     // it at `before_agent_start`.
     agent.childContext = outcome.context;
     agent.childCost = outcome.cost;
+    agent.controlAck = outcome.controlAck;
+    agent.steerTexts = [];
+    this.ensureControlConsumer(agent);
 
     const run = async () => {
       // Hold the previous turn's status and seq so the extension cannot mistake
@@ -831,7 +849,10 @@ export class FakeHerdr {
           );
         }
         if (outcome.result !== undefined) {
-          await fs.writeFile(turn.resultFile, outcome.result, 'utf8');
+          // A queued steer enters the run at its next turn boundary, so its text
+          // belongs to what the child reports at the end of the run.
+          const parts = [outcome.result, ...(agent.steerTexts ?? [])];
+          await fs.writeFile(turn.resultFile, parts.join('\n\n'), 'utf8');
         }
         await this.captureChildSession(agent);
       }
@@ -847,6 +868,108 @@ export class FakeHerdr {
       return;
     }
     await run();
+  }
+
+  /**
+   * The simulated child consumes `control/request.json` the way the real
+   * `src/child/control.ts` does: read the request, apply it once per id, and
+   * answer with `ack.<id>.json`. It lives as long as the agent, including after
+   * the run settles, which is what lets an idle child answer `idle`.
+   */
+  private ensureControlConsumer(agent: FakeAgent): void {
+    if (!agent.resultFile) return;
+    const dir = path.join(path.dirname(agent.resultFile), 'control');
+    if (agent.controlDir && agent.controlDir !== dir) {
+      this.stopControlConsumer(agent.controlDir);
+    }
+    agent.controlDir = dir;
+    if (this.controlConsumers.has(dir)) return;
+    const consumer: {
+      timer?: ReturnType<typeof setInterval>;
+      handled: Set<string>;
+      closed: boolean;
+    } = { handled: new Set<string>(), closed: false };
+    consumer.timer = setInterval(() => {
+      // Tracked like every other simulated child task, so `stop()` drains a
+      // consume that is already running instead of letting it write after
+      // teardown, and a write that loses to a close stays contained.
+      this.track(this.consumeControl(agent, dir, consumer));
+    }, CONTROL_POLL_MS);
+    consumer.timer.unref?.();
+    this.controlConsumers.set(dir, consumer);
+  }
+
+  private stopControlConsumer(dir: string): void {
+    const consumer = this.controlConsumers.get(dir);
+    if (!consumer) return;
+    // Fence first: a callback that runs after this point must not write.
+    consumer.closed = true;
+    clearInterval(consumer.timer);
+    this.controlConsumers.delete(dir);
+  }
+
+  private async consumeControl(
+    agent: FakeAgent,
+    dir: string,
+    consumer: { handled: Set<string>; closed: boolean },
+  ): Promise<void> {
+    const { handled } = consumer;
+    let raw: string;
+    try {
+      raw = await fs.readFile(path.join(dir, 'request.json'), 'utf8');
+    } catch {
+      return;
+    }
+    let request: { id?: unknown; action?: unknown; message?: unknown };
+    try {
+      request = JSON.parse(raw);
+    } catch {
+      // A torn request is ignored, as in the real consumer.
+      return;
+    }
+    if (typeof request.id !== 'string' || handled.has(request.id)) return;
+    // Reserved after the read, so repeated polls apply a request once.
+    handled.add(request.id);
+    const ack = agent.controlAck ?? 'none';
+    if (ack === 'none') return;
+    if (request.action !== 'steer' && request.action !== 'interrupt') return;
+    // A close that landed while the request was being read has removed the
+    // agent's directory; writing then would recreate it.
+    if (consumer.closed) return;
+
+    if (
+      request.action === 'steer' &&
+      ack === 'queued' &&
+      typeof request.message === 'string'
+    ) {
+      agent.steerTexts = [...(agent.steerTexts ?? []), request.message];
+    }
+    if (
+      request.action === 'interrupt' &&
+      (ack === 'aborted' || ack === 'requested')
+    ) {
+      // The marker lands before the run can reach a completed boundary; only an
+      // observed settle counts as an abort.
+      await fs.writeFile(
+        path.join(path.dirname(dir), 'interrupted'),
+        'interrupted\n',
+        'utf8',
+      );
+      if (ack === 'aborted') this.setStatus(agent, 'idle');
+      // Same fence as the real consumer after the marker write: a consumer
+      // stopped meanwhile must not publish its acknowledgement.
+      if (consumer.closed) return;
+    }
+    await fs.writeFile(
+      path.join(dir, `ack.${request.id}.json`),
+      `${JSON.stringify({
+        id: request.id,
+        action: request.action,
+        status: ack,
+        at: Date.now(),
+      })}\n`,
+      { encoding: 'utf8', mode: 0o600 },
+    );
   }
 
   private async captureChildSession(agent: FakeAgent): Promise<void> {
@@ -955,7 +1078,9 @@ export class FakeHerdr {
     if (!pane) return;
     this.panes.splice(this.panes.indexOf(pane), 1);
     for (const [name, agent] of this.agents) {
-      if (agent.paneId === paneId) this.agents.delete(name);
+      if (agent.paneId !== paneId) continue;
+      if (agent.controlDir) this.stopControlConsumer(agent.controlDir);
+      this.agents.delete(name);
     }
     const root = this.layouts.get(pane.tab_id);
     if (!root) return;

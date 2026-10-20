@@ -98,6 +98,13 @@ export interface Harness {
     params: Record<string, unknown>,
     options?: { signal?: AbortSignal },
   ): Promise<any>;
+  /** Call any other registered tool, e.g. `herdr_agent_control`. */
+  callTool(
+    name: string,
+    params: Record<string, unknown>,
+    options?: { signal?: AbortSignal },
+  ): Promise<any>;
+
   /** Wait for the next poller-delivered result or question. */
   collect(label?: string, timeoutMs?: number): Promise<SentMessage>;
   /** Fire an extension lifecycle event (e.g. `session_start`). */
@@ -171,6 +178,22 @@ export async function createHarness(
   const tool = host.tools.get('herdr_agent');
   if (!tool) throw new Error('herdr_agent tool was not registered');
 
+  const callTool = (
+    name: string,
+    params: Record<string, unknown>,
+    options?: { signal?: AbortSignal },
+  ) => {
+    const registered = host.tools.get(name);
+    if (!registered) throw new Error(`${name} tool was not registered`);
+    return registered.execute(
+      `call-${Math.random().toString(36).slice(2)}`,
+      params,
+      options?.signal,
+      undefined,
+      host.ctx,
+    );
+  };
+
   return {
     fake,
     cwd,
@@ -183,22 +206,10 @@ export async function createHarness(
     commands: host.commands,
     renderers: host.renderers,
     dialogLines: host.dialogLines,
-    call: (params, callOptions) =>
-      tool.execute(
-        `call-${Math.random().toString(36).slice(2)}`,
-        params,
-        callOptions?.signal,
-        undefined,
-        host.ctx,
-      ),
+    call: (params, callOptions) => callTool('herdr_agent', params, callOptions),
     callRaw: (params, callOptions) =>
-      tool.execute(
-        `call-${Math.random().toString(36).slice(2)}`,
-        params,
-        callOptions?.signal,
-        undefined,
-        host.ctx,
-      ),
+      callTool('herdr_agent', params, callOptions),
+    callTool,
     collect: (label, timeoutMs) => {
       const start = host.messages.length;
       return waitFor(

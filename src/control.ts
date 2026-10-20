@@ -204,14 +204,16 @@ export async function withControlDirQueue<T>(
   });
   // Every mapped entry resolves, so a failed operation cannot reject the
   // operations queued behind it.
-  controlDirQueues.set(
-    key,
-    previous.then(() => current),
-  );
+  const tail = previous.then(() => current);
+  controlDirQueues.set(key, tail);
   try {
     await previous;
     return await fn();
   } finally {
     releaseQueue();
+    // Only the operation that still owns the entry may drop it: another call on
+    // the same directory has already replaced the mapping with its own tail, so
+    // deleting unconditionally would let a third caller bypass that operation.
+    if (controlDirQueues.get(key) === tail) controlDirQueues.delete(key);
   }
 }

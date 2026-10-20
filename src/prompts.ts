@@ -13,7 +13,9 @@ A question is answered by calling \`herdr_agent\` with the same \`tabLabel\` and
 
 Agents close after delivering a result. To continue one with its context, call \`herdr_agent\` with \`resumeClosed: true\`, the exact \`tabLabel\`, and a new self-contained \`task\`.
 
-Check a live agent only when the user asks or a decision you must make now depends on its progress: pass its \`tabLabel\` and no \`task\`. That returns its status and a preview of its latest text, and never re-sends work.`;
+Check a live agent only when the user asks or a decision you must make now depends on its progress: pass its \`tabLabel\` and no \`task\`. That returns its status and a preview of its latest text, and never re-sends work.
+
+Steer a running agent with \`herdr_agent_control\` (\`action: "steer"\`) only when a correction must reach work already in progress. Do not use it to check progress. Interrupt (\`action: "interrupt"\`) only when the user or a decision requires stopping the run. A steer is queued at the next turn boundary and can be dropped by an interrupt. If the call reports \`idle\`, check the agent's status instead of sending it a task. Never repeat a control call that reported \`unknown\`.`;
 
 /** Appended to results while an agent runs; models otherwise poll or sleep. */
 export const NO_WAIT_HINT =

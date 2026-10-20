@@ -46,6 +46,18 @@ export interface FakeWorkspace {
   active_tab_id?: string;
 }
 
+/**
+ * How the simulated child answers a control request: the `queued`/`idle`
+ * reply to a steer, the `aborted`/`requested` reply to an interrupt, or `none`
+ * for a child that never answers (a parent-side timeout).
+ */
+export type ChildControlAck =
+  | 'queued'
+  | 'idle'
+  | 'none'
+  | 'aborted'
+  | 'requested';
+
 export interface FakeAgent {
   name: string;
   paneId: string;
@@ -64,6 +76,12 @@ export interface FakeAgent {
   childContext?: { tokens: number | null; contextWindow: number };
   /** Cumulative cost the simulated child publishes in `session.json`. */
   childCost?: number;
+  /** Reply the simulated control consumer gives to the next control request. */
+  controlAck?: ChildControlAck;
+  /** Steer texts the simulated child applied during this run. */
+  steerTexts?: string[];
+  /** Control directory the simulated child is currently consuming. */
+  controlDir?: string;
 }
 
 /** What a simulated child does with one prompt. */
@@ -105,6 +123,13 @@ export interface ChildOutcome {
    * recorded no cost-bearing usage.
    */
   cost?: number;
+  /**
+   * How the simulated child answers a control request (`control/request.json`)
+   * while it lives: `queued` applies a steer and appends its text to the
+   * result, `aborted`/`requested` write the interrupted marker (aborting the
+   * run for `aborted`), `idle` refuses, `none` never answers.
+   */
+  controlAck?: ChildControlAck;
 }
 
 export interface ChildTurn {

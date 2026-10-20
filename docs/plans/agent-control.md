@@ -1,17 +1,18 @@
 # Agent control: steer and interrupt one running child
 
-Status: implementation started, revision 4. Slice 0 (SDK alignment) is done and
+Status: implementation started, revision 8. Slice 0 (SDK alignment) is done and
 the slice 1 gate is resolved: the user accepted the measured late-delivery race
 (option 1 of the [Gate result](#gate-result)). Slice 1's throwaway prototype is
 complete — checks 1–5 pass, check 6 is re-scoped to the accepted behavior, and
-check 7 is **deferred to slice 4** (it needs the parent tool to mean anything).
+check 7 is done in slice 4, which is where a real control call exists.
 Measurements are recorded under [Prototype
-measurements](#prototype-measurements-slice-1-a-throwaway). Slice 2 landed the
-transport module (`src/control.ts`, `src/control/schema.ts`) and slice 3 the
-child consumer (`src/child/control.ts`, wired from `src/child.ts`); there is no
-parent tool or registration yet. Slice 3 replaced the throwaway consumer with
-the product one, deleted `test-support/control-prototype.ts` and recorded two
-transport findings under [Slice 3 progress](#slice-3-progress).
+measurements](#prototype-measurements-slice-1-a-throwaway). Slices 2 and 3
+landed the transport (`src/control.ts`, `src/control/schema.ts`) and the child
+consumer (`src/child/control.ts`, wired from `src/child.ts`). Slice 4 landed the
+parent tool (`src/tool/control.ts`), its parent-only registration, the prompt
+guidance, the simulated child control consumer and both control suites; evidence
+and remaining steps are under [Slice 4 progress](#slice-4-progress). Slice 5 (the
+real steer/interrupt e2e) and slice 6 (docs) are still open.
 
 Revision 2 changes: session ownership guard, the double steer guard
 (`active && !ctx.isIdle()` adjacent to the call), the synchronous enqueue
@@ -44,6 +45,32 @@ with the rename into a single event and lose the publish; and `fs.watch` can
 lose a publish made inside a freshly installed watcher's startup window, which
 the slice 3 tests wait out. Details under [Slice 3
 progress](#slice-3-progress).
+
+Revision 7 changes (slice 4): the parent tool is implemented exactly as D2–D11
+describe. It first claimed check 7 with a test that only showed non-interference
+(a marker written before the control call, removed after it returned, so no
+collection ever overlapped the tool); revision 8 replaced that with a forced
+overlap. Two implementation corrections
+against the earlier slices: the whole publish–wait–clean operation now holds the
+per-directory queue (D6 only required the pre-clean inside it), because the
+success cleanup outside the queue let a parallel call's pre-clean remove the
+acknowledgement of the operation still finishing; and the tool validates ack
+action/status compatibility, reporting an acknowledgement that names the other
+action's outcome as `unknown` instead of a success. Details under [Slice 4
+progress](#slice-4-progress).
+
+Revision 8 changes (parent-tool review): four findings fixed before the slice 4
+commit. P1: the cancellation check is repeated after the awaited pre-clean and
+before publication, with a gated cancel-during-cleanup test. P1: the gate-7
+claim was false — the old test removed the marker *after* the control call
+returned, so no collection ever overlapped it. Gate 7 is now a forced overlap in
+`test/integration-control.test.ts` using the existing poller read seam. P2: the
+simulated control consumer's promises go through the fake's existing `track`
+machinery, are fenced on close and drained on `stop()`, with a close-during-
+consume regression. P2: a per-child queue entry is removed only when the map
+still points at that operation's own tail, so a queued operation is never
+bypassed. Evidence and mutation checks under [Slice 4
+progress](#slice-4-progress).
 
 Revision 6 changes (slice 3 review): shutdown is fenced at every stage that spans
 an `await` (watcher install, interrupt marker write) and already-started ack
@@ -803,6 +830,7 @@ alignment before the lockfile and the suites agree.
 | `test/contract-control.test.ts` | new: integration contract (guards, ownership, `details` keys, exact texts, timeout) |
 | `test/integration-control.test.ts` | new: flows + real-poller overlap check |
 | `test-support/fake-herdr.ts`, `test-support/fake-herdr/types.ts` | simulated child answers control requests (`ChildOutcome.controlAck`) |
+| `test-support/harness.ts` | `callTool(name, …)` reaches the second registered tool; `call`/`callRaw` delegate to it |
 | `test-support/e2e-harness.ts` | capture Pi + SDK versions; steer/interrupt helpers |
 | `e2e/flow.test.ts` | real steer and real interrupt scenarios |
 | `README.md`, `docs/tool.md`, `docs/flow.md`, `AGENTS.md` | tool contract, transport, invariants, continuation guidance |
@@ -859,7 +887,7 @@ Slice 0: **done**.
   packages nest `typebox@1.3.27`, as before slice 0; no suite failed on it. Not
   changed (the exact-pin scope covers only the two SDK packages).
 
-### Slice 1 — prototype gate (throwaway, before any product code) — A and 6 done, 7 deferred
+### Slice 1 — prototype gate (throwaway, before any product code) — A, 6 and 7 done
 
 Two harnesses, because neither alone is enough.
 
@@ -902,18 +930,17 @@ claim/close path, and a simulated child that can delay marker writes):
    The close deletes the temp directory, so a surviving marker file is not part of
    the evidence. A control run with the marker already present before the poller's
    read stays undelivered — that is the ordinary-path protection still in force.
-7. **Request vs claim/close — deferred to slice 4.** The prototype cannot test it:
+7. **Request vs claim/close — done in slice 4.** The prototype cannot test it:
    the production poller never reads `control/request.json`, so publishing one
    during a collection proves nothing about the control path. The prototype
    variant that did this was removed. The claim belongs to slice 4's
    `contract-control.test.ts`, which has a real control call to assert that it
-   claims, collects and closes nothing.
+   claims, collects and closes nothing; see [Slice 4 progress](#slice-4-progress).
 
 **Gate.** Resolved for check 6: it reproduced the overlap, the user accepted the
 race (option 1), and the two check-6 tests assert that accepted behavior. Check 7
-is not passed — it is deferred to slice 4 and must not be counted as evidence. A
-failure of check 2 (in slice 1 A) or a new failure still stops implementation and
-goes to the user (D5). If the watcher in check 5 loses events, choose the single
+was not evidence in slice 1; slice 4 passed it. A failure of check 2 (in slice 1
+A) or a new failure still stops implementation and goes to the user (D5). If the watcher in check 5 loses events, choose the single
 consumer strategy (D8) using the measurement — do not ship both. Record the
 measurements in this file.
 
@@ -939,7 +966,7 @@ Command: `npx vitest run --project integration test/integration-control.test.ts`
 | marker exists before the poller's read | pass: nothing delivered, pane open, record kept, `result.md` intact |
 | 6, marker written **after the poller's marker read** (that read saw absent) | measured: **delivered**; `herdr_agent_result`, pane closed, record pruned |
 | 6, marker written **after the poller's result read**, before the claim | measured: **delivered**, same shape |
-| 7, request file published mid-collection | **not run**: deferred to slice 4. The prototype variant was removed as vacuous — it published a file the production poller never reads, so it could not fail on a control defect |
+| 7, request file published mid-collection | **not run in slice 1**: deferred to slice 4, which passed it with a real control call (see [Slice 4 progress](#slice-4-progress)). The prototype variant was removed as vacuous — it published a file the production poller never reads, so it could not fail on a control defect |
 
 Observed delivery (verbatim content of the delivered message):
 `Herdr agent Scout (scout) finished on its own:`
@@ -1309,6 +1336,167 @@ Slice 3: **done**, with two transport findings and the review follow-up
 
 Checks: `test:unit`, `test:integration`.
 
+#### Slice 4 progress
+
+Slice 4: **done**, including the four parent-review findings (revision 8), with
+check 7 passed as a forced overlap.
+
+- `src/tool/control.ts` (new): the three parameters, guards 1–7 in the plan's
+  order with no control-channel write before all of them pass (the reused
+  `loadContextWithState` still does its own state pruning, which D2 allows), and
+  the executor (§7.4). Discovery and pruning are the reused
+  `loadContextWithState`; the session-ownership rule stays in the tool as D2
+  decided, using
+  `ownerSessionId` from `orchestratorIdentity`. The target's label comes from
+  the managed list, its pane id from the same record. A call publishes one
+  request, waits for `ack.<id>.json` with the D7 deadlines (2000 ms steer,
+  3000 ms interrupt), and returns exactly one status; on a trusted ack it
+  removes the request and its own ack, on `unknown` it removes nothing and
+  starts no timer, retry or background task. `details` is `{ tabLabel, action }`
+  for a guard failure and `{ tabLabel, paneId, action, status, requestId }` for an
+  attempt. Texts are the §5.2 sentences verbatim, with the deadlines
+  interpolated from the same constants the parent waits with
+  (`CONTROL_ABORT_OBSERVE_MS` is imported from the child module, so the
+  `requested` text cannot drift from the child's observation window).
+- Cancellation is fenced at both awaits that precede publication. The
+  pre-clean `await removeControlArtifacts(dir)` can take long enough for the
+  caller to be cancelled; without a second `signal.throwIfAborted()` the request
+  was still published afterwards, so a child could receive a command its caller
+  had already abandoned. The gated test pauses the pre-clean's `fs.rm`, aborts
+  the caller, releases, and asserts the call rejects with the caller's reason,
+  no `request.json` exists, and the next call runs immediately (the queue entry
+  was released). Mutation: dropping the second check publishes the request and
+  fails that test.
+- Acknowledgement compatibility at the tool boundary: an ack whose `action` is
+  not the requested one, or whose status is not reachable for that action
+  (steer: `queued`/`idle`; interrupt: `aborted`/`requested`/`idle`), is reported
+  as `unknown` and its files are left in place. Reading e.g. an interrupt's
+  `queued` as `aborted` would claim an abort nobody observed; `unknown` is the
+  honest answer, and D7 already gives it the right consumer guidance.
+- The per-child queue map drops an entry only when the map still points at that
+  operation's own tail promise. Deleting unconditionally at the end of the first
+  operation would let a third call read a resolved entry and run concurrently
+  with the operation already queued, whose request it would then clean away.
+  Tested with three operations while the second's acknowledgement is held: the
+  third publishes only after the held operation finishes, and all three report
+  `queued`. Mutation: the unconditional delete fails that test.
+- The whole publish–wait–clean operation holds `withControlDirQueue`, not just
+  the pre-clean. Measured while implementing the serialization contract test:
+  with the success cleanup outside the queue, a parallel operation's pre-clean
+  could remove the acknowledgement of the operation that was still finishing
+  (two `rm`s of the same ack file between the two publishes). D6's words only
+  required the pre-clean inside the queue; the correction keeps the parent as
+  the sole remover of one atomic operation and makes the ordering test
+  deterministic.
+- `src/index.ts`: `herdr_agent_control` is registered in the parent branch only,
+  next to `herdr_agent`, with description, `promptSnippet`, `promptGuidelines`
+  (§5.4) and the parameters from `src/tool/control.ts`. Children still return
+  from `registerChildMode` before that branch. The existing `herdr_agent`
+  registration and its `session_start` re-registration are untouched.
+- `src/prompts.ts`: the §5.4 control paragraph appended to `GLOBAL_INSTRUCTIONS`.
+- `test-support/fake-herdr.ts`, `test-support/fake-herdr/types.ts`: the simulated
+  child consumes its control directory the way `src/child/control.ts` does — it
+  reads `control/request.json`, applies each id once, and answers
+  `ack.<id>.json` — driven by `ChildOutcome.controlAck`. `queued` records the
+  steer message and appends it to the run's result text (a steer enters the run
+  at a turn boundary); `aborted`/`requested` write the `interrupted` marker and
+  `aborted` also settles the simulated run; `idle` refuses; `none` never
+  answers. The consumer lives as long as the agent, is retargeted when the
+  result file moves, and is stopped on pane removal and on `stop()`, so an idle
+  child can still answer `idle` and no interval outlives a test. Each poll's
+  promise goes through the fake's existing `track` machinery, so `stop()` drains
+  a consume that is already running instead of letting it write after teardown;
+  a consumer closed by a pane removal re-checks that fence after each step that
+  spans an await (directory read, marker write) and refuses to write, and the
+  tracked rejection swallows the `ENOENT` a close-produced missing directory
+  raises. The
+  regression holds the marker write while the agent temp directory is removed
+  (`closeOneShot`'s effect): no unhandled rejection, no recreated directory, and
+  teardown completes. Mutation: replacing `this.track(...)` with `void ...` lets
+  the `ENOENT` escape and fails that test.
+- `test-support/harness.ts`: `callTool(name, params, options)` calls any
+  registered tool through the same mock host; `call`/`callRaw` now delegate to
+  it for `herdr_agent`. Needed because the harness had no way to reach a second
+  tool; existing suites are unchanged.
+- `test/contract-control.test.ts` (19 tests, integration harness + FakeHerdr):
+  guards 1–7 with the exact sentence and exact `details` keys and no
+  `control/request.json` written; guard 6 with the same owner terminal and a
+  different `ownerSessionId`; every status of both actions with its exact text;
+  the timeout case asserting `unknown`, the request left in place, one publish
+  only and no second write after the call returns; the cross-action ack case
+  reported as `unknown` with both files kept; two parallel calls serialized (one
+  operation's own ack removal happens between the two request publishes); a
+  cancellation that lands inside the pre-clean publishing nothing while the
+  queue still releases; a third call staying behind the operation that still owns
+  the queue entry; and a control call leaving a pending outcome untouched and
+  unable to duplicate its delivery.
+- Check 7 now forces the overlap instead of describing a sequence
+  (`test/integration-control.test.ts`, real extension, real poller, real claim
+  and close): the production poller is paused *after* its marker read returned
+  ENOENT; a real `herdr_agent_control` interrupt publishes its request while that
+  collection is still held (asserted: request on disk, no delivery yet); the
+  collection is released while the tool is still in its ack wait (asserted via a
+  settled flag set only when the tool resolves, which has not happened yet at
+  delivery time); exactly one `herdr_agent_result` is delivered and exactly one
+  `pane close` runs, both the poller's, with no `agent prompt|read|wait` from the
+  control call; the tool then returns `unknown` (the channel's agent is gone),
+  the record is pruned by the poller's claim, and neither the removed agent temp
+  directory nor its `control/` is recreated while the tool finishes.
+- `test/integration-control.test.ts` also keeps the slice 1 gate-6 tests and the
+  slice 4 flows: a steer during a 1.5 s run keeps the child `working` and the
+  single delivered result contains both the run's text and the steer text; an
+  interrupt leaves the run undelivered with the pane open, the live record and no
+  pane close across several poller ticks and past the simulated settle; a
+  question written before an interrupt is still delivered while the interrupted
+  run's text is not; and a simulated control write that loses to a close stays
+  contained (no unhandled rejection, missing directory not recreated, consumer
+  drained by `stop()`).
+- Evidence: `typecheck` and `lint` exit 0; `test:unit` 36 files / 328 tests
+  (unchanged); `test:integration` 24 files / 182 tests (was 23 / 158 before slice
+  4; slice 4 added 17 contract tests plus 3 flows, and the review fixes added 2
+  contract tests and 2 integration tests); `test:e2e` 16 of 16 twice (120.98 s and
+118.91 s) in the final state (one
+  earlier run failed the unrelated `current Herdr starts Pi with one CLI call
+  during cold-shell initialization` test with `agent_pane_busy: agent target pane
+  w1:p2 is not an available shell`; it passes in isolation and on the rerun, so
+  it is the known cold-shell pane-readiness flake, not this change). The gate
+  6/7 and close-during-consume tests passed 4 repeated runs each, and the
+  cancellation/queue-entry/serialization trio passed 3 repeated runs.
+  `oxfmt` clean on the touched files.
+- Mutation checks, each reverted: dropping the `ownerSessionId` comparison fails
+  the guard 6 test; returning the ack status without the action/status
+  compatibility check fails the cross-action ack test (an interrupt reads
+  `queued` as a success); moving the success cleanup outside the per-directory
+  queue fails the serialization test; dropping the post-pre-clean
+  `throwIfAborted` publishes a request for a cancelled call and fails the
+  cancellation test; deleting the queue entry unconditionally (instead of only
+  when it is still this operation's tail) lets a third call overtake the queued
+  one and fails the queue-entry test; dropping `this.track(...)` around the
+  simulated consume lets the close-race `ENOENT` escape as an unhandled rejection
+  and fails the containment test.
+- Two test-only flakes found by running the unit and integration suites
+  concurrently, both fixed in the suite, not by weakening it: rewriting the
+  state file with a plain write let a poller tick read it mid-truncation,
+  quarantine it and leave the tool with no state (the guard 7 test then saw
+  "no running agent"), so the suite now replaces the file with `tmp + rename`;
+  and the serialization assertion compared against call order, while the
+  per-directory queue admits whichever call finishes its lookup first, so it now
+  asserts that exactly one operation's own ack removal lands between the two
+  request publishes, without assuming which call published first. Three
+  concurrent unit+integration runs are green afterwards.
+- Remaining, honest:
+  - Slice 5 is not implemented: the real steer/interrupt e2e scenarios, the
+    `pi --version` + SDK version capture (acceptance criterion 10) and the
+    TUI-queue-discard assertion (acceptance criterion 4) are still open, so
+    criteria 3, 4 and 10 are unproven.
+  - Slice 6 docs are untouched: `README.md`, `docs/tool.md`, `docs/flow.md`,
+    `docs/config.md` and the `AGENTS.md` Files/invariants lists do not mention
+    `herdr_agent_control` yet. The tool is registered but undocumented there.
+  - Residual risks unchanged: a marker/collection race can still deliver an
+    interrupted run (accepted, D5); a lost watch event reports `unknown`
+    (limitation 11); an interrupt that races a clean finish leaves a complete
+    result blocked until recovery (limitation 5).
+
 ### Slice 5 — e2e with real children and version capture
 
 Capture in `test-support/e2e-harness.ts`: the **actual `pi --version`** and the
@@ -1490,3 +1678,7 @@ children is worth one more file (default: no).
 | Evidence version and option claims | §2.2: instrumentation absent, `triggerTurn` values reconstructed, `pi 1.2.0` is an assertion without a captured version |
 | Continuation instruction wrong for a live child | §3 step 4 and the §5.2 interrupt texts use manual pane continuation or close-then-`resumeClosed`; grounded in `continuation.ts:73-88` and `manager.ts:243-246` |
 | P1 interrupt guarantees exceed the marker protocol (measured) | Slice 1 B reproduced the late delivery; the user accepted it (option 1). D5 records the accepted semantics: interrupt stops work, does not retract a delivery in flight; tests assert the measured behavior |
+| P1 parent review: cancellation during the pre-clean still published | Second `signal.throwIfAborted()` between the pre-clean and `writeControlRequest`; gated cancel-during-cleanup test also asserts the queue released |
+| P1 parent review: gate 7 claimed an overlap it never forced | Replaced with a forced overlap: the real poller is paused after its marker read, a real `herdr_agent_control` call publishes and waits, the collection is released while the tool is in flight, and exactly one poller delivery/close plus an honest `unknown` are asserted. The old, marker-after-return test is kept only as "a control call leaves a pending outcome untouched" |
+| P2 parent review: simulated control consume could reject unhandled and outlive teardown | Consumer promises go through `this.track(...)`; consumers are fenced on close and drained by `stop()`; close-during-consume regression added |
+| P2 parent review: per-child queue entries never left memory | Entry removed in `finally` only when the map still points at that operation's tail; three-operation test added |

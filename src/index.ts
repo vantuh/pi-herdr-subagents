@@ -11,6 +11,10 @@ import {
   parseRunArgs,
   type RunDelegationRequest,
 } from './run.ts';
+import {
+  buildHerdrAgentControlParams,
+  executeHerdrAgentControl,
+} from './tool/control.ts';
 import { executeHerdrAgent } from './tool/execute.ts';
 import { buildHerdrAgentParams, describeAgentProfiles } from './tool/schema.ts';
 import { showAgentModelPicker } from './ui/agent-models/command.ts';
@@ -44,6 +48,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
   let agentNames: string[] = [];
 
   registerHerdrAgentTool(pi);
+  registerHerdrAgentControlTool(pi);
   // A /reload leaves the previous instance's poller running with a stale ctx.
   initializeAgentsWidgetPoller(pi);
 
@@ -156,6 +161,33 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
         `herdr-agents: failed to refresh agent listing: ${errorMessage(error)}\n`,
       );
     }
+  }
+
+  /**
+   * Parent-only: a child registers `ask_question` and the result writer and
+   * returns before this branch, so children cannot steer each other.
+   */
+  function registerHerdrAgentControlTool(pi: ExtensionAPI): void {
+    pi.registerTool({
+      name: 'herdr_agent_control',
+      label: 'Herdr Agent Control',
+      description:
+        'Steer or interrupt a running Herdr agent that this session spawned. It cannot start, resume, answer, or close an agent.',
+      promptSnippet:
+        'Steer or interrupt a running Herdr agent when work already in progress needs a correction or must stop.',
+      promptGuidelines: [
+        'Steer (action "steer") only when a correction must reach work already in progress; never to check progress.',
+        'Interrupt (action "interrupt") only when the user or a decision requires stopping the run.',
+        'A steer is queued at the next turn boundary and can be dropped by an interrupt.',
+        'If the call reports idle, check the agent status with herdr_agent instead of sending it a task.',
+        'Never repeat a control call that reported unknown.',
+      ],
+      parameters: buildHerdrAgentControlParams(),
+
+      async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+        return await executeHerdrAgentControl(params, signal, ctx);
+      },
+    });
   }
 
   /**
