@@ -15,6 +15,7 @@ import {
   writeAgentSessionMeta,
 } from './artifacts.ts';
 import { type ContextMetrics, isSessionCost } from './artifacts/schema.ts';
+import { type ChildRunState, registerChildControl } from './child/control.ts';
 import { getCurrentContext } from './herdr/snapshot.ts';
 import { textResult } from './tool/result.ts';
 
@@ -123,7 +124,8 @@ async function mirrorPaneLabelAsSessionName(pi: ExtensionAPI): Promise<void> {
  * directory.
  */
 export function registerChildMode(pi: ExtensionAPI): void {
-  let resultFile: string | undefined;
+  // Read by the control consumer: run state and the result-file channel.
+  const run: ChildRunState = { active: false, runStartedAt: 0 };
   // Every metadata write republishes this sample, so a path-only publish never
   // erases it; a new assignment, session or compaction clears it first.
   let context: ContextMetrics | undefined;
@@ -131,29 +133,48 @@ export function registerChildMode(pi: ExtensionAPI): void {
     captureChildSessionMeta(ctx, context);
 
   pi.on('session_start', async (_event, ctx) => {
-    resultFile = undefined;
+    run.resultFile = undefined;
+    run.context = undefined;
     context = undefined;
     await publishSessionMeta(ctx);
     await mirrorPaneLabelAsSessionName(pi);
   });
 
   pi.on('before_agent_start', async (event, ctx) => {
+    run.context = ctx;
+    // The freshness heuristic's reference point; continuations do not re-enter.
+    run.runStartedAt = Date.now();
     const assignment = event.messageType === 'user';
     if (assignment) {
-      resultFile = findResultFileMarker(event.prompt) ?? resultFile;
+      run.resultFile = findResultFileMarker(event.prompt) ?? run.resultFile;
       // A new assignment invalidates the previous turn's measurement.
       context = undefined;
     }
     // Escape skips agent_before_settle, so block delivery before work starts —
     // before the display metadata, whose write may fail.
-    if (resultFile) await setAgentResultInterrupted(resultFile, true);
-    if (assignment && resultFile) await publishSessionMeta(ctx);
+    if (run.resultFile) await setAgentResultInterrupted(run.resultFile, true);
+    if (assignment && run.resultFile) await publishSessionMeta(ctx);
+  });
+
+  // A continuation fires agent_start again without an intervening settle, so
+  // `active` covers the whole run.
+  pi.on('agent_start', async (_event, ctx) => {
+    run.active = true;
+    run.context = ctx;
+  });
+
+  pi.on('agent_settled', async (event, ctx) => {
+    run.active = false;
+    run.context = ctx;
+    // An abort that landed during agent_before_settle cleared the marker with a
+    // completed boundary; the settle is the last chance to restore it.
+    if (event.aborted) await setAgentResultInterrupted(run.resultFile, true);
   });
 
   pi.on('message_end', async (event) => {
-    if (!resultFile || event.message.role !== 'assistant') return;
+    if (!run.resultFile || event.message.role !== 'assistant') return;
     const output = assistantText(event.message);
-    if (output.trim()) await appendAgentResult(resultFile, output);
+    if (output.trim()) await appendAgentResult(run.resultFile, output);
   });
 
   // message_end runs before persistence; turn_end sees the finalized context.
@@ -175,8 +196,11 @@ export function registerChildMode(pi: ExtensionAPI): void {
 
   // Herdr reports idle after errors too; preserve partial text for a manual retry.
   pi.on('agent_before_settle', async (event) => {
-    if (!resultFile) return;
-    await setAgentResultInterrupted(resultFile, event.outcome !== 'completed');
+    if (!run.resultFile) return;
+    await setAgentResultInterrupted(
+      run.resultFile,
+      event.outcome !== 'completed',
+    );
   });
 
   pi.registerTool({
@@ -206,7 +230,7 @@ export function registerChildMode(pi: ExtensionAPI): void {
 
       // Without a managed result file there is no channel back to the
       // Orchestrator, so asking would silently strand the agent.
-      const written = await writeAgentQuestion(resultFile, question);
+      const written = await writeAgentQuestion(run.resultFile, question);
       if (!written) {
         return textResult(
           'No Orchestrator channel is available in this session, so the question cannot be delivered. Decide yourself, state the assumption you made, and continue.',
@@ -226,4 +250,7 @@ export function registerChildMode(pi: ExtensionAPI): void {
       };
     },
   });
+
+  // Last, so its `agent_settled` observation runs after the marker write above.
+  registerChildControl(pi, run);
 }

@@ -10,50 +10,34 @@ import {
   SessionManager,
   SettingsManager,
 } from '@earendil-works/pi-coding-agent';
-import { afterAll, test } from 'vitest';
+import { test } from 'vitest';
 
 import { isAgentResultInterrupted } from '../src/artifacts.ts';
-import herdrAgentsExtension from '../src/index.ts';
 import {
-  ackFiles,
   awaitControlAck,
-  type PrototypeControlAck,
-  type PrototypeControlConsumer,
-  prototypeControlDirFor,
-  publishControlRequest,
-  readControlRequest,
-  registerPrototypeControlConsumer,
-} from '../test-support/control-prototype.ts';
+  controlDirFor,
+  writeControlRequest,
+} from '../src/control.ts';
+import type { ControlAck } from '../src/control/schema.ts';
+import herdrAgentsExtension from '../src/index.ts';
 import { applyEnv, waitFor } from '../test-support/mock-extension.ts';
 import { MockLlm } from '../test-support/mock-llm.ts';
 
 /**
- * THROWAWAY prototype, slice 1 A (docs/plans/agent-control.md). Real in-process
- * Pi (`createAgentSession` + MockLlm + real files), the real child extension
- * under `HERDR_AGENT_CHILD=1`, and the throwaway consumer in
- * `test-support/control-prototype.ts`. No product control code exists.
+ * Child control against real in-process Pi: the real extension in child mode as
+ * the consumer, `createAgentSession` + MockLlm as the run, and real transport
+ * files in a managed temp directory.
  *
- * Checks 1-5 of the plan: before-settle acceptance, refusal after Pi settled
- * despite a stale `active`, a live-run steer reaching the next request but not
- * the result artifact, an in-process abort with the marker kept, and the
- * watcher/ack/reservation behavior with a measured ack latency.
+ * Owns the behavior the guard depends on (docs/plans/agent-control.md §10): the
+ * before-settle steer window, refusal once Pi settled while the child's run
+ * state still reads active, a live-run steer reaching the next provider request
+ * but never the result artifact, an in-process abort with the marker kept, and
+ * the watcher/ack/reservation path.
+ *
+ * Test handlers are registered *before* the extension's own, so a settle
+ * handler can hold the child's `agent_settled` chain open: Pi has already
+ * cleared `_isAgentRunActive` while the child's `active` flag is still true.
  */
-
-/** Measurements this suite prints at the end, for the plan's D7/D8 numbers. */
-const measurements: { ackLatencyMs: number[]; watchEvents: number[] } = {
-  ackLatencyMs: [],
-  watchEvents: [],
-};
-
-afterAll(() => {
-  const sorted = [...measurements.ackLatencyMs].sort((a, b) => a - b);
-  console.log(
-    `[control-prototype] ack latencies ms: ${JSON.stringify(sorted)} (n=${sorted.length})`,
-  );
-  console.log(
-    `[control-prototype] watch events seen: ${JSON.stringify(measurements.watchEvents)}`,
-  );
-});
 
 const assignment = (resultFile: string) =>
   `Do the job.\n\nHERDR_RESULT_FILE: ${resultFile}`;
@@ -62,19 +46,19 @@ interface ControlFixture {
   resultFile: string;
   controlDir: string;
   llm: MockLlm;
-  consumer(): PrototypeControlConsumer | undefined;
+  /** Extra extension factories, registered before the extension under test. */
   launch(
     factories?: Array<(pi: ExtensionAPI) => void>,
   ): Promise<Awaited<ReturnType<typeof createAgentSession>>>;
   /**
    * Publish a request and wait for its ack over the watch path only: a missed
-   * watch event ends the wait with no ack, so the test fails (D8).
+   * watch event ends the wait with no ack, so the test fails.
    */
   publish(request: {
     id: string;
     action: 'steer' | 'interrupt';
     message?: string;
-  }): Promise<{ ack: PrototypeControlAck | undefined; latencyMs: number }>;
+  }): Promise<{ ack: ControlAck | undefined; latencyMs: number }>;
   dispose(): Promise<void>;
 }
 
@@ -84,7 +68,8 @@ async function createControlFixture(): Promise<ControlFixture> {
     path.join(os.tmpdir(), 'herdr-agent-pi-control-'),
   );
   const resultFile = path.join(resultDir, 'result.md');
-  const controlDir = prototypeControlDirFor(resultFile);
+  const dir = controlDirFor(resultFile);
+  assert.ok(dir, 'expected a managed control directory');
   const restoreEnv = applyEnv({
     PI_CODING_AGENT_DIR: root,
     HERDR_AGENT_CHILD: '1',
@@ -113,26 +98,17 @@ async function createControlFixture(): Promise<ControlFixture> {
     }),
   );
 
-  let consumer: PrototypeControlConsumer | undefined;
   let session: Awaited<ReturnType<typeof createAgentSession>> | undefined;
 
   return {
     resultFile,
-    controlDir,
+    controlDir: dir,
     llm,
-    consumer: () => consumer,
     launch: async (factories = []) => {
-      consumer = undefined;
       const loader = new DefaultResourceLoader({
         cwd: root,
         agentDir: root,
-        extensionFactories: [
-          herdrAgentsExtension,
-          ...factories,
-          (pi) => {
-            consumer = registerPrototypeControlConsumer(pi);
-          },
-        ],
+        extensionFactories: [...factories, herdrAgentsExtension],
         noExtensions: true,
         noSkills: true,
         noPromptTemplates: true,
@@ -155,12 +131,9 @@ async function createControlFixture(): Promise<ControlFixture> {
     },
     publish: async (request) => {
       const started = Date.now();
-      const full = { ...request, createdAt: started };
-      await publishControlRequest(controlDir, full);
-      const ack = await awaitControlAck(controlDir, full.id, 5000);
-      const latencyMs = Date.now() - started;
-      measurements.ackLatencyMs.push(latencyMs);
-      return { ack, latencyMs };
+      await writeControlRequest(dir, { ...request, createdAt: started });
+      const ack = await awaitControlAck(dir, request.id, 5000);
+      return { ack, latencyMs: Date.now() - started };
     },
     dispose: async () => {
       session?.session.dispose();
@@ -170,13 +143,6 @@ async function createControlFixture(): Promise<ControlFixture> {
       await fs.rm(resultDir, { recursive: true, force: true });
     },
   };
-}
-
-async function waitForWatcher(fixture: ControlFixture): Promise<void> {
-  await waitFor(
-    () => fixture.consumer()?.isWatching() === true,
-    'the control-directory watcher',
-  );
 }
 
 async function withFixture(
@@ -190,21 +156,41 @@ async function withFixture(
   }
 }
 
-test('slice 1 A check 1: a steer published in the before-settle window is applied as a continuation', async () => {
+function acknowledgeNames(names: string[]): string[] {
+  return names.filter((name) => name.startsWith('ack.')).sort();
+}
+
+/** Request ids of the steers Pi actually appended to the child's session. */
+function appendedSteerIds(
+  messages: readonly unknown[],
+): (string | undefined)[] {
+  return messages.flatMap((message) => {
+    const custom = message as {
+      role?: string;
+      customType?: string;
+      details?: { requestId?: string };
+    };
+    return custom.role === 'custom' && custom.customType === 'herdr_agent_steer'
+      ? [custom.details?.requestId]
+      : [];
+  });
+}
+
+test('check 1: a steer published in the before-settle window is applied as a continuation', async () => {
   await withFixture(async (fixture) => {
     fixture.llm.setScript((_body, index) =>
       index === 0
         ? { text: 'HERDR_RESULT: first turn', delayMs: 0 }
         : { text: 'SECOND_TURN', delayMs: 0 },
     );
-    const published: { id: string; ack?: PrototypeControlAck } = {
+    const published: { id: string; ack?: ControlAck } = {
       id: 'req-before-settle',
     };
     const { session } = await fixture.launch([
       (pi) => {
         pi.on('agent_before_settle', async (event) => {
           if (event.outcome !== 'completed' || published.ack) return;
-          await publishControlRequest(fixture.controlDir, {
+          await writeControlRequest(fixture.controlDir, {
             id: published.id,
             action: 'steer',
             message: 'STEER_BEFORE_SETTLE',
@@ -239,59 +225,46 @@ test('slice 1 A check 1: a steer published in the before-settle window is applie
   });
 });
 
-test('slice 1 A check 2: a steer after Pi settled is refused while `active` still reads true', async () => {
+test('check 2: a steer after Pi settled is refused while the run state still reads active', async () => {
   await withFixture(async (fixture) => {
     fixture.llm.setScript(() => ({
       text: 'HERDR_RESULT: only turn',
       delayMs: 0,
     }));
-    const observed: {
-      id: string;
-      ack?: PrototypeControlAck;
-      probe?: { active: boolean; idle: boolean | undefined };
-    } = { id: 'req-stale-active' };
+    const observed: { id: string; ack?: ControlAck } = {
+      id: 'req-stale-active',
+    };
     const { session } = await fixture.launch([
       (pi) => {
+        // Registered before the child extension's own settle handler, so this
+        // handler runs while `active` is still true and Pi already reports idle.
         pi.on('agent_settled', async () => {
           if (observed.ack) return;
-          observed.probe = fixture.consumer()?.probe();
-          const started = Date.now();
-          await publishControlRequest(fixture.controlDir, {
+          await writeControlRequest(fixture.controlDir, {
             id: observed.id,
             action: 'steer',
             message: 'STEER_AFTER_SETTLE',
-            createdAt: started,
+            createdAt: Date.now(),
           });
           observed.ack = await awaitControlAck(
             fixture.controlDir,
             observed.id,
             5000,
           );
-          measurements.ackLatencyMs.push(Date.now() - started);
         });
       },
     ]);
 
     await session.prompt(assignment(fixture.resultFile));
 
-    // The scenario the reviewer flagged: this handler is registered before the
-    // consumer's own settle handler, so the child still looks active.
-    assert.deepEqual(observed.probe, { active: true, idle: true });
     assert.equal(observed.ack?.status, 'idle');
-    assert.deepEqual(fixture.consumer()?.decisions.at(-1), {
-      id: observed.id,
-      status: 'idle',
-      active: true,
-      idle: true,
-    });
     assert.equal(fixture.llm.requests.length, 1, 'no run was started');
-    assert.deepEqual(fixture.consumer()?.applications, []);
     assert.doesNotMatch(
       await fs.readFile(fixture.resultFile, 'utf8'),
       /STEER_AFTER_SETTLE/,
     );
-    // Pi's idle branch appends the message with no run, which is the false
-    // `queued` the reviewer flagged: the transcript must not contain it.
+    // Pi's idle branch would append the message with no run, which is the false
+    // `queued` the double guard prevents: the transcript must not contain it.
     assert.doesNotMatch(
       JSON.stringify(session.sessionManager.getEntries()),
       /STEER_AFTER_SETTLE/,
@@ -299,7 +272,7 @@ test('slice 1 A check 2: a steer after Pi settled is refused while `active` stil
   });
 });
 
-test('slice 1 A check 3: a live-run steer reaches the next request and stays out of the result', async () => {
+test('check 3: a live-run steer reaches the next request and stays out of the result', async () => {
   await withFixture(async (fixture) => {
     fixture.llm.setScript((_body, index) =>
       index === 0
@@ -310,7 +283,6 @@ test('slice 1 A check 3: a live-run steer reaches the next request and stays out
     const run = session.prompt(assignment(fixture.resultFile)).catch(() => {});
 
     await waitFor(() => session.isStreaming, 'the first run to start');
-    await waitForWatcher(fixture);
     const { ack } = await fixture.publish({
       id: 'req-live',
       action: 'steer',
@@ -333,14 +305,13 @@ test('slice 1 A check 3: a live-run steer reaches the next request and stays out
   });
 });
 
-test('slice 1 A check 4: an interrupt aborts the run, re-sets the marker, and acks aborted', async () => {
+test('check 4: an interrupt aborts the run, re-sets the marker, and acks aborted', async () => {
   await withFixture(async (fixture) => {
     fixture.llm.setScript(() => ({ text: 'LONG_TURN', delayMs: 1500 }));
     const { session } = await fixture.launch();
     const run = session.prompt(assignment(fixture.resultFile)).catch(() => {});
 
     await waitFor(() => session.isStreaming, 'the run to start');
-    await waitForWatcher(fixture);
     const steer = await fixture.publish({
       id: 'req-steer-before-abort',
       action: 'steer',
@@ -349,7 +320,7 @@ test('slice 1 A check 4: an interrupt aborts the run, re-sets the marker, and ac
     assert.equal(steer.ack?.status, 'queued');
 
     // The child extension writes the marker at `before_agent_start`, so remove
-    // it first: the assertion below then proves the *consumer's* write (D5).
+    // it first: the assertion below then proves the consumer's own write (D5).
     const markerFile = path.join(
       path.dirname(fixture.resultFile),
       'interrupted',
@@ -362,7 +333,6 @@ test('slice 1 A check 4: an interrupt aborts the run, re-sets the marker, and ac
       action: 'interrupt',
     });
     assert.equal(interrupt.ack?.status, 'aborted');
-    assert.equal(fixture.consumer()?.settles.at(-1)?.aborted, true);
     assert.equal(
       await isAgentResultInterrupted(fixture.resultFile),
       true,
@@ -371,16 +341,21 @@ test('slice 1 A check 4: an interrupt aborts the run, re-sets the marker, and ac
     await waitFor(() => !session.isStreaming, 'the aborted settle');
     assert.equal(session.isIdle, true, 'Pi reports idle after the abort');
     await run;
+    // In-process `abort()` does not clear the queues; the TUI binding's discard
+    // is asserted in the e2e interrupt scenario (slice 5).
   });
 });
 
-test('slice 1 A check 5b (D8): repeated atomic publishes are all consumed by the watcher, with no missed event', async () => {
+test('check 5b: repeated atomic publishes are each consumed once by the watcher', async () => {
   await withFixture(async (fixture) => {
-    fixture.llm.setScript(() => ({ text: 'HOLD_TURN', delayMs: 1500 }));
+    fixture.llm.setScript((_body, index) =>
+      index === 0
+        ? { text: 'HOLD_TURN', delayMs: 1500 }
+        : { text: 'AFTER_STEERS', delayMs: 0 },
+    );
     const { session } = await fixture.launch();
     const run = session.prompt(assignment(fixture.resultFile)).catch(() => {});
     await waitFor(() => session.isStreaming, 'the run to start');
-    await waitForWatcher(fixture);
 
     const ids = [
       'req-repeat-1',
@@ -389,49 +364,45 @@ test('slice 1 A check 5b (D8): repeated atomic publishes are all consumed by the
       'req-repeat-4',
     ];
     for (const id of ids) {
-      const started = Date.now();
-      await publishControlRequest(fixture.controlDir, {
+      const { ack } = await fixture.publish({
         id,
         action: 'steer',
         message: `STEER_${id}`,
-        createdAt: started,
       });
-      // Watch-event path only: a miss would end this wait without an ack.
-      const ack = await awaitControlAck(fixture.controlDir, id, 3000);
       assert.equal(ack?.status, 'queued', `ack for ${id}`);
-      measurements.ackLatencyMs.push(Date.now() - started);
     }
 
-    const consumer = fixture.consumer();
-    assert.ok(consumer);
-    // One publish produces several watch events; the reservation absorbs the
-    // repeats, so each id is applied once and gets exactly one ack.
-    assert.deepEqual(consumer.applications, ids);
     assert.deepEqual(
-      (await ackFiles(fixture.controlDir)).sort(),
+      acknowledgeNames(await fs.readdir(fixture.controlDir)),
       ids.map((id) => `ack.${id}.json`).sort(),
     );
-    assert.ok(
-      consumer.duplicateReads > 0,
-      'repeated events re-read the same id',
-    );
-    assert.ok(consumer.watchEvents >= ids.length);
-    console.log(
-      '[control-prototype] duplicate watch reads absorbed:',
-      consumer.duplicateReads,
-    );
-    measurements.watchEvents.push(consumer.watchEvents);
     assert.deepEqual(
-      (await fs.readdir(fixture.controlDir)).filter((name) =>
+      (await fs.readdir(path.dirname(fixture.resultFile))).filter((name) =>
         name.endsWith('.tmp'),
       ),
       [],
+      'the atomic publish left no temp file beside the control directory',
     );
+    assert.ok(
+      await fs.access(path.join(fixture.controlDir, 'request.json')).then(
+        () => true,
+        () => false,
+      ),
+      'the child never removes request.json',
+    );
+
     await run;
+    await waitFor(() => !session.isStreaming, 'the run to settle');
+    // Each id was appended to the run exactly once, in publish order.
+    assert.deepEqual(appendedSteerIds(session.messages), ids);
+    const body = JSON.stringify(fixture.llm.requests.slice(1));
+    for (const id of ids) {
+      assert.match(body, new RegExp(`STEER_${id}`), `${id} reached the model`);
+    }
   });
 });
 
-test('slice 1 A check 5: the watcher consumes one atomic publish once, and a re-read cannot re-apply it', async () => {
+test('check 5: the watcher consumes one atomic publish once, and a re-read cannot re-apply it', async () => {
   await withFixture(async (fixture) => {
     fixture.llm.setScript((_body, index) =>
       index === 0
@@ -441,57 +412,39 @@ test('slice 1 A check 5: the watcher consumes one atomic publish once, and a re-
     const { session } = await fixture.launch();
     const run = session.prompt(assignment(fixture.resultFile)).catch(() => {});
     await waitFor(() => session.isStreaming, 'the run to start');
-    await waitForWatcher(fixture);
 
-    const started = Date.now();
-    await publishControlRequest(fixture.controlDir, {
+    const { ack, latencyMs } = await fixture.publish({
       id: 'req-watch',
       action: 'steer',
       message: 'STEER_WATCHER',
-      createdAt: started,
     });
-    // Watch-event path only: no poke here, so a miss fails loudly (D8).
-    const ack = await awaitControlAck(fixture.controlDir, 'req-watch', 3000);
-    const latencyMs = Date.now() - started;
-    measurements.ackLatencyMs.push(latencyMs);
-
     assert.equal(ack?.status, 'queued');
-    const consumer = fixture.consumer();
-    assert.ok(consumer);
-    assert.ok(consumer.watchEvents >= 1, 'the watcher reported the publish');
-    measurements.watchEvents.push(consumer.watchEvents);
-    assert.deepEqual(
-      (await fs.readdir(fixture.controlDir)).filter((name) =>
-        name.endsWith('.tmp'),
-      ),
-      [],
-      'the atomic publish left no temp file',
-    );
-    assert.deepEqual(await ackFiles(fixture.controlDir), [
+    assert.ok(latencyMs < 1000, `bounded ack latency (${latencyMs} ms)`);
+    assert.deepEqual(acknowledgeNames(await fs.readdir(fixture.controlDir)), [
       'ack.req-watch.json',
     ]);
-    const recorded = consumer.acks[0];
-    assert.ok(recorded);
-    assert.ok(
-      recorded.latencyMs >= 0 && recorded.latencyMs < 1000,
-      `the ack records a bounded publish-to-ack latency (${recorded.latencyMs} ms)`,
-    );
-    console.log('[control-prototype] check 5 ack latency ms:', latencyMs);
 
-    // Duplicate watch callbacks and a re-read must not apply it twice.
-    await Promise.all([consumer.consume(), consumer.consume()]);
-    assert.ok(consumer.duplicateReads >= 1, 'the duplicate was rejected by id');
-    assert.deepEqual(consumer.applications, ['req-watch']);
-    assert.deepEqual(await ackFiles(fixture.controlDir), [
+    // Extra watch events force another admission attempt on the consumed id.
+    await fs.writeFile(path.join(fixture.controlDir, 'decoy'), 'x');
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.deepEqual(acknowledgeNames(await fs.readdir(fixture.controlDir)), [
       'ack.req-watch.json',
     ]);
-    assert.ok(
-      await readControlRequest(fixture.controlDir),
-      'the child never deletes request.json',
-    );
 
     await run;
+    await waitFor(() => !session.isStreaming, 'the run to settle');
     assert.equal(fixture.llm.requests.length, 2);
+    assert.deepEqual(
+      appendedSteerIds(
+        (session as { messages?: readonly unknown[] }).messages ?? [],
+      ),
+      ['req-watch'],
+      'the reservation kept the re-read from applying it twice',
+    );
+    assert.match(
+      JSON.stringify(fixture.llm.requests[1]?.messages),
+      /STEER_WATCHER/,
+    );
     assert.doesNotMatch(
       await fs.readFile(fixture.resultFile, 'utf8'),
       /STEER_WATCHER/,

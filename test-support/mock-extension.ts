@@ -75,7 +75,10 @@ export function createMockHost(options: {
   cwd: string;
   hasUI?: boolean;
   mode?: ExtensionContext['mode'];
-  isIdle?: boolean;
+  /** `ctx.isIdle()`; a function lets a test flip it while handlers run. */
+  isIdle?: boolean | (() => boolean);
+  /** `ctx.abort()`; recorded by tests that assert an interrupt landed. */
+  onAbort?: () => void;
   sessionId?: string;
   sessionFile?: string;
   /**
@@ -156,7 +159,11 @@ export function createMockHost(options: {
     cwd: options.cwd,
     hasUI: options.hasUI ?? true,
     mode: options.mode ?? (options.hasUI === false ? 'print' : 'tui'),
-    isIdle: () => options.isIdle ?? true,
+    isIdle: () =>
+      typeof options.isIdle === 'function'
+        ? options.isIdle()
+        : (options.isIdle ?? true),
+    abort: () => options.onAbort?.(),
     getContextUsage: options.getContextUsage ?? (() => undefined),
     signal: undefined,
     sessionManager: {

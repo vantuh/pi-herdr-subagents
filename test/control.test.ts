@@ -48,6 +48,12 @@ async function managedControlDir(): Promise<string> {
   return dir;
 }
 
+/** Leftover transport temp files; they are written beside the control directory. */
+async function agentTempFiles(controlDir: string): Promise<string[]> {
+  const names = await fs.readdir(path.dirname(controlDir));
+  return names.filter((name) => name.endsWith('.tmp'));
+}
+
 async function otherTempDir(): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'control-test-'));
   createdDirs.push(dir);
@@ -196,10 +202,7 @@ test('publishes atomically: no torn read and no leftover temp file', async () =>
 
   assert.ok(reads > 0, 'the observer never saw a published request');
   assert.equal(torn, 0);
-  assert.deepEqual(
-    (await fs.readdir(dir)).filter((name) => name.endsWith('.tmp')),
-    [],
-  );
+  assert.deepEqual(await agentTempFiles(dir), []);
   assert.deepEqual(await fs.readdir(dir), ['request.json']);
 });
 
@@ -420,11 +423,30 @@ test('a failed publish removes its own temp file and keeps the original error', 
     },
   );
 
-  assert.deepEqual(
-    (await fs.readdir(dir)).filter((name) => name.endsWith('.tmp')),
-    [],
-  );
+  assert.deepEqual(await agentTempFiles(dir), []);
   assert.deepEqual(await fs.readdir(requestPath), []);
+});
+
+test('an acknowledgement never recreates a removed control directory', async () => {
+  const dir = await managedControlDir();
+
+  // The parent removes the agent's temp directory on close, so an ack that
+  // arrives afterwards has nowhere to land.
+  await assert.rejects(
+    writeControlAck(dir, {
+      id: randomUUID(),
+      action: 'steer',
+      status: 'queued',
+      at: Date.now(),
+    }),
+    (error: unknown) => {
+      assert.equal((error as { code?: string }).code, 'ENOENT');
+      return true;
+    },
+  );
+
+  await assert.rejects(fs.access(dir), { code: 'ENOENT' });
+  assert.deepEqual(await agentTempFiles(dir), []);
 });
 
 test('rejects a pre-aborted signal and removes nothing', async () => {

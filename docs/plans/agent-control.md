@@ -7,8 +7,11 @@ complete — checks 1–5 pass, check 6 is re-scoped to the accepted behavior, a
 check 7 is **deferred to slice 4** (it needs the parent tool to mean anything).
 Measurements are recorded under [Prototype
 measurements](#prototype-measurements-slice-1-a-throwaway). Slice 2 landed the
-transport module (`src/control.ts`, `src/control/schema.ts`); no tool, child
-consumer or registration exists yet.
+transport module (`src/control.ts`, `src/control/schema.ts`) and slice 3 the
+child consumer (`src/child/control.ts`, wired from `src/child.ts`); there is no
+parent tool or registration yet. Slice 3 replaced the throwaway consumer with
+the product one, deleted `test-support/control-prototype.ts` and recorded two
+transport findings under [Slice 3 progress](#slice-3-progress).
 
 Revision 2 changes: session ownership guard, the double steer guard
 (`active && !ctx.isIdle()` adjacent to the call), the synchronous enqueue
@@ -32,6 +35,25 @@ gone (the close deletes the temp directory, marker included); the latency figure
 are labelled as upper bounds quantized by the parent's 25 ms poll; the
 freshness, late-ack and shutdown paths the prototype did not exercise are
 recorded as slice 3 carry-overs.
+
+Revision 5 changes (slice 3): the child consumer is product code and the
+prototype consumer is deleted. Two measured findings change the transport and
+the watcher's risk profile: the atomic publish writes its temp file beside the
+watched `control/` directory, because a temp file inside it can be coalesced
+with the rename into a single event and lose the publish; and `fs.watch` can
+lose a publish made inside a freshly installed watcher's startup window, which
+the slice 3 tests wait out. Details under [Slice 3
+progress](#slice-3-progress).
+
+Revision 6 changes (slice 3 review): shutdown is fenced at every stage that spans
+an `await` (watcher install, interrupt marker write) and already-started ack
+publishes are drained, each with a deterministic gated test; the temp-file
+assertions that the transport move had invalidated now inspect the agent
+directory, and a direct ack test pins that a missing control directory is not
+recreated; mock fixtures close their watcher through `session_shutdown`; and the
+startup-window loss is documented as **reachable** (the spawn tool returns on
+prompt submission with no readiness delay), with a separate no-wait regression
+test instead of an unreachability claim.
 
 ## 1. Goal and agreed scope
 
@@ -559,7 +581,11 @@ send a task to a live child.
 
 In `<temp dir>/control/`, all `0600`, published atomically (write
 `<name>.<pid>.<random>.tmp`, then `rename`; same protocol as
-`saveHerdrAgentsState`, `src/state/store.ts:174`):
+`saveHerdrAgentsState`, `src/state/store.ts:174`). The temp file is written one
+level up, in the agent temp dir, not inside `control/`: a temp file in the
+watched directory can have its event coalesced with the rename into one event
+that names only the temp file, so the publish is lost (measured in slice 3,
+1 in 40):
 
 ```jsonc
 // request.json — one outstanding request per child
@@ -661,7 +687,14 @@ Accepted limitations:
 8. Compaction may invalidate the steer's referent; no detection or recovery (D9).
 9. Cross-process contention: last writer wins (D6).
 10. A steered answer is not labelled separately in the delivered result.
-11. Watch-event loss reports `unknown` (D8 selects one strategy after the gate).
+11. Watch-event loss reports `unknown`: a publish that lands inside a freshly
+    installed watcher's startup window was lost in 1 of 20 measurements
+    (slice 3), and FSEvents coalescing is a second loss path. The window is
+    reachable: the spawn tool returns as soon as Herdr accepts the prompt
+    (`promptAgent` never uses `--wait`), so the Orchestrator can call the control
+    tool while the child's watcher has only just been installed. A lost event is
+    honest `unknown`, never a false ack, and there is no retry, readiness
+    handshake or second consumer strategy.
 12. A child running older extension code cannot be controlled.
 13. The Orchestrator blocks for up to the ack deadline.
 
@@ -940,10 +973,13 @@ measurements are recorded under [Progress](#progress).
 
 #### Prototype measurements (slice 1 A, throwaway)
 
-`test/pi-control.test.ts` plus `test-support/control-prototype.ts`. Real
+Historical record of slice 1, before any product control module existed:
+`test/pi-control.test.ts` plus `test-support/control-prototype.ts`, real
 in-process Pi (`createAgentSession`, real files, MockLlm as the provider), the
 real child extension under `HERDR_AGENT_CHILD=1`, and a throwaway consumer that
-implements §7.2/§7.3 as test code. No product control module exists.
+implemented §7.2/§7.3 as test code. The prototype consumer is deleted in slice 3
+and the file now drives the product consumer; the numbers below are slice 1's
+and are not re-measured.
 
 | Check | Result |
 |---|---|
@@ -973,7 +1009,11 @@ they are dominated by the child's own work (the interrupt waits for its own
 
 D8 impact: one strategy ships — the child-side `fs.watch` on the control
 directory, with the parent polling for its ack. No missed event was observed, so
-the boundary-only alternative stays rejected.
+the boundary-only alternative stays rejected. Slice 3 found two loss paths and
+kept the single strategy: the transport no longer writes its temp file inside the
+watched directory (§5.3), and a publish inside a freshly installed watcher's
+startup window can be lost (limitation 11) — it reports `unknown`, which the
+strategy already covers.
 
 `fs.watch` detail worth keeping: the watcher must come from `node:fs`, not
 `fs.promises`, whose `watch` returns an async iterator and delivers no
@@ -998,9 +1038,11 @@ integration count dropped by one because the vacuous check-7 test was removed.
 rerun for this documentation-only change. Slice 5 still owns the real
 steer/interrupt e2e scenarios.
 
-`test/pi-control.test.ts` lives in the `unit` project, so the real-Pi prototype
-adds about 10 s to a suite that otherwise takes ~3 s. That is temporary: the
-prototype is deleted in slice 3, when the product consumer replaces it.
+`test/pi-control.test.ts` lives in the `unit` project, so a real-Pi suite adds
+seconds to it. The prototype cost about 10 s; the product suite measures ~4.3 s
+(6 tests) because the four-publish check no longer maintains prototype
+counters. The file stays in the `unit` project as the product suite; the
+prototype's consumer is gone (slice 3).
 
 #### Slice 3 carry-overs from the prototype review
 
@@ -1110,6 +1152,144 @@ Slice 2: **done**.
 Checks: `test:unit`, then `test:e2e` with a real child in a real pane, because
 `ctx.abort()` through the TUI binding is only real there (**verify**).
 
+#### Slice 3 progress
+
+Slice 3: **done**, with two transport findings and the review follow-up
+(shutdown fences, transport-assertion fixes, reachability correction) below.
+
+- `src/child/control.ts` (new): the watcher lifecycle, the reserved-id set, the
+  D3 admission/guard, `pi.sendMessage(..., { deliverAs: 'steer' })` without
+  `triggerTurn`, the marker + `ctx.abort()` + settle-observation interrupt, and
+  the per-id ack writer. The module registers its own `session_start`,
+  `before_agent_start` (watcher install/retarget), `agent_settled` (settle
+  observation) and `session_shutdown` handlers; it is registered **last** by
+  `registerChildMode`, so its settle observation runs after the child's
+  interrupted-marker write. A background consume never rejects: the watch
+  callback contains every failure of the consume, so an ack write that fails
+  after a close removed the temp directory (ENOENT) produces neither an
+  unhandled rejection nor a recreated directory. One containment point, not one
+  per step. Shutdown is fenced at every stage that spans an `await`: a directory
+  creation and an interrupt's marker write each re-check `closed` before
+  installing the watcher or starting the abort, and an acknowledgement publish
+  that already started is drained by `session_shutdown` through a
+  `Promise.allSettled` over the in-flight set, so no ack rename lands after
+  shutdown returns. Three gated tests hold exactly those stages open (see
+  below); no lifecycle framework was added for it.
+- `src/child.ts`: the result file and the new run state live in one
+  `ChildRunState` (`resultFile`, `active`, `runStartedAt`, `context`) instead of
+  a second local variable; new `agent_start` (active, context) and `agent_settled`
+  (inactive, marker on `aborted`) handlers; `before_agent_start` records
+  `runStartedAt` and the context. Result append, the question tool, manual
+  continuations and the completed-boundary marker clear are unchanged. §7.3's
+  sketch also had `lastSettle` in that state; it is not added, because the
+  consumer owns its own settle waiters and nothing else reads the value.
+- `src/control.ts` (transport fixes, each required by a measured failure):
+  1. the atomic publish writes its temp file **beside** the watched `control/`
+     directory instead of inside it. A temp file in the watched directory can
+     have its event coalesced with the rename into a single event naming only the
+     temp file, so the request is never read: a bare `fs.watch` probe lost 1
+     publish in 40 with the temp file inside the directory and 0 in 60 with it
+     one level up. The move keeps the same filesystem, the same 0600 mode and
+     the managed agent temp dir, so rename atomicity and cleanup are unchanged.
+     It removed one loss path, not all of them — see the startup window below.
+  2. `writeControlAck` no longer creates the control directory. The parent
+     creates it before publishing and the child creates it to watch it, so a
+     missing directory means the agent's temp dir is gone; the ack then fails
+     (contained) instead of recreating the removed tree and leaving an orphan ack
+     behind. This is the slice 1 carry-over "ack write after the temp dir is
+     gone", made observable.
+- `test-support/control-prototype.ts`: **deleted** (325 lines). Its consumer was
+  test-only code implementing §7.3; `test/pi-control.test.ts` now drives the real
+  extension in child mode.
+- `test/pi-control.test.ts` (rewritten as the product consumer's real-Pi suite,
+  checks 1–5+5b kept): test factories are now registered **before** the
+  extension, which is what keeps the child's `active` flag true while Pi already
+  reports idle in check 2 — with the prototype the consumer itself owned that
+  flag, so the window only existed because the consumer registered last. The
+  consumer's internal counters are gone; the same facts are asserted on real
+  artifacts instead: one `ack.<id>.json` per publish, `request.json` still on
+  disk, no `.tmp` beside the control directory, and the append-once property read
+  from the child session's custom messages (`herdr_agent_steer`, one per id in
+  publish order) rather than a counter. The 1500 ms four-publish check now
+  asserts each `STEER_<id>` reached a later provider request.
+- `test/child-control.test.ts` (new, mock host, real files): idle refusal with a
+  stale `active`; standalone compaction (`active` false, `isIdle()` false)
+  refused; stale request refused and the equal-millisecond request accepted as
+  the documented heuristic limit; one publish applies and acks once however many
+  watch events it raises; ack id echo; `request.json` never removed; watcher
+  retarget on a marker-directory change (the old directory then goes unread);
+  `session_shutdown` closes the watcher and an in-flight consume that resumes
+  after shutdown neither acks nor applies anything; the marker lands before
+  `abort` and is restored by an aborted settle; `requested` after the 2 s
+  observation window with the marker still set; a throwing `isIdle()` (stale
+  context) refuses without aborting or marking; a failing ack publish is
+  contained and the next operation still works.
+- `test-support/mock-extension.ts`: `isIdle` accepts a function (so a test can
+  flip it mid-handler) and `onAbort` records `ctx.abort()`. Two options, no new
+  testing API: the tests still drive the extension through its own handlers.
+- `test/child-control.test.ts` shutdown fences (review P1, deterministic, one
+  gated stage each; the gate pauses the real `fs` call until released):
+  directory creation paused → shutdown → resume installs no watcher, proven both
+  by the watcher count (the test first counts a normal installation, so an
+  unexpected resource name cannot pass silently) and by a publish that nothing
+  consumes; marker write paused → shutdown → resume starts no abort, writes no
+  ack and applies nothing; ack temporary-file write paused → shutdown does not
+  resolve until released, and the drained publication completes with its ack
+  renamed and no temp file left. The existing admission-read pause and the
+  fixture teardown were re-expressed on the same gate helper, and the fixture now
+  fires `session_shutdown` in `finally` before restoring the environment, so no
+  test leaves a watcher to be cleaned up by directory removal.
+- Transport-assertion follow-up (review P2): after the temp file moved beside
+  `control/`, the "no temp file left behind" assertions in `test/control.test.ts`
+  (successful and failed publish) and in `test/pi-control.test.ts` inspected the
+  wrong directory and passed vacuously. They now read the agent directory:
+  `agentTempFiles()` in the transport suite, `path.dirname(resultFile)` in the
+  real-Pi check. A direct test also pins that `writeControlAck` for a missing
+  control directory rejects with `ENOENT`, does not recreate the directory and
+  leaves no temp file — the behaviour the consumer's containment relies on.
+- Evidence: `test:unit` 36 files / 328 tests (was 35 / 312 before slice 3; the new
+  file adds 15 and the rewritten real-Pi suite keeps 6, `test/control.test.ts`
+  gains 1), `test:integration` 23 files / 158 tests (unchanged), `typecheck` and
+  `lint` exit 0, `oxfmt --check` clean on the touched files, `test:e2e` 16 of 16
+  (119.06 s and 121.08 s, plus 119.90 s and 121.22 s before the review fixes;
+  baseline held; the real
+  steer/interrupt e2e scenarios remain slice 5). `test/pi-control.test.ts` now
+  takes ~4.3 s instead of ~10 s, because the four-publish check no longer waits
+  on the prototype's per-publish bookkeeping.
+- Measured watcher startup window (**reachable risk**, limitation 11): after the
+  transport change the suite still lost publishes, so the remaining path was
+  measured directly. A publish that lands immediately after `watch()` is
+  installed was lost in 1 of 20 runs, and never when the write waited 25 ms —
+  macOS FSEvents starts its stream asynchronously. The window is **reachable in
+  production**: `promptAgent` returns on prompt submission without `--wait`
+  (`src/herdr/agent.ts`, `src/tool/spawn/lifecycle.ts`), so an Orchestrator can
+  call the control tool in the same second the child's `before_agent_start`
+  installed its watcher. There is no readiness handshake and no retry, by design
+  (D7/D8): a lost event reports `unknown`. Every other test in
+  `test/child-control.test.ts` waits 100 ms before publishing, which isolates
+  consumer behavior from this transport window and is **not** evidence about
+  production; the separate `a publish inside the watcher startup window ...`
+  test publishes with no wait and accepts either documented outcome (`queued`
+  applied once, or `unknown` with nothing applied and no ack), so the window is
+  a measured regression, not an assumption. If slice 5's real-child e2e loses a
+  publish, this is the first thing to check.
+- Mutation checks, each reverted: dropping `!state.active` lets the compaction
+  case apply a steer; dropping `isIdle() !== false` makes the stale-`active`
+  refusal fail (the steer is appended with no run); dropping the freshness
+  comparison applies the stale request; reserving the id after the guard instead
+  of right after the read lets concurrent watch events apply the same request
+  twice; dropping the `closed` checks makes the post-shutdown consume write an
+  ack; writing the interrupt marker after `abort()` fails the marker-order
+  assertion; dropping the watcher callback's `.catch` turns the failing-ack test
+  into a reported unhandled rejection. Review follow-up fences: dropping the
+  `closed` re-check after the directory creation fails the watcher-install fence
+  test (the watcher count goes up after shutdown); dropping the re-check after
+  the marker write fails the interrupt fence test (an abort runs after shutdown);
+  dropping the `session_shutdown` drain fails the ack-drain test (shutdown
+  resolves before the ack is renamed); dropping the failed publish's temp-file
+  cleanup now fails both the failed-publish test and the missing-directory ack
+  test, where before the assertion fix it passed vacuously.
+
 ### Slice 4 — parent tool
 
 `src/tool/control.ts`, `src/index.ts`, `src/prompts.ts`. Tests:
@@ -1173,7 +1353,8 @@ appeared; `npm run format`.
 - **Real Pi, real files, no Herdr** — `test/pi-control.test.ts`: real
   `AgentSession` and `MockLlm` make the steer/abort semantics real; the control
   directory and files are real. Owns behavior: settle-window acceptance, settled
-  refusal, abort marker and abort ack only.
+  refusal, abort marker and abort ack, and the watcher's publish → ack →
+  apply-once path inside Pi's own run. Runs the product consumer (slice 3).
 - **Mock host, real files** — `test/child-control.test.ts` drives the child's
   handlers directly (the `test/child.test.ts` pattern). Owns child-side edge
   cases.

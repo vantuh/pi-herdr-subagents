@@ -46,19 +46,29 @@ function ackFileName(id: string): string {
   return `${ACK_FILE_PREFIX}${id}${ACK_FILE_SUFFIX}`;
 }
 
-/** `tmp + rename`, so a reader never sees a half-written transport file. */
+/**
+ * `tmp + rename`, so a reader never sees a half-written transport file. The
+ * temp file is written beside the control directory, not inside it: the child
+ * wakes on a change in that directory, and macOS FSEvents can coalesce the temp
+ * write with the rename into one event that names only the temp file, so the
+ * published request is never read (measured: one lost publish in 40).
+ */
 async function publishPrivateFile(
-  filePath: string,
+  dir: string,
+  name: string,
   text: string,
 ): Promise<void> {
-  const tempPath = `${filePath}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
+  const tempPath = path.join(
+    path.dirname(path.resolve(dir)),
+    `.${name}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`,
+  );
+  const filePath = path.join(dir, name);
   try {
     await fs.writeFile(tempPath, text, { encoding: 'utf8', mode: 0o600 });
     await fs.rename(tempPath, filePath);
   } catch (error) {
-    // Best effort, so a failed publish does not leave a temp file for cleanup
-    // that only matches `request.json` / `ack.*.json`; the original error is
-    // what the caller has to see.
+    // Best effort, so a failed publish does not leave a temp file behind; the
+    // original error is what the caller has to see.
     await fs.rm(tempPath, { force: true }).catch(() => {});
     throw error;
   }
@@ -77,7 +87,11 @@ export async function writeControlRequest(
     throw new Error('Refusing to publish a malformed control request.');
   }
   await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-  await publishPrivateFile(requestFile(dir), `${JSON.stringify(request)}\n`);
+  await publishPrivateFile(
+    dir,
+    REQUEST_FILE_NAME,
+    `${JSON.stringify(request)}\n`,
+  );
 }
 
 export async function readControlRequest(
@@ -100,9 +114,15 @@ export async function writeControlAck(
   if (!Value.Check(ControlAck, ack)) {
     throw new Error('Refusing to write a malformed control acknowledgement.');
   }
-  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-  const filePath = path.join(dir, ackFileName(ack.id));
-  await publishPrivateFile(filePath, `${JSON.stringify(ack)}\n`);
+  // No directory creation here: the parent creates the directory before it
+  // publishes, and the child creates it to watch it. A missing directory means
+  // the agent's temp dir is gone (closed), so the ack must fail rather than
+  // recreate it.
+  await publishPrivateFile(
+    dir,
+    ackFileName(ack.id),
+    `${JSON.stringify(ack)}\n`,
+  );
 }
 
 async function readAck(
