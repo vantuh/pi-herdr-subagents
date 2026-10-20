@@ -3,10 +3,10 @@
 Pi extension that adds the `herdr_agent` tool: one-shot delegation to child Pi
 agents running in Herdr. Targets the installed Pi `1.3.0`, Herdr client/server
 `0.9.5`, and Herdr's Pi integration `v9`; no compatibility layer for older
-versions. The development dependency `@earendil-works/pi-coding-agent` is
-`1.2.0` in `package-lock.json`, and type-checking plus the unit/integration
-suites compile against that SDK: revalidate `1.2.0`-source findings against
-`1.3.0` before relying on them.
+versions. The development dependencies `@earendil-works/pi-coding-agent` and
+`@earendil-works/pi-tui` are pinned to `1.3.0` in `package.json` and
+`package-lock.json`, so type-checking and the unit/integration suites compile
+against the runtime SDK.
 [README.md](README.md) covers usage; `docs/` covers the tool contract, runtime
 flow, config and profiles. Keep those in sync when behavior changes.
 

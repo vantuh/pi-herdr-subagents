@@ -37,12 +37,9 @@ the Orchestrator as a message when the child finishes.
 - The Orchestrator Pi session runs inside a Herdr pane, in interactive (TUI)
   mode. RPC, JSON and print modes are not supported.
 
-The runtime Pi is `1.3.0`. The development dependency
-`@earendil-works/pi-coding-agent` is still `1.2.0` in `package-lock.json`, and
-that is the SDK `npm run typecheck` and the unit/integration suites resolve from
-`node_modules`. Findings read from that `1.2.0` source, and compatibility with
-it, are not revalidated against `1.3.0`; treat them as unconfirmed until the
-dependency is aligned.
+The development dependencies `@earendil-works/pi-coding-agent` and
+`@earendil-works/pi-tui` are pinned to `1.3.0`, so `npm run typecheck` and the
+unit/integration suites compile against the runtime SDK.
 
 ## Installation
 

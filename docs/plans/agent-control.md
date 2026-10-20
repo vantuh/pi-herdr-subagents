@@ -1,7 +1,7 @@
 # Agent control: steer and interrupt one running child
 
-Status: plan only, revision 2 after review. Nothing here is implemented. No
-feature code exists for this tool.
+Status: implementation started, revision 2 after review. Slice 0 (SDK alignment)
+is done; see [Progress](#progress). No feature code exists for this tool.
 
 Revision 2 changes: session ownership guard, the double steer guard
 (`active && !ctx.isIdle()` adjacent to the call), the synchronous enqueue
@@ -751,6 +751,38 @@ Checks: `npm ls @earendil-works/pi-coding-agent` prints `1.3.0`; `typecheck`,
 `lint`, `test:unit`, `test:integration` green;
 `test/pi-contract.test.ts` and `test/pi-events.test.ts` now exercise 1.3.0 = the
 runtime. Gate: fix any breakage here, never by relaxing types or tests.
+
+#### Progress
+
+Slice 0: **done**.
+
+- `package.json`: added exact devDependencies `@earendil-works/pi-coding-agent`
+  `1.3.0` and `@earendil-works/pi-tui` `1.3.0`. Wildcard peers unchanged. Reading
+  the installed 1.3.0 `docs/packages.md` ("Declare dependencies"): host-provided
+  packages belong in `peerDependencies` with `"*"`, never in `dependencies`, so
+  `devDependencies` is the permitted place for a local compile/test pin.
+- `npm install` (not `ci`) rewrote `package-lock.json`: `pi-agent-core`,
+  `pi-ai`, `pi-codemode`, `pi-coding-agent`, `pi-mcp`, `pi-telemetry`, `pi-tui`
+  moved `1.2.0 → 1.3.0`; the `"peer": true` flags on that tree became
+  `"dev": true`; the lock root gained `"license": "MIT"`. `npm install` also
+  re-resolved 14 transitive `@aws-sdk/*` patch/minor versions inside their existing
+  semver ranges (pulled by `pi-ai`); no new top-level dependency.
+- Evidence: `npm ls @earendil-works/pi-coding-agent` prints `1.3.0` (and
+  `pi-tui@1.3.0` deduped). `diff -rq` of `dist/` for `pi-coding-agent` and
+  `pi-tui` between `node_modules` and
+  `~/.pi/agent/install/releases/1.3.0/node_modules/@earendil-works/` reports no
+  differences, so the test SDK is the runtime SDK. `pi --version` prints `1.3.0`.
+  `npm run typecheck`, `npm run lint` (exit 0), `npm run test:unit` (33 files, 289
+  tests) and `npm run test:integration` (22 files, 155 tests) pass with no source
+  change. An optional `npm run test:e2e` baseline produced no test summary before
+  the command timed out after 120 seconds; e2e is not verified (not required for
+  slice 0).
+- Docs: the version-mismatch caveat was removed from `README.md`, `AGENTS.md` and
+  `docs/flow.md`; they now state that the SDK dev dependencies are pinned to
+  `1.3.0`.
+- Residual: `typebox` stays the root `1.3.37` (peer auto-install) while the SDK
+  packages nest `typebox@1.3.27`, as before slice 0; no suite failed on it. Not
+  changed (the exact-pin scope covers only the two SDK packages).
 
 ### Slice 1 — prototype gate (throwaway, before any product code)
 
