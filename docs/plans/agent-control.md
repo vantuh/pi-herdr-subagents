@@ -1,7 +1,8 @@
 # Agent control: steer and interrupt one running child
 
-Status: implementation started, revision 8. Slice 0 (SDK alignment) is done and
-the slice 1 gate is resolved: the user accepted the measured late-delivery race
+Status: implementation slices 0–5 done, docs slice 6 open, revision 10. Slice 0
+(SDK alignment) is done and the slice 1 gate is resolved: the user accepted the
+measured late-delivery race
 (option 1 of the [Gate result](#gate-result)). Slice 1's throwaway prototype is
 complete — checks 1–5 pass, check 6 is re-scoped to the accepted behavior, and
 check 7 is done in slice 4, which is where a real control call exists.
@@ -10,9 +11,20 @@ measurements](#prototype-measurements-slice-1-a-throwaway). Slices 2 and 3
 landed the transport (`src/control.ts`, `src/control/schema.ts`) and the child
 consumer (`src/child/control.ts`, wired from `src/child.ts`). Slice 4 landed the
 parent tool (`src/tool/control.ts`), its parent-only registration, the prompt
-guidance, the simulated child control consumer and both control suites; evidence
-and remaining steps are under [Slice 4 progress](#slice-4-progress). Slice 5 (the
-real steer/interrupt e2e) and slice 6 (docs) are still open.
+guidance, the simulated child control consumer and both control suites. Slice 5
+landed the real steer/interrupt e2e and the version capture; evidence is under
+[Slice 5 progress](#slice-5-progress). Slice 6 (docs) is still open.
+
+Revision 10 changes (slice 5 review): the Pi/SDK version gate now runs before
+the harness allocates its temp root, mock LLM or server, because a throwing
+harness factory cannot be disposed by `withE2e`. The pre-existing Herdr integration
+v9 gate still follows installation into the fixture HOME. A real
+question-on-a-steered-continuation scenario was added after the review showed the
+plan's "a real child cannot be interrupted while its question is undelivered"
+claim to be false (scenario 3); the queued-steer body scan moved after the
+completed recovery run; and the status observation is narrowed to the initial live
+run, with post-steer transitions left explicitly unmeasured. Details under [Slice
+5 progress](#slice-5-progress).
 
 Revision 2 changes: session ownership guard, the double steer guard
 (`active && !ctx.isIdle()` adjacent to the call), the synchronous enqueue
@@ -71,6 +83,14 @@ consume regression. P2: a per-child queue entry is removed only when the map
 still points at that operation's own tail, so a queued operation is never
 bypassed. Evidence and mutation checks under [Slice 4
 progress](#slice-4-progress).
+
+Revision 9 changes (slice 5): the e2e harness captures the actual `pi --version`
+and the lockfile SDK version, exposes them as `harness.versions` and hard-gates
+the run on the pinned `1.3.0`, next to the existing Herdr integration v9 check;
+the real steer and real interrupt scenarios exist and pass. One measurement is
+worth carrying forward: an `idle` child status was observed mid-run in every
+sampled run, which is why the scenario samples status instead of asserting its
+absence. Details under [Slice 5 progress](#slice-5-progress).
 
 Revision 6 changes (slice 3 review): shutdown is fenced at every stage that spans
 an `await` (watcher install, interrupt marker write) and already-started ack
@@ -722,8 +742,14 @@ Accepted limitations:
     tool while the child's watcher has only just been installed. A lost event is
     honest `unknown`, never a false ack, and there is no retry, readiness
     handshake or second consumer strategy.
-12. A child running older extension code cannot be controlled.
-13. The Orchestrator blocks for up to the ack deadline.
+12. Herdr's status can read `idle` at the start of a live run: samples taken
+    right after the first provider request, before any steer, saw `idle, working`
+    in every e2e run (slice 5) — status publication lags Pi's run start. Nothing
+    in the tool consults the status, but a status observation alone is not
+    evidence that a child settled. Status transitions after a steer are not
+    measured at all.
+13. A child running older extension code cannot be controlled.
+14. The Orchestrator blocks for up to the ack deadline.
 
 ## 7. Approach
 
@@ -1485,10 +1511,11 @@ check 7 passed as a forced overlap.
   request publishes, without assuming which call published first. Three
   concurrent unit+integration runs are green afterwards.
 - Remaining, honest:
-  - Slice 5 is not implemented: the real steer/interrupt e2e scenarios, the
-    `pi --version` + SDK version capture (acceptance criterion 10) and the
-    TUI-queue-discard assertion (acceptance criterion 4) are still open, so
-    criteria 3, 4 and 10 are unproven.
+  - Slice 5 is not implemented at this point: the real steer/interrupt e2e
+    scenarios, the `pi --version` + SDK version capture (acceptance criterion 10)
+    and the TUI-queue-discard assertion (acceptance criterion 4) were still open,
+    so criteria 3, 4 and 10 were unproven then. Slice 5 closed them — see
+    [Slice 5 progress](#slice-5-progress).
   - Slice 6 docs are untouched: `README.md`, `docs/tool.md`, `docs/flow.md`,
     `docs/config.md` and the `AGENTS.md` Files/invariants lists do not mention
     `herdr_agent_control` yet. The tool is registered but undocumented there.
@@ -1503,8 +1530,13 @@ Capture in `test-support/e2e-harness.ts`: the **actual `pi --version`** and the
 **lockfile SDK version** of `@earendil-works/pi-coding-agent`, exposed as
 `harness.versions = { pi, sdk }`, and assert `versions.pi` equals the pinned
 runtime version in the e2e entry point, exactly like the existing
-`HERDR_INTEGRATION_VERSION=9` hard check. Extra metadata (Herdr client/protocol,
-git revision) is optional and must never fail the suite.
+`HERDR_INTEGRATION_VERSION=9` hard check. The version gate runs **before** the
+harness allocates anything (revision 10): a harness factory that throws has no
+`dispose()` to call, so a failing gate must not start a server, a mock LLM, or a
+temp root. The v9 gate cannot move — it reads the file `herdr integration install
+pi` writes into the fixture HOME — and is the pre-existing check, not a new
+failure path. Extra metadata (Herdr client/protocol, git revision) is optional and
+must never fail the suite.
 
 Scenarios in `e2e/flow.test.ts`:
 
@@ -1528,8 +1560,144 @@ Scenarios in `e2e/flow.test.ts`:
    a custom message cannot slip past a last-user-text filter.
 3. Sample the child's status (as in the evidence) and report whether `idle` was
    ever observed mid-run — an observation, never an assertion of absence.
+4. **Question on a steered continuation** (added in revision 10, after the review
+   disproved the plan's earlier impossibility claim): hold a reply, queue a steer
+   into it, let the terminating `ask_question` tool run, hold the steered
+   continuation, interrupt it, and assert the already-written question is
+   delivered exactly once while the interrupted marker stays set and no result of
+   the aborted run arrives.
 
 Checks: `npm run test:e2e`.
+
+#### Slice 5 progress
+
+Slice 5: **done**, after the slice 5 review (revision 10). One measured
+observation bounds the status evidence (limitation 12 below, with post-steer
+transitions unmeasured), and one plan claim was wrong: a real child *can* hold an
+undelivered question while its run stays active (scenario 3).
+
+- `test-support/e2e-harness.ts`: the actual `pi --version` of the installed
+  launcher and the lockfile version of
+  `node_modules/@earendil-works/pi-coding-agent` are captured once per process,
+  exposed as `harness.versions = { pi, sdk }`, and hard-gated in
+  `createE2eHarness` exactly like the Herdr Pi integration v9 check: the run
+  throws unless both equal the pinned `1.3.0`. The report line
+  `[e2e] pi 1.3.0, sdk 1.3.0` goes to stdout directly because the default
+  reporter hides `console` output of passing tests, and criterion 10 asks the run
+  to report the versions. `run()` grew an optional binary argument (`pi
+  --version` versus `herdr`), and one `executeTool` helper resolves
+  `herdr_agent`/`herdr_agent_control` per call (both must be registered; `/reload`
+  replaces them), so `call`, `callRaw` and the new `control` reach either tool
+  through the same mock host. No other harness behavior changed, and `MockLlm`
+  needed no change: the existing async `setScript` holds a reply.
+- Version-gate cleanup (review P1): the version gate now runs at the very top of
+  `createE2eHarness`, before `mkdtemp`, `MockLlm` and the Herdr server, because
+  `withE2e` can only dispose a harness it received — the new mandatory failure
+  path otherwise stranded a started server, its socket and the temp root. The
+  Herdr integration v9 gate cannot move the same way: it reads the file that
+  `herdr integration install pi` writes into the fixture HOME, so it needs the
+  server and its env, and it is the pre-existing check (not a new failure path).
+  Verified deterministically without adding a test: with a fake `pi` printing
+  `9.9.9` first on `PATH`, `createE2eHarness()` rejects with
+  `E2E requires Pi 1.3.0: pi --version says 9.9.9, the lockfile pins SDK 1.3.0.`
+  and the `/tmp/herdr-agents-e2e-*` set is unchanged — no root, so nothing to
+  leak. The throwaway check file was deleted after the run.
+- Scenario 1 (`e2e/flow.test.ts`, steer): the barrier is the held first provider
+  reply (`Promise.withResolvers`), so the run is live until the test releases it
+  and the steer cannot be applied as a new run. The steer is published only after
+  request 1 exists, which also puts it outside the watcher startup window
+  (limitation 11). Asserted: ack `queued`; nothing delivered and the pane still
+  open while the reply is held; after release the real child's second request body
+  carries the steer text (the whole message list stringified, so the
+  custom-to-user conversion cannot hide it); exactly one delivered result,
+  carrying `ANSWER_BEFORE_CORRECTION` then `ANSWER_AFTER_CORRECTION`; the pane
+  closes and the live record is pruned only after that delivery.
+- Scenario 2 (`e2e/flow.test.ts`, interrupt): the deterministic hold is a child
+  tool call (`printf started > interrupt-tool-started; sleep 30`), so no turn
+  boundary can consume the queued steer before the abort lands; the test waits for
+  that file, not for a delay. Asserted: the steer acks `queued`; the interrupt
+  acks `aborted` (not `requested`, because the abort cannot lose to a finished
+  run here) and reports the child's own `paneId`; after 2.2 s (more than two
+  poller ticks) nothing was delivered, the `interrupted` marker exists,
+  `result.md` still holds `PARTIAL_BEFORE_INTERRUPT`, the child's pane is open and
+  its live record still has the same `paneId` with `detached: true`; a manual
+  continuation through the real `herdr agent prompt` on that pane (the documented
+  recovery) reaches the model, the continued run delivers
+  `PARTIAL_BEFORE_INTERRUPT\n\nANSWER_AFTER_INTERRUPT` once, closes the pane and
+  prunes the record, and only then — after the recovery run finished, delivered,
+  closed and pruned (review P2) — the full `harness.llm.requests` scan runs. It
+  covers every body of the completed recovery run rather than only the request
+  that carried the task, and it pins that the child made exactly two requests.
+- Scenario 3 (`e2e/flow.test.ts`, question on a steered continuation, added by
+  the review): the earlier claim that a real child cannot be interrupted while
+  its question is undelivered was **false**. `ask_question` returns
+  `terminate: true`, but Pi refetches the steering queue after the terminating
+  tool batch (`pi-agent-core/dist/agent-loop.js`: `hasMoreToolCalls ||
+  pendingMessages.length > 0`), so a queued steer continues the run with the
+  question already on disk (`_runBeforeSettleBoundary` returns
+  `result.continue || hasQueuedMessages()`). The scenario uses only real
+  barriers: the first reply is held while the steer is queued (ack `queued`),
+  then released as an `ask_question` tool call; the steered continuation request
+  is held forever, because the interrupt destroys its socket and no reply is due;
+  the question file is asserted on disk before the interrupt is sent. Asserted:
+  the continuation body carries the steer; the interrupt acks `aborted`; the
+  question arrives exactly once as `herdr_agent_question` with its text; the
+  `interrupted` marker is still set; no `herdr_agent_result` ever arrives and
+  `result.md` stays empty; after 2.2 s of further poller ticks there is still
+  exactly one delivered message, the child's pane is open and its live record
+  keeps the same `paneId` with the parked question still on disk. The tick that
+  delivers the question is deliberately **not** asserted: delivery needs a
+  settled status, Herdr publishes status asynchronously (limitation 12), and the
+  claim is "once, despite the marker", not a specific tick.
+- Honest bound on the discard evidence: the child writes its `queued` ack only
+  after `pi.sendMessage(...)` returned, and the model context of no recorded
+  request ever carried the text. The harness cannot see the child's editor, so the
+  run proves "never consumed by this child", not which internal path dropped the
+  text (`clearAllQueues` plus the editor restore, and whatever the later
+  `herdr agent prompt` does with an editor that held it). No stronger claim is
+  made, and the plan's wording is not extended beyond no-consumption.
+- The accepted D5 late delivery is never asserted absent: the ordinary-path
+  assertions of scenarios 2 and 3 rest on the child's own marker write finishing
+  before the abort, which the held barrier guarantees in both.
+- Measured observation (limitation 12), narrowed by the review: 10 status samples
+  at 50 ms intervals, all taken **before the steer is submitted** and after
+  request 1 exists, produced the set `idle, working` in every run — so `idle` was
+  observed while a live, held run overlapped the sample window. The set records
+  neither order nor timestamps, and nothing was sampled after the steer, so this
+  is evidence of initial status-publication lag during a held live run and
+  **not** of a `working → idle` regression or of an idle window during the steer
+  continuation; post-steer transitions are unmeasured. The scenario therefore
+  asserts only that `working` was seen at least once (risk 4 in §13).
+- Versions and checks at the final state (revision 10): `pi --version` `1.3.0`,
+  lockfile SDK `1.3.0`, Herdr client/server `0.9.5`, Herdr Pi integration v9
+  (existing hard check). `typecheck` and `lint` exit 0; `test:unit` 36 files /
+  328 tests; `test:integration` 24 files / 182 tests (unchanged by this slice).
+  The worker's `test:e2e` run: **18 of 19 passed, 131.21 s**, with the
+  unrelated `current Herdr starts Pi with one CLI call during cold-shell
+  initialization` failing in 0.6 s with `agent_pane_busy: agent target pane
+  w1:p2 is not an available shell`. That failure is external and intermittent,
+  not this change: the same test failed the same way in the orchestrator's own
+  earlier full run (17/18) and in its isolated rerun, and in the scout's isolated
+  repro; the review's full run was 18/18 green. The test and its cold-shell
+  harness setup are untouched by slice 5, no retry or suppression was added, and
+  that run was reported blocked rather than claimed green. The orchestrator's
+  final verification after `npm run format` passed **19 of 19 in 140.03 s**;
+  the intermittent cold-shell readiness failure remains a known external risk.
+  The three control
+  scenarios passed in that same run and in three targeted repeats of all three
+  (5.7–6.8 s each, 3/3 every time, same status samples); scenario 3 has five
+  green runs in total. The last repeat ran after a comment-only correction in the
+  two touched files, so it is the final-state check. `oxfmt --check` clean on
+  both files.
+- No product change was needed: no dependency, config key, env var, state field
+  or Herdr command kind was added, and only `test-support/e2e-harness.ts` and
+  `e2e/flow.test.ts` changed.
+- Residual boundaries: the version gate trusts that the `pi` on `PATH` is the
+  runtime the children get (they inherit the server's `PATH`, so gate and
+  children agree); the status sample is an observation window over the initial
+  live run, not a monitor and not a post-steer measurement; scenario 3 does not
+  prove which tick delivered the question; and no scenario forces the accepted
+  marker/collection overlap, which stays slice 1 B and slice 4 evidence.
 
 ### Slice 6 — docs and cleanup pass
 
@@ -1627,8 +1795,13 @@ Risks:
    `ctx.abort()` binding and the synchronous enqueue branch are load-bearing. The
    e2e interrupt scenario and the real-Pi suite are the tripwires.
 4. **A steer's continuation collected early** if Herdr ever reported a settled
-   status mid-continuation. The evidence sampled 37–43 ms and cannot prove absence;
-   the e2e steer scenario asserts the post-steer text is delivered.
+   status mid-continuation. The evidence sampled 37–43 ms and cannot prove absence,
+   and the e2e sampling does not close that gap: it covers only the initial live
+   run before the steer, where an `idle` status **was** observed (limitation 12),
+   and it records neither order nor timestamps. Post-steer status transitions are
+   unmeasured. What the steer scenario does prove is the behavior that matters:
+   delivery happened once, after the real settle, carrying the post-steer text —
+   the poller, not a status reading, gates delivery.
 5. **Conservative interrupt cost**: an interrupt that races a clean finish leaves a
    complete result undelivered until recovery (limitation 5).
 6. **Timeout tuning** (D7): measured in slice 1 A (ack latency 27–78 ms), so the
@@ -1682,3 +1855,7 @@ children is worth one more file (default: no).
 | P1 parent review: gate 7 claimed an overlap it never forced | Replaced with a forced overlap: the real poller is paused after its marker read, a real `herdr_agent_control` call publishes and waits, the collection is released while the tool is in flight, and exactly one poller delivery/close plus an honest `unknown` are asserted. The old, marker-after-return test is kept only as "a control call leaves a pending outcome untouched" |
 | P2 parent review: simulated control consume could reject unhandled and outlive teardown | Consumer promises go through `this.track(...)`; consumers are fenced on close and drained by `stop()`; close-during-consume regression added |
 | P2 parent review: per-child queue entries never left memory | Entry removed in `finally` only when the map still points at that operation's tail; three-operation test added |
+| P1 slice 5 review: version-gate failures leaked a started harness | Both hard gates moved to the top of `createE2eHarness`, before the temp root, mock LLM and Herdr server; verified with a fake `pi` on `PATH` that the gate rejects and creates no harness root |
+| P1 slice 5 review: "question overlap is impossible" was false | `ask_question` terminates its turn, but Pi refetches the steering queue after the terminating tool batch, so a queued steer continues the run with the question on disk. Scenario 3 added: held reply → queued steer → held continuation → interrupt → exactly one question delivery with the marker still set and no result |
+| P2 slice 5 review: full body scan ran before the recovery run finished | The scan moved after the recovery result was delivered, the pane closed and the record pruned, so it covers every request body of the completed recovery run |
+| P2 slice 5 review: status samples overinterpreted as reaching the steer continuation | All samples precede the steer; limitation 12 and §13 risk 4 now describe initial status-publication lag during a held live run and state that post-steer transitions are unmeasured |

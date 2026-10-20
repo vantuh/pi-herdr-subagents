@@ -4,7 +4,12 @@ import * as path from 'node:path';
 
 import { test } from 'vitest';
 
-import { readAgentResult, readAgentSessionMeta } from '../src/artifacts.ts';
+import {
+  isAgentResultInterrupted,
+  readAgentQuestion,
+  readAgentResult,
+  readAgentSessionMeta,
+} from '../src/artifacts.ts';
 import { execHerdrApi } from '../src/herdr/cli.ts';
 import { exportPaneLayout } from '../src/herdr/layout.ts';
 import { loadCurrentAgents } from '../src/ui/poller.ts';
@@ -926,5 +931,313 @@ test('archives a long real child result and delivers an excerpt with its report 
       'the report belongs to the hermetic agent dir',
     );
     assert.equal(await fs.readFile(reportPath, 'utf8'), report);
+  });
+});
+
+test('steers a real running child and delivers its post-steer answer once', async () => {
+  await withE2e({}, async (harness) => {
+    // A held reply is the barrier: the run is live until the test releases it,
+    // so the steer lands in a run that cannot settle on its own.
+    const firstReply = Promise.withResolvers<void>();
+    harness.llm.setScript(async (body) => {
+      if (
+        JSON.stringify(body.messages ?? []).includes('STEER_LIVE_CORRECTION')
+      ) {
+        return { text: 'ANSWER_AFTER_CORRECTION', delayMs: 0 };
+      }
+      await firstReply.promise;
+      return { text: 'ANSWER_BEFORE_CORRECTION', delayMs: 0 };
+    });
+    try {
+      const spawned = await harness.call({
+        agent: 'scout',
+        task: 'STEER_LIVE_TASK',
+        tabLabel: 'Steer Child',
+      });
+      assert.equal(spawned.isError, undefined);
+      await harness.waitFor(
+        () => harness.llm.requests.length === 1,
+        'the child to reach its first model request',
+        60000,
+      );
+
+      // Observation, never an assertion of absence: whether Herdr reports the
+      // child idle while its run is held.
+      const statuses = new Set<string>();
+      for (let index = 0; index < 10; index++) {
+        const child = (await harness.snapshot()).panes.find(
+          (pane) =>
+            pane.agent === 'pi' && pane.pane_id !== harness.orchestratorPaneId,
+        );
+        if (child?.agent_status) statuses.add(child.agent_status);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      console.info(
+        `[e2e] child statuses while the first reply was held: ${[...statuses].join(', ')}`,
+      );
+      assert.ok(
+        statuses.has('working'),
+        `expected a working child, saw: ${[...statuses].join(', ') || 'nothing'}`,
+      );
+
+      const steered = await harness.control({
+        tabLabel: 'Steer Child',
+        action: 'steer',
+        message: 'STEER_LIVE_CORRECTION: answer the second half too.',
+      });
+      assert.equal(steered.details.action, 'steer');
+      assert.equal(steered.details.status, 'queued');
+      // The steer enters a turn boundary after this held turn, so the run has
+      // not settled and the poller has nothing to deliver.
+      assert.equal(
+        harness.messages.length,
+        0,
+        'delivered a result before the child settled',
+      );
+      assert.equal((await harness.snapshot()).panes.length, 2);
+
+      firstReply.resolve();
+      await harness.waitFor(
+        () => harness.llm.requests.length === 2,
+        'the steered turn boundary to reach the model',
+        60000,
+      );
+      assert.match(
+        JSON.stringify(harness.llm.requests[1]?.messages ?? []),
+        /STEER_LIVE_CORRECTION/,
+      );
+
+      const delivered = await harness.collect('Steer Child', 60000);
+      assert.equal(delivered.customType, 'herdr_agent_result');
+      assert.match(
+        delivered.content,
+        /ANSWER_BEFORE_CORRECTION\n\nANSWER_AFTER_CORRECTION/,
+      );
+      assert.equal(harness.messages.length, 1);
+      await harness.waitFor(
+        async () => (await harness.snapshot()).panes.length === 1,
+        'the steered one-shot pane to be closed after the real settle',
+        15000,
+      );
+      assert.deepEqual((await harness.readState()).agents, {});
+    } finally {
+      firstReply.resolve();
+    }
+  });
+});
+
+test('interrupts a real running child and never consumes its queued steer', async () => {
+  await withE2e({}, async (harness) => {
+    harness.llm.setScript((body) => {
+      if (
+        JSON.stringify(body.messages ?? []).includes('MANUAL_CONTINUATION_TASK')
+      ) {
+        return { text: 'ANSWER_AFTER_INTERRUPT', delayMs: 0 };
+      }
+      return {
+        text: 'PARTIAL_BEFORE_INTERRUPT',
+        toolCall: {
+          name: 'bash',
+          args: {
+            command: 'printf started > interrupt-tool-started; sleep 30',
+          },
+        },
+        delayMs: 0,
+      };
+    });
+
+    await harness.call({
+      agent: 'scout',
+      task: 'INTERRUPT_TARGET_TASK',
+      tabLabel: 'Interrupt Child',
+    });
+    const record = Object.values((await harness.readState()).agents)[0];
+    assert.ok(record?.automationName);
+    await harness.waitFor(
+      () =>
+        fs.stat(path.join(harness.cwd, 'interrupt-tool-started')).then(
+          () => true,
+          () => false,
+        ),
+      'the real child tool to start before the interrupt',
+    );
+    assert.equal(
+      await readAgentResult(record.resultFile),
+      'PARTIAL_BEFORE_INTERRUPT',
+    );
+
+    // The tool call holds the turn, so only the abort can end this run: the
+    // steer is queued into it and cannot reach a turn boundary first.
+    const steered = await harness.control({
+      tabLabel: 'Interrupt Child',
+      action: 'steer',
+      message: 'STEER_BEFORE_INTERRUPT',
+    });
+    assert.equal(steered.details.status, 'queued');
+
+    const interrupted = await harness.control({
+      tabLabel: 'Interrupt Child',
+      action: 'interrupt',
+    });
+    assert.equal(interrupted.details.action, 'interrupt');
+    assert.equal(interrupted.details.status, 'aborted');
+    assert.equal(interrupted.details.paneId, record.paneId);
+
+    // Ordinary path: the child wrote its marker before the abort, so no poller
+    // tick delivers the partial text and the child stays live. A collection
+    // already in flight could still deliver it (accepted race, D5).
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+    assert.equal(harness.messages.length, 0, 'delivered an interrupted run');
+    assert.equal(await isAgentResultInterrupted(record.resultFile), true);
+    assert.equal(
+      await readAgentResult(record.resultFile),
+      'PARTIAL_BEFORE_INTERRUPT',
+    );
+    assert.equal((await harness.snapshot()).panes.length, 2);
+    const live = Object.values((await harness.readState()).agents)[0];
+    assert.equal(live?.paneId, record.paneId);
+    assert.equal(live?.detached, true);
+
+    // Manual continuation in the child's own pane: the documented recovery for
+    // a live interrupted child.
+    await harness.herdr([
+      'agent',
+      'prompt',
+      record.automationName!,
+      'MANUAL_CONTINUATION_TASK',
+    ]);
+    await harness.waitFor(
+      () => harness.llm.requests.length === 2,
+      'the manual continuation to reach the model',
+      60000,
+    );
+
+    const delivered = await harness.collect('Interrupt Child', 60000);
+    assert.match(
+      delivered.content,
+      /PARTIAL_BEFORE_INTERRUPT\n\nANSWER_AFTER_INTERRUPT/,
+    );
+    assert.equal(harness.messages.length, 1);
+    await harness.waitFor(
+      async () => (await harness.snapshot()).panes.length === 1,
+      'the continued one-shot pane to be closed',
+      15000,
+    );
+    assert.deepEqual((await harness.readState()).agents, {});
+    // Scanned only now, so every request body of the completed recovery run is
+    // covered — not just the one that carried the task. Whole bodies, not the
+    // last user text: the steer was queued as a custom message and must never
+    // reach this child's model context.
+    assert.deepEqual(
+      harness.llm.requests.filter((body) =>
+        JSON.stringify(body).includes('STEER_BEFORE_INTERRUPT'),
+      ),
+      [],
+      'the aborted run consumed the queued steer',
+    );
+    assert.equal(harness.llm.requests.length, 2);
+  });
+});
+
+test('delivers a real child question once when an interrupt lands on its steered continuation', async () => {
+  await withE2e({}, async (harness) => {
+    // Two real barriers. The first reply is held so the steer is queued before
+    // the terminating tool runs; the steered continuation is held so the
+    // question is already on disk while the child is still in its run.
+    const firstReply = Promise.withResolvers<void>();
+    // Never resolved: the interrupt aborts this request, so no reply is due and
+    // a late one would write to a socket the abort already destroyed.
+    const continuationHeld = new Promise<never>(() => {});
+    harness.llm.setScript(async (_body, index) => {
+      if (index === 0) {
+        await firstReply.promise;
+        return {
+          toolCall: {
+            name: 'ask_question',
+            args: { question: 'QUESTION_OVER_INTERRUPT: cookie or JWT?' },
+          },
+          delayMs: 0,
+        };
+      }
+      await continuationHeld;
+      return { text: 'UNREACHED_CONTINUATION_ANSWER', delayMs: 0 };
+    });
+    try {
+      await harness.call({
+        agent: 'scout',
+        task: 'QUESTION_INTERRUPT_TASK',
+        tabLabel: 'Question Child',
+      });
+      await harness.waitFor(
+        () => harness.llm.requests.length === 1,
+        'the child to reach its first model request',
+        60000,
+      );
+      const steered = await harness.control({
+        tabLabel: 'Question Child',
+        action: 'steer',
+        message: 'STEER_INTO_QUESTION_TURN',
+      });
+      assert.equal(steered.details.status, 'queued');
+
+      firstReply.resolve();
+      // Pi re-reads the steering queue after a terminating tool call completes
+      // (`agent-loop.js`: `hasMoreToolCalls || pendingMessages.length > 0`), so
+      // `ask_question` does not end the run while a steer is queued.
+      await harness.waitFor(
+        () => harness.llm.requests.length === 2,
+        'the steered continuation after the terminating question',
+        60000,
+      );
+      assert.match(
+        JSON.stringify(harness.llm.requests[1]?.messages ?? []),
+        /STEER_INTO_QUESTION_TURN/,
+      );
+      const record = Object.values((await harness.readState()).agents)[0];
+      assert.equal(
+        await readAgentQuestion(record?.resultFile),
+        'QUESTION_OVER_INTERRUPT: cookie or JWT?',
+      );
+
+      const interrupted = await harness.control({
+        tabLabel: 'Question Child',
+        action: 'interrupt',
+      });
+      assert.equal(interrupted.details.action, 'interrupt');
+      assert.equal(interrupted.details.status, 'aborted');
+
+      // The question branch of the poller never consults the interrupted
+      // marker, so the pre-written question is delivered while the marker that
+      // blocked the run's own text stays set.
+      await harness.waitFor(
+        () => harness.messages.length > 0,
+        'the pre-written question to be delivered',
+        60000,
+      );
+      const [question] = harness.messages;
+      assert.equal(question?.customType, 'herdr_agent_question');
+      assert.match(question?.content ?? '', /cookie or JWT\?/);
+      assert.equal(await isAgentResultInterrupted(record?.resultFile), true);
+      assert.equal((await readAgentResult(record?.resultFile)) ?? '', '');
+
+      // Several more poller ticks: one delivery, no result, child still open.
+      await new Promise((resolve) => setTimeout(resolve, 2200));
+      assert.equal(harness.messages.length, 1);
+      assert.equal(
+        harness.messages.filter(
+          (message) => message.customType === 'herdr_agent_result',
+        ).length,
+        0,
+      );
+      assert.equal((await harness.snapshot()).panes.length, 2);
+      const live = Object.values((await harness.readState()).agents)[0];
+      assert.equal(live?.paneId, record?.paneId);
+      assert.equal(
+        await readAgentQuestion(live?.resultFile),
+        'QUESTION_OVER_INTERRUPT: cookie or JWT?',
+      );
+    } finally {
+      firstReply.resolve();
+    }
   });
 });

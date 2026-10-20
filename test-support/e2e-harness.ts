@@ -37,6 +37,36 @@ const EXTENSION_DIR = path.resolve(
   '..',
 );
 
+/** Runtime the suites compile against (`package.json`, `AGENTS.md`). */
+const PINNED_PI_VERSION = '1.3.0';
+
+export interface E2eVersions {
+  /** Actual `pi --version` of the binary the children run. */
+  pi: string;
+  /** Lockfile version of the SDK the suites compile against. */
+  sdk: string;
+}
+
+let versions: E2eVersions | undefined;
+
+/** Versions are process-wide facts; capture and report them once per run. */
+async function e2eVersions(): Promise<E2eVersions> {
+  if (versions) return versions;
+  const lock = JSON.parse(
+    await fs.readFile(path.join(EXTENSION_DIR, 'package-lock.json'), 'utf8'),
+  );
+  versions = {
+    pi: (await run(['--version'], process.env, 'pi')).stdout.trim(),
+    sdk:
+      lock?.packages?.['node_modules/@earendil-works/pi-coding-agent']
+        ?.version ?? 'unknown',
+  };
+  // The default reporter hides `console` output of passing tests, and the run
+  // itself is where these versions have to be visible.
+  process.stdout.write(`[e2e] pi ${versions.pi}, sdk ${versions.sdk}\n`);
+  return versions;
+}
+
 export interface E2eOptions {
   /** Agent profiles written to the fixture project. Defaults to `scout`. */
   profiles?: AgentProfileFixture[];
@@ -66,6 +96,13 @@ export interface E2eHarness {
     params: Record<string, unknown>,
     options?: { signal?: AbortSignal },
   ): Promise<any>;
+  /** Call `herdr_agent_control` exactly as Pi would. */
+  control(
+    params: Record<string, unknown>,
+    options?: { signal?: AbortSignal },
+  ): Promise<any>;
+  /** Captured `pi --version` and lockfile SDK version. */
+  versions: E2eVersions;
   /** Wait for the next poller-delivered result or question. */
   collect(label?: string, timeoutMs?: number): Promise<SentMessage>;
   fire(event: string, payload?: Record<string, unknown>): Promise<unknown>;
@@ -96,10 +133,11 @@ function isAgentOutcome(message: SentMessage, label?: string): boolean {
 function run(
   args: string[],
   env: NodeJS.ProcessEnv,
+  bin = 'herdr',
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     execFile(
-      'herdr',
+      bin,
       args,
       { env, maxBuffer: 10 * 1024 * 1024 },
       (error, stdout, stderr) => {
@@ -116,6 +154,17 @@ function run(
 export async function createE2eHarness(
   options: E2eOptions = {},
 ): Promise<E2eHarness> {
+  // Before the first resource exists: a thrown harness factory cannot be
+  // disposed by the caller, so this gate may not run after a server or temp root
+  // is allocated. The children run the installed `pi`, so a mismatch with the
+  // pinned SDK invalidates the run.
+  const captured = await e2eVersions();
+  if (captured.pi !== PINNED_PI_VERSION || captured.sdk !== PINNED_PI_VERSION) {
+    throw new Error(
+      `E2E requires Pi ${PINNED_PI_VERSION}: pi --version says ${captured.pi}, the lockfile pins SDK ${captured.sdk}.`,
+    );
+  }
+
   // Handoff appends a socket suffix; macOS TMPDIR can exceed SUN_LEN with it.
   const root = await fs.mkdtemp(
     path.join(
@@ -297,32 +346,42 @@ export async function createE2eHarness(
 
   const host = createMockHost({ cwd });
   await Promise.resolve(herdrAgentsExtension(host.pi));
-  const tool = host.tools.get('herdr_agent');
-  if (!tool) throw new Error('herdr_agent tool was not registered');
+  for (const name of ['herdr_agent', 'herdr_agent_control']) {
+    if (!host.tools.get(name))
+      throw new Error(`${name} tool was not registered`);
+  }
+
+  // Resolved per call: `/reload` re-registers both tools on the same host.
+  const executeTool = (
+    name: string,
+    params: Record<string, unknown>,
+    callOptions?: { signal?: AbortSignal },
+  ) => {
+    const registered = host.tools.get(name);
+    if (!registered) throw new Error(`${name} tool was not registered`);
+    return registered.execute(
+      `call-${Math.random().toString(36).slice(2)}`,
+      params,
+      callOptions?.signal,
+      undefined,
+      host.ctx,
+    );
+  };
 
   return {
     llm,
     cwd,
     root,
     orchestratorPaneId,
+    versions: captured,
     messages: host.messages,
     events: host.events,
     call: (params, callOptions) =>
-      tool.execute(
-        `call-${Math.random().toString(36).slice(2)}`,
-        params,
-        callOptions?.signal,
-        undefined,
-        host.ctx,
-      ),
+      executeTool('herdr_agent', params, callOptions),
     callRaw: (params, callOptions) =>
-      tool.execute(
-        `call-${Math.random().toString(36).slice(2)}`,
-        params,
-        callOptions?.signal,
-        undefined,
-        host.ctx,
-      ),
+      executeTool('herdr_agent', params, callOptions),
+    control: (params, callOptions) =>
+      executeTool('herdr_agent_control', params, callOptions),
     collect: (label, timeoutMs) => {
       const start = host.messages.length;
       return waitFor(
