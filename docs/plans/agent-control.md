@@ -6,8 +6,9 @@ the slice 1 gate is resolved: the user accepted the measured late-delivery race
 complete — checks 1–5 pass, check 6 is re-scoped to the accepted behavior, and
 check 7 is **deferred to slice 4** (it needs the parent tool to mean anything).
 Measurements are recorded under [Prototype
-measurements](#prototype-measurements-slice-1-a-throwaway). No feature code
-exists for this tool.
+measurements](#prototype-measurements-slice-1-a-throwaway). Slice 2 landed the
+transport module (`src/control.ts`, `src/control/schema.ts`); no tool, child
+consumer or registration exists yet.
 
 Revision 2 changes: session ownership guard, the double steer guard
 (`active && !ctx.isIdle()` adjacent to the call), the synchronous enqueue
@@ -1033,6 +1034,64 @@ returns undefined on timeout, on a wrong-id file and on malformed JSON; a late
 per-dir queue serializes two overlapping operations.
 
 Checks: `test:unit`.
+
+#### Progress
+
+Slice 2: **done**.
+
+- `src/control/schema.ts`: `ControlAction`, `ControlStatus`, `ControlRequest`,
+  `ControlAck` as TypeBox values with their `Static` types, plus a shared
+  `ControlId` (`^[A-Za-z0-9-]{1,64}$`) reused by both schemas — the id is
+  validated in the schema rather than at each call site because it becomes part
+  of an ack file name.
+- `src/control.ts`: the §7.2 helper set. `controlDirFor` reuses the exported
+  `isManagedResultFile` guard (no duplicated `result.md` literal). Every helper
+  also requires a `control` basename inside a managed temp path, which is the
+  shared `isManagedHerdrTempPath` policy: only the first segment under
+  `os.tmpdir()` must start with `herdr-agent-`, so a nested spelling such as
+  `<tmp>/herdr-agent-X/sub/control` is accepted exactly like every other sibling
+  artifact path. That looseness is deliberate reuse of the existing policy, not
+  a second, stricter rule (the review follow-up left it unchanged and corrected
+  this note instead). Publish is `tmp + rename` (the state-store protocol): 0600
+  files in a 0700 directory created idempotently, and a failed write or rename
+  removes its own `.tmp` best-effort while the original error keeps propagating.
+  `awaitControlAck` polls every 25 ms, accepts only an ack whose payload id
+  equals the published id, and keeps normal `AbortSignal` semantics: a
+  pre-aborted signal throws the abort reason from `throwIfAborted`, a mid-wait
+  abort rejects through the sleep timer, and neither removes anything (an abort
+  leaves the request for the next operation's pre-clean, like a timeout).
+  `removeControlArtifacts(dir)` is the pre-operation clean (the request plus
+  every ack); `removeControlArtifacts(dir, id)` is the successful-operation clean
+  (the request plus that id's own ack), which is what §5.3's two removal moments
+  need — the optional `id` parameter is the only shape added to §7.2. An id that
+  cannot name an ack file is never turned into a path. `withControlDirQueue` keys
+  on `path.resolve(dir)`, so `dir` and `dir + '/'` serialize, and mirrors the
+  in-process half of `withStateFileLock` without the lock directory; it takes no
+  signal, so a queued operation is cancelled by its own caller checking its
+  signal before it publishes, not while it waits. It releases in `finally`.
+- `src/artifacts.ts`: `isManagedResultFile` exported; no behavior change.
+- Evidence: `npx vitest run --project unit test/control.test.ts` → 17 tests
+  pass. Full suites after the change: `typecheck` and `lint` exit 0, `test:unit`
+  35 files / 312 tests (was 34 / 295), `test:integration` 23 files / 158 tests
+  (unchanged), `oxfmt --check` clean on the touched files. The slice 1 prototype
+  (`test/pi-control.test.ts`, `test-support/control-prototype.ts`) stays until
+  slice 3 replaces it.
+- Mutation checks, each reverted: writing the request directly instead of
+  `tmp + rename` fails the torn-publish test; accepting an ack whose payload id
+  differs fails the published-id test; dropping the `ControlId` check in
+  `removeControlArtifacts` fails the traversal test (its sentinel sits exactly
+  where `ack./../../victim.json` lands); running `fn()` without the queue fails
+  the serialization test; keying the queue on the raw `dir` fails the
+  trailing-separator test; dropping the `fs.rm` of the failed publish's temp file
+  fails the failed-publish test; dropping `signal.throwIfAborted()` fails the
+  pre-abort test (the reason stops being the caller's).
+- Residual for slice 3/4: the D7 deadlines, the tool's status mapping and child
+  consumption are not covered here; `awaitControlAck` is exercised with test
+  timeouts (40–250 ms, one background write) and a 10 s deadline that only the
+  abort tests cut short, not the 2000/3000 ms deadlines. No arbitrary message
+  length bound is added. No test asserts the nested
+  `<tmp>/herdr-agent-X/sub/control` acceptance, because it is the shared managed
+  path policy rather than a control-specific rule.
 
 ### Slice 3 — child consumer
 

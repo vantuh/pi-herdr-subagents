@@ -86,7 +86,7 @@ function isManagedAgentFile(filePath: string, fileName: string): boolean {
   );
 }
 
-function isManagedResultFile(filePath: string): boolean {
+export function isManagedResultFile(filePath: string): boolean {
   return isManagedAgentFile(filePath, 'result.md');
 }
 
