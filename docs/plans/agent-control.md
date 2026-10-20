@@ -1,7 +1,13 @@
 # Agent control: steer and interrupt one running child
 
-Status: implementation started, revision 2 after review. Slice 0 (SDK alignment)
-is done; see [Progress](#progress). No feature code exists for this tool.
+Status: implementation started, revision 4. Slice 0 (SDK alignment) is done and
+the slice 1 gate is resolved: the user accepted the measured late-delivery race
+(option 1 of the [Gate result](#gate-result)). Slice 1's throwaway prototype is
+complete — checks 1–5 pass, check 6 is re-scoped to the accepted behavior, and
+check 7 is **deferred to slice 4** (it needs the parent tool to mean anything).
+Measurements are recorded under [Prototype
+measurements](#prototype-measurements-slice-1-a-throwaway). No feature code
+exists for this tool.
 
 Revision 2 changes: session ownership guard, the double steer guard
 (`active && !ctx.isIdle()` adjacent to the call), the synchronous enqueue
@@ -11,6 +17,20 @@ semantics without a marker-clear recovery path, best-effort (not absolute)
 timestamp freshness, a single post-gate consumer strategy, and corrected
 continuation instructions for an interrupted live child. Details in
 [§15](#15-review-findings-and-their-resolution).
+
+Revision 3 changes: the slice 1 B gate reproduced the marker/collection overlap
+and the user accepted it ([Gate result](#gate-result)). `interrupt` therefore
+promises only ordinary-path behavior, the acceptance criteria and the interrupt
+status texts no longer promise "no result" or "pane stays open" on a race path,
+and the two real-poller tests assert the accepted late delivery instead of the
+originally intended safety.
+
+Revision 4 changes (prototype review): the vacuous check-7 prototype test was
+removed and check 7 is deferred to slice 4; the "marker still on disk" claim is
+gone (the close deletes the temp directory, marker included); the latency figures
+are labelled as upper bounds quantized by the parent's 25 ms poll; the
+freshness, late-ack and shutdown paths the prototype did not exercise are
+recorded as slice 3 carry-overs.
 
 ## 1. Goal and agreed scope
 
@@ -43,8 +63,9 @@ Agreed scope, treated as the contract:
   Compaction is a documented limitation without recovery.
 - `interrupt` calls `ctx.abort()`. The acknowledgement is derived from Pi's
   `agent_settled.aborted` flag. The interrupted-marker / result-append barrier is
-  kept, and its guarantee is stated as ordinary-path behavior that the prototype
-  must test, not as a proof of "never delivered" (D5).
+  kept, but it is ordinary-path behavior and not a guarantee: the prototype gate
+  measured a collection tick already in flight delivering the aborted run's text,
+  and the user accepted that race (D5, [Gate result](#gate-result)).
 - Request id is echoed in the ack; one outstanding control operation per child;
   a timeout means "outcome unknown" with **no** automatic retry.
 - Reuse the existing artifact path guards, the existing owner lookup, and the
@@ -212,15 +233,21 @@ After this change:
    - `action: 'steer'`, `message: '<correction>'` — the correction enters the
      child's current run at its next turn boundary. The child's accumulated
      assistant text still arrives later as one normal `herdr_agent_result`.
-   - `action: 'interrupt'` — the child's run is aborted. Its partial text is not
-     delivered; the child stays open with the interrupted marker set.
+   - `action: 'interrupt'` — the child's run is aborted and the interrupted
+     marker is set. On the ordinary path its partial text is not delivered and the
+     child stays open. A collection tick that already passed its marker read can
+     still deliver that run's text and close the pane; that race is accepted
+     ([Gate result](#gate-result)).
 3. The call returns with an exact status (§5.2). `idle` means the child is not in
    a run; `unknown` means no ack arrived and the effect is unknown.
 4. Recovery after an interrupt: the child is **live**, and a live child cannot
    take a new `herdr_agent` task (`continuation.ts:73-88`, except when it is
    parked on a question). The Orchestrator therefore either asks the user to
    continue the child manually in its pane, or closes it with `/herdr-agents` and
-   continues it with `resumeClosed: true` and the same `tabLabel`.
+   continues it with `resumeClosed: true` and the same `tabLabel`. If a collection
+   in flight won the race instead, the aborted run's text arrives as a normal
+   `herdr_agent_result` and the one-shot pane may already be closed; the
+   Orchestrator ignores a result for work it interrupted.
 5. The widget, poller, delivery messages and `/herdr-agents` are otherwise
    unchanged.
 
@@ -368,14 +395,22 @@ delivered as a success:
 - an already-written `question.md` is delivered regardless of the marker
   (fact §2.1): **an interrupt does not retract a question**.
 
-The prototype gate (slice 1) must exercise these overlaps with the **real
-poller**, including a delayed marker write. **If that gate delivers an
-interrupted partial result as a success: stop implementation.** Record the
-failure (the test and the observed delivery) and obtain the user's decision
-before either weakening the "no partial result delivered as success" guarantee or
-expanding the scope, for example with a poller/marker guard. Revising this plan
-alone authorizes neither: there is no default narrower semantics, and no new
-guard or framework may be added without that decision.
+The prototype gate (slice 1 B, `test/integration-control.test.ts`) exercised
+these overlaps with the **real poller**, the real claim and the real close,
+including a marker write delayed past the poller's marker read. It delivered the
+interrupted partial result as a success and closed the one-shot pane. The user
+chose option 1 of the [Gate result](#gate-result) — accept the race.
+
+**Accepted semantics (user decision, option 1):**
+
+- `interrupt` stops the child's work. It does **not** retract a delivery already
+  begun, and it does not keep the pane open when that delivery wins.
+- The interrupted marker stays best-effort ordinary-path protection. No new state
+  field, lock, marker re-check or poller change was authorized; the poller stays
+  untouched (D11).
+- The Orchestrator ignores a result of work it cancelled.
+- Rejected alternatives: a poller/marker guard (scope expansion), and dropping
+  `interrupt` from the tool.
 
 **No marker-clear recovery path.** A conservative `requested` outcome is kept
 instead of a `already-settled` classification that would clear the marker again:
@@ -419,8 +454,9 @@ second Pi window on the same session — out of contract, documented, not defend
 
 **(proposal)** `CONTROL_STEER_ACK_TIMEOUT_MS = 2000`,
 `CONTROL_INTERRUPT_ACK_TIMEOUT_MS = 3000`, ack poll every 25 ms, child
-`CONTROL_ABORT_OBSERVE_MS = 2000`. **verify** the numbers in slice 1 from measured
-latencies; they are provisional.
+`CONTROL_ABORT_OBSERVE_MS = 2000`. **verified in slice 1 A**: measured ack
+latency 27–78 ms (median 54 ms), so the deadlines stay as written; the interrupt
+deadline is dominated by the child's own settle observation, not the transport.
 
 On deadline: report `unknown`, leave the request and any ack in place, delete
 nothing, never retry automatically. A late ack is discarded by the next
@@ -439,7 +475,10 @@ The alternative — consuming only at event boundaries (`turn_end`,
 `agent_before_settle`) — is a **prototype alternative, not a pre-approved
 fallback**. Slice 1 measures the watcher (event loss, ack latency); exactly **one**
 strategy ships. Shipping watcher-plus-boundary machinery by default is explicitly
-rejected.
+rejected. **Measured in slice 1 A:** every publish was consumed through the
+watcher — 9 acks measured across the checks, with no poke or re-read fallback in
+the suite, so a missed event would have failed a test — and the watcher is the
+strategy.
 
 ### D9 Compaction: documented limitation, no recovery
 
@@ -505,8 +544,8 @@ Guards, in order, before any filesystem write:
 | steer | `queued` | `Steer queued for Herdr agent <label> (<paneId>). It enters the run at its next turn boundary; queuing is not proof the agent has read it. Its answer still arrives with the final result — do not re-send it as a task.` |
 | steer | `idle` | `Herdr agent <label> (<paneId>) did not apply the steer: it was not in an active run, or the request was already stale. Check its status with the same tabLabel: answer a parked question with a task, or wait for its result.` |
 | steer | `unknown` | `No acknowledgement from Herdr agent <label> (<paneId>) within 2000 ms. The steer may or may not be applied; do not retry it. Check its status before deciding what to send next.` |
-| interrupt | `aborted` | `Herdr agent <label> (<paneId>) aborted its run. Expect no result from that run, and the agent stays open. A live agent cannot take a new task: continue it manually in its pane, or close it with /herdr-agents and then continue it with resumeClosed and the same tabLabel.` |
-| interrupt | `requested` | `Interrupt sent to Herdr agent <label> (<paneId>); the child did not report a settled abort within 2000 ms, so the run may have already finished on its own. Expect no result from that run. Check its status, then continue it manually in its pane or close it with /herdr-agents and continue it with resumeClosed.` |
+| interrupt | `aborted` | `Herdr agent <label> (<paneId>) aborted its run, so no result from that run should normally arrive and the agent stays open. A collection already in flight can still deliver that run's text and close the pane; ignore a result for work you interrupted. A live agent cannot take a new task: continue it manually in its pane, or close it with /herdr-agents and then continue it with resumeClosed and the same tabLabel.` |
+| interrupt | `requested` | `Interrupt sent to Herdr agent <label> (<paneId>); the child did not report a settled abort within 2000 ms, so the run may have already finished on its own. On the ordinary path expect no result from that run, but a collection already in flight can still deliver its text; ignore a result for work you interrupted. Check its status, then continue it manually in its pane or close it with /herdr-agents and continue it with resumeClosed.` |
 | interrupt | `idle` | `Herdr agent <label> (<paneId>) is not in an active run, so there was nothing to interrupt. Check its status; its result may still arrive.` |
 | interrupt | `unknown` | `No acknowledgement from Herdr agent <label> (<paneId>) within 3000 ms. The interrupt may or may not have been applied; do not retry it. Check its status before assuming it stopped.` |
 
@@ -574,8 +613,9 @@ Invariants:
 3. A steer is applied only with `active === true`, `ctx.isIdle() === false`, no
    intervening await, and (best effort) `createdAt >= runStartedAt` (D3).
 4. An aborted run's ordinary paths keep the marker set: before the abort is
-   issued, and again on `agent_settled.aborted` (D5). This is not a proof of
-   "never delivered"; the overlap is gated by the slice-1 real-poller test.
+   issued, and again on `agent_settled.aborted` (D5). This is not a guarantee:
+   the slice-1 real-poller test measured a marker write that loses to a collection
+   tick already in flight, and the user accepted that race.
 5. An ack is accepted only for the exact published id, from its own per-id file.
 6. At most one outstanding control operation per child directory within one Pi
    process; the parent is the sole remover of published request/ack files, and the
@@ -613,8 +653,9 @@ Accepted limitations:
 5. An interrupt that races a clean finish leaves a complete-but-undelivered result
    blocked until the agent is continued manually or closed and resumed; `requested`
    is the honest status.
-6. A narrow marker/collection race can still deliver text as a success; gated by
-   slice 1 (D5, D11) — a failure stops implementation and goes to the user.
+6. A marker/collection race can deliver an interrupted run's text as a success and
+   close its pane; measured in slice 1 B and accepted by the user (D5, D11). The
+   Orchestrator ignores a result for work it interrupted.
 7. An interrupt does not retract an already-written question.
 8. Compaction may invalidate the steer's referent; no detection or recovery (D9).
 9. Cross-process contention: last writer wins (D6).
@@ -784,7 +825,7 @@ Slice 0: **done**.
   packages nest `typebox@1.3.27`, as before slice 0; no suite failed on it. Not
   changed (the exact-pin scope covers only the two SDK packages).
 
-### Slice 1 — prototype gate (throwaway, before any product code)
+### Slice 1 — prototype gate (throwaway, before any product code) — A and 6 done, 7 deferred
 
 Two harnesses, because neither alone is enough.
 
@@ -803,9 +844,12 @@ pattern: real `createAgentSession`, `MockLlm` provider, real files):
    ack is `queued`.
 4. **Abort after a queued steer** (in-process): queue a steer, request an
    interrupt, assert the `interrupted` marker exists, `agent_settled.aborted ===
-   true` was observed, the session becomes idle, and the ack reflects it. **Do not
-   assert that the queued steer was discarded here**: in-process `ctx.abort()`
-   calls `session.abort()`, which does not clear the queues (§2.1). The discard is
+   true` was observed, the session becomes idle, and the ack reflects it. The
+   test removes the marker the child extension wrote at `before_agent_start`
+   before it requests the interrupt, so the surviving marker proves the
+   *consumer's* write rather than the extension's. **Do not assert that the
+   queued steer was discarded here**: in-process `ctx.abort()` calls
+   `session.abort()`, which does not clear the queues (§2.1). The discard is
    asserted in the real-TUI e2e interrupt scenario (slice 5).
 5. **Watcher, atomic publish, ack, reservation.** Publish with `tmp + rename`
    while a slow reply holds the run; duplicate watch events and a re-read must
@@ -816,20 +860,167 @@ pattern: real `createAgentSession`, `MockLlm` provider, real files):
 integration harness: the real extension, the real per-second poller, the real
 claim/close path, and a simulated child that can delay marker writes):
 
-6. **Clean-finish overlap.** A child that settles cleanly while a control
-   interrupt is in flight, with the marker write delayed, must not deliver a
-   partial result as a success. Repeat with the marker write delayed past the
-   poller's marker read.
-7. **Request vs claim/close.** A request that arrives while the poller is
-   collecting must not create a second delivery, and the control path must not
-   claim or close anything.
+6. **Marker/collection overlap.** A child that settles cleanly while a control
+   interrupt is in flight, with the marker write delayed past the poller's marker
+   read, is delivered as a success; accepted by the user (option 1). The test
+   asserts the measured behavior: the marker read returned ENOENT, then exactly
+   one delivery of the aborted run's text, the pane closed and the record pruned.
+   The close deletes the temp directory, so a surviving marker file is not part of
+   the evidence. A control run with the marker already present before the poller's
+   read stays undelivered — that is the ordinary-path protection still in force.
+7. **Request vs claim/close — deferred to slice 4.** The prototype cannot test it:
+   the production poller never reads `control/request.json`, so publishing one
+   during a collection proves nothing about the control path. The prototype
+   variant that did this was removed. The claim belongs to slice 4's
+   `contract-control.test.ts`, which has a real control call to assert that it
+   claims, collects and closes nothing.
 
-**Gate.** If check 2, 6 or 7 fails, **stop implementation**, record the failure
-and the observed behavior in this file, and obtain the user's decision before
-either weakening the guarantee or expanding scope; revising this plan alone
-authorizes neither (D5). If the watcher in check 5 loses events, choose the
-single consumer strategy (D8) using the measurement — do not ship both. Record
-the measurements in this file.
+**Gate.** Resolved for check 6: it reproduced the overlap, the user accepted the
+race (option 1), and the two check-6 tests assert that accepted behavior. Check 7
+is not passed — it is deferred to slice 4 and must not be counted as evidence. A
+failure of check 2 (in slice 1 A) or a new failure still stops implementation and
+goes to the user (D5). If the watcher in check 5 loses events, choose the single
+consumer strategy (D8) using the measurement — do not ship both. Record the
+measurements in this file.
+
+#### Gate result
+
+**GATE RESOLVED — check 6 reproduced the overlap, the user accepted it
+(option 1).**
+
+Measured on the real extension, the real timer-driven poller (started by the
+`herdr_agent` call), the real `claimDetachedAgent`, `closeOneShot`, report save
+and `pi.sendMessage` delivery against `FakeHerdr`
+(`test/integration-control.test.ts`, throwaway). The only seam is a test-only
+`vi.spyOn(fs.promises, 'readFile')` that calls the real read, then pauses the
+single read made from `src/ui/detached-outcomes.ts` (identified by the call
+stack) until the test releases it. Each test asserts the interception hit the
+production poller: the recorded read names the consumer, the file, and — for the
+marker read — returned ENOENT, i.e. the poller saw the marker as absent.
+
+Command: `npx vitest run --project integration test/integration-control.test.ts`.
+
+| Test | Result |
+|---|---|
+| marker exists before the poller's read | pass: nothing delivered, pane open, record kept, `result.md` intact |
+| 6, marker written **after the poller's marker read** (that read saw absent) | measured: **delivered**; `herdr_agent_result`, pane closed, record pruned |
+| 6, marker written **after the poller's result read**, before the claim | measured: **delivered**, same shape |
+| 7, request file published mid-collection | **not run**: deferred to slice 4. The prototype variant was removed as vacuous — it published a file the production poller never reads, so it could not fail on a control defect |
+
+Observed delivery (verbatim content of the delivered message):
+`Herdr agent Scout (scout) finished on its own:`
+
+`partial text of an interrupted run`
+
+`Full report saved to <agent-dir>/herdr-agents-results/<stamp>-scout-<id>.md`
+
+Cause: `deliverDetachedOutcomes` reads the marker once, then reads the result and
+claims, with no re-check; a marker write landing between that read and the claim
+does not stop delivery. The child's marker-before-abort ordering therefore does
+not protect against a poller tick that already passed its marker read.
+
+**User decision: option 1** — accept the late success delivery racing the
+interrupt. `interrupt` stops the child's work but does not retract a delivery
+already begun, and the pane may close when that delivery wins. The Orchestrator
+ignores a result of work it cancelled. Existing marker behavior stays best-effort
+and no new state field, lock or poller change is added. Rejected: a poller/marker
+guard (option 2), and dropping `interrupt` (option 3).
+
+Re-scoped tests (asserting the accepted behavior, not suppressed or skipped):
+the two check-6 tests assert the marker write happened after the poller's own
+read returned ENOENT, exactly one delivery of the aborted run's text, the closed
+pane and the pruned record — the close removes the temp directory, marker
+included, which is why the surviving marker is not the evidence. The
+ordinary-path test (marker present before the read) keeps asserting that nothing
+is delivered across several ticks.
+
+Slice 1 A (`test/pi-control.test.ts`) then ran under these semantics; its
+measurements are recorded under [Progress](#progress).
+
+#### Prototype measurements (slice 1 A, throwaway)
+
+`test/pi-control.test.ts` plus `test-support/control-prototype.ts`. Real
+in-process Pi (`createAgentSession`, real files, MockLlm as the provider), the
+real child extension under `HERDR_AGENT_CHILD=1`, and a throwaway consumer that
+implements §7.2/§7.3 as test code. No product control module exists.
+
+| Check | Result |
+|---|---|
+| 1. steer published inside `agent_before_settle` | pass: ack `queued`; the continuation ran (2 provider requests); the steer text is in request 2; the completed boundary cleared the marker |
+| 2. steer after Pi settled with a stale `active` | pass: the guard's recorded decision is `active: true, idle: true` → ack `idle`; no provider request, no application, nothing appended |
+| 3. steer into a live run, no `triggerTurn` | pass: ack `queued`; the next provider request carries the steer text; the text is absent from `result.md` (custom role is not appended) |
+| 4. interrupt after a queued steer (in-process) | pass: ack `aborted`; `agent_settled.aborted === true`; the `interrupted` marker is on disk; Pi reports idle after the abort |
+| 5. atomic publish, watcher, ack, reservation | pass: the watcher consumed the publish, no `.tmp` left behind, one `ack.<id>.json`, and two forced overlapping reads applied the id exactly once |
+| 5b (D8) four sequential publishes | pass: all four acked through the watch path, each applied once, one ack file each; 10 duplicate watch reads were rejected by the reservation |
+
+Measured ack latency, publish → `ack.<id>.json`, n = 9 over the checks:
+`27, 29, 31, 54, 54, 55, 55, 55, 78` ms (min 27, median 54, max 78). **These are
+upper bounds, not a latency distribution**: the parent-side wait polls every
+25 ms, so the values are the 25 ms grid plus the watcher and write cost, and they
+move between runs (`26…76` in the reviewer's run, `25…56` in a later one; macOS
+only, no Linux claim). The figures bound the ack, which is all D7 needs.
+
+Watcher: 2–3 watch events per publish (15 for four publishes in one run), and
+**0 missed publishes**. The suite has no poke fallback: a missed event leaves the
+wait without an ack and fails the test. The repeats are absorbed by the id
+reservation, which is what check 5 asserts.
+
+D7 impact: the provisional 2000 ms steer / 3000 ms interrupt deadlines are at
+least 25 times the measured ack latency upper bound, so they stay as written;
+they are dominated by the child's own work (the interrupt waits for its own
+`agent_settled`), not by the transport.
+
+D8 impact: one strategy ships — the child-side `fs.watch` on the control
+directory, with the parent polling for its ack. No missed event was observed, so
+the boundary-only alternative stays rejected.
+
+`fs.watch` detail worth keeping: the watcher must come from `node:fs`, not
+`fs.promises`, whose `watch` returns an async iterator and delivers no
+callbacks (the first prototype draft silently observed nothing).
+
+Installed 1.3.0 docs consulted for this slice (`docs/extensions.md`,
+`docs/message-types.md`, `docs/sdk.md`, `docs/how-pi-works.md`,
+`docs/compaction.md`): the lifecycle rule "do not start watchers in the factory;
+start them from `session_start` or the tool that needs them, close idempotently
+on `session_shutdown`" (extensions.md) matches D8. The child only learns the
+control directory at the first `before_agent_start` (the `HERDR_RESULT_FILE`
+marker), so slice 3 installs the watcher there and closes it on
+`session_shutdown`, as the prototype does. `sdk.md` confirms `abort()` stops the
+active operation and waits for the session to become idle, which is what check 4
+observes; `how-pi-works.md` restates the abort/queue rule that slice 5's e2e
+discard assertion depends on.
+
+Suites after the prototype review fixes: `typecheck`, `lint`, `test:unit` (34
+files, 295 tests) and `test:integration` (23 files, 158 tests) pass. The
+integration count dropped by one because the vacuous check-7 test was removed.
+`npm run test:e2e` passed 16 of 16 in the reviewer's run (118.58 s); it is not
+rerun for this documentation-only change. Slice 5 still owns the real
+steer/interrupt e2e scenarios.
+
+`test/pi-control.test.ts` lives in the `unit` project, so the real-Pi prototype
+adds about 10 s to a suite that otherwise takes ~3 s. That is temporary: the
+prototype is deleted in slice 3, when the product consumer replaces it.
+
+#### Slice 3 carry-overs from the prototype review
+
+The prototype did not exercise these paths; slice 3 owns them:
+
+- **Freshness (G3) is untested.** No test covers `createdAt < runStartedAt`
+  (refused `idle`), the equal-millisecond limit, or the stale `request.json` that
+  survives a child restart: `session_start` clears the reserved ids, so a leftover
+  request is refused only if the heuristic catches it, and is otherwise applied.
+- **Late ack and timeout are untested here.** The parent's deadline path (report
+  `unknown`, leave the files, no retry) and the late `ack.<oldId>.json` that must
+  not satisfy a newer operation belong to slice 2's unit tests; the prototype
+  never reached a deadline.
+- **Ack write after the temp dir is gone.** `closeOneShot` removes the whole
+  `herdr-agent-*` directory, so a watch callback that lands after a close makes
+  the ack write throw `ENOENT`. The prototype's `void consume()` would turn that
+  into an unhandled rejection. Slice 3 must contain the failure per request and
+  never let a background consume reject.
+- **Shutdown.** The watcher close on `session_shutdown` is exercised only by the
+  harness teardown; slice 3 asserts an in-flight consume after shutdown neither
+  writes an ack nor throws.
 
 ### Slice 2 — transport module
 
@@ -873,8 +1064,9 @@ Checks: `test:unit`, then `test:e2e` with a real child in a real pane, because
   'aborted' | 'requested'`.
 - `test/integration-control.test.ts`: a steer during a long simulated run keeps
   the child working and still yields exactly one delivered result containing the
-  post-steer text; an interrupt yields no delivered result, the pane stays open,
-  the live record stays, and a pre-written question may still be delivered.
+  post-steer text; an interrupt yields no delivered result on the ordinary path
+  (the simulated child writes no result), the pane stays open, the live record
+  stays, and a pre-written question may still be delivered.
 
 Checks: `test:unit`, `test:integration`.
 
@@ -895,7 +1087,8 @@ Scenarios in `e2e/flow.test.ts`:
    only after the real settle.
 2. **Real interrupt, including the TUI queue clearing.** Spawn, wait until
    working, queue a steer, then interrupt. Assert: the ack status; no
-   `herdr_agent_result` was delivered; the pane is still open and the live record
+   `herdr_agent_result` was delivered on the ordinary path (the child's own marker
+   write is not raced here); the pane is still open and the live record
    intact; and the **queued steer was discarded**, which only the real TUI binding
    can show (`clearQueue`, §2.1). The discard means no later consumption, not just
    silence while the run is aborted: after the interrupt, drive one more run in
@@ -965,18 +1158,22 @@ Orchestrator process on one session, and zsh history isolation (pre-existing).
    contract suite.
 3. A steer into a running real child reaches its model context at a turn boundary
    and its answer arrives in the single normal result (e2e).
-4. An interrupt of a running real child aborts it, leaves it open, and the
-   documented recovery paths work (e2e); the run's text is not delivered as a
-   result on the ordinary paths, with the D5 race as the documented exception, and
-   a steer queued before the interrupt is discarded (no provider request ever
-   carries it, including a later run).
+4. An interrupt of a running real child aborts it, and the documented recovery
+   paths work (e2e). On the ordinary path the run's text is not delivered as a
+   result and the child stays open; a collection already in flight can still
+   deliver it and close the pane, which is accepted (D5, [Gate
+   result](#gate-result)). A steer queued before the interrupt is discarded by
+   the TUI abort binding (no provider request ever carries it, including a later
+   run).
 5. Steer acceptance before the settle and refusal after Pi settled (stale `active`)
    are both proven in the real-Pi suite.
 6. Session ownership is enforced: a child with the same owner terminal but a
    different `ownerSessionId` is rejected, and no request file is written.
-7. The real-poller overlap check passes, or implementation stops: the failure is
-   recorded and the user decides before the guarantee is weakened or the scope
-   expanded (D5, D11). No absolute "never delivered" claim ships untested.
+7. The real-poller overlap is measured, not assumed: the slice 1 B tests assert
+   the accepted late delivery (D5, D11, [Gate result](#gate-result)), and no
+   absolute "never delivered" claim ships. Ordinary-path protection — a marker
+   present before the poller's read blocks delivery — is asserted in the same
+   file.
 8. A missing ack yields `unknown`, leaves the request in place, and starts no
    retry, timer or background task; a late ack for an old id cannot satisfy or
    overwrite a newer operation.
@@ -992,9 +1189,10 @@ Orchestrator process on one session, and zsh history isolation (pre-existing).
 
 Risks:
 
-1. **Marker/collection overlap** can still deliver text as a success in a narrow
-   race (D5). Gated by slice 1 B; a failure stops implementation and goes to the
-   user, with no default narrower semantics.
+1. **Marker/collection overlap** delivers an interrupted run's text as a success
+   and closes its pane (D5). Reproduced by slice 1 B and accepted by the user
+   (option 1, [Gate result](#gate-result)); `interrupt` promises ordinary-path
+   behavior only.
 2. **`fs.watch` event loss** turns a steer into `unknown`; D8 selects one strategy
    after measurement.
 3. **Abort semantics drift in a future Pi**: `agent_settled.aborted`, the TUI
@@ -1005,12 +1203,14 @@ Risks:
    the e2e steer scenario asserts the post-steer text is delivered.
 5. **Conservative interrupt cost**: an interrupt that races a clean finish leaves a
    complete result undelivered until recovery (limitation 5).
-6. **Timeout tuning** (D7) is provisional until slice 1 measures latencies.
+6. **Timeout tuning** (D7): measured in slice 1 A (ack latency 27–78 ms), so the
+   2000/3000 ms deadlines stay; only the child's own abort observation can consume
+   most of the interrupt deadline.
 7. **SDK alignment churn** is isolated in slice 0 so it never mixes with control
    work.
 
-Open decisions, with defaults: the D7 numbers (default as written, set from slice 1
-measurements); whether a shared placement helper replaces the in-tool ownership
+Open decisions, with defaults: the D7 numbers (resolved: slice 1 measured
+27–78 ms, so the values stay as written); whether a shared placement helper replaces the in-tool ownership
 check (default: keep it in the tool); whether a readiness handshake for stale
 children is worth one more file (default: no).
 
@@ -1049,3 +1249,4 @@ children is worth one more file (default: no).
 | Optional: exact texts asserted everywhere | §10 splits ownership: contract suite owns texts/details, behavior suites own behavior |
 | Evidence version and option claims | §2.2: instrumentation absent, `triggerTurn` values reconstructed, `pi 1.2.0` is an assertion without a captured version |
 | Continuation instruction wrong for a live child | §3 step 4 and the §5.2 interrupt texts use manual pane continuation or close-then-`resumeClosed`; grounded in `continuation.ts:73-88` and `manager.ts:243-246` |
+| P1 interrupt guarantees exceed the marker protocol (measured) | Slice 1 B reproduced the late delivery; the user accepted it (option 1). D5 records the accepted semantics: interrupt stops work, does not retract a delivery in flight; tests assert the measured behavior |
