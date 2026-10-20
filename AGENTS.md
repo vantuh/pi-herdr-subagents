@@ -1,12 +1,13 @@
 # AGENTS.md — pi-herdr-subagents
 
 Pi extension that adds the `herdr_agent` tool: one-shot delegation to child Pi
-agents running in Herdr. Targets the installed Pi `1.3.0`, Herdr client/server
-`0.9.5`, and Herdr's Pi integration `v9`; no compatibility layer for older
-versions. The development dependencies `@earendil-works/pi-coding-agent` and
-`@earendil-works/pi-tui` are pinned to `1.3.0` in `package.json` and
-`package-lock.json`, so type-checking and the unit/integration suites compile
-against the runtime SDK.
+agents running in Herdr. A parent-only companion tool, `herdr_agent_control`,
+steers or interrupts a child this session already started. Targets the installed
+Pi `1.3.0`, Herdr client/server `0.9.5`, and Herdr's Pi integration `v9`; no
+compatibility layer for older versions. The development dependencies
+`@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` are pinned to
+`1.3.0` in `package.json` and `package-lock.json`, so type-checking and the
+unit/integration suites compile against the runtime SDK.
 [README.md](README.md) covers usage; `docs/` covers the tool contract, runtime
 flow, config and profiles. Keep those in sync when behavior changes.
 
@@ -24,6 +25,9 @@ flow, config and profiles. Keep those in sync when behavior changes.
 - `src/artifacts/schema.ts` — artifact schemas: session metadata, native Pi session header, assistant message; shared non-empty-string guard.
 - `src/artifacts/sessions.ts` — native Pi session-file header reading and resumable-session validation.
 - `src/child.ts` — child mode: `ask_question` and the result writer.
+- `src/child/control.ts` — child consumer: control-directory watch, single admission per id, steer/interrupt guards, marker before abort, ack write.
+- `src/control.ts` — agent-control transport: control-directory resolution from the result file, atomic publish beside the watched directory, per-id acks, parent-only removal, the per-directory queue.
+- `src/control/schema.ts` — control action, status, id, request and ack schemas.
 - `src/utils.ts` — shared helpers: agent naming, title casing, error messages, best-effort state persistence.
 - `src/output.ts` — child output, status-preview and spawn-warning formatting.
 - `src/reports.ts` — durable result reports: agent-dir reports directory policy,
@@ -40,6 +44,7 @@ flow, config and profiles. Keep those in sync when behavior changes.
 - `src/tool/schema.ts` — tool parameter schema.
 - `src/tool/execute.ts` — the `herdr_agent` entry: profile resolution, TUI/config guards, resume-argument guards, dispatch to status or the spawn flow.
 - `src/tool/status.ts` — taskless status check and the resume-over-live-agent decision.
+- `src/tool/control.ts` — `herdr_agent_control`: parameter schema, ordered guards including session ownership, status texts, ack wait without retry.
 - `src/tool/one-shot.ts` — one-shot close, collected spawn-warning cleanup, state cleanup.
 - `src/tool/spawn/types.ts` — spawn types: invocation, settings, shared spawn state, placement, target results.
 - `src/tool/spawn/schema.ts` — Herdr tab-create, pane-split and pane-layout response schemas.
@@ -120,6 +125,32 @@ Easy to break and not obvious from one file:
   user may rename. A task sent to the label of a live agent is rejected.
 - In pane layout, the placement lock is held through `agent start`, the state
   write and rebalancing, so parallel calls cannot build competing right columns.
+- Only the session that owns a child's live record can control it: the managed
+  lookup is terminal-scoped, so `herdr_agent_control` additionally requires
+  `ownerSessionId` to equal this session's id. A missing owner, or a legacy
+  record without one, is refused.
+- A control call never spawns, resumes, prompts, claims, collects, closes, or
+  deletes a child's result, question or session artifacts. It publishes
+  `control/request.json` beside `result.md` and reads `ack.<id>.json`. One
+  operation is outstanding per child: the parent is the sole remover of both
+  files, inside a per-directory queue, while the child writes only its own ack
+  and admits each id once, reserving it after the read and before any further
+  `await`. An ack counts only for the exact published id.
+- A steer is applied only with the child's `active` flag true, `ctx.isIdle()`
+  false and no `await` between that check and `pi.sendMessage`, using
+  `deliverAs: 'steer'` and never `triggerTurn`. `queued` is not `applied`: an
+  interrupt drops the queued message.
+- An interrupt writes the `interrupted` marker before `ctx.abort()` and again on
+  `agent_settled.aborted`, because an abort can land while `agent_before_settle`
+  runs and that boundary clears the marker. This is ordinary-path protection
+  only: a collection tick that already read the marker can still deliver the run
+  and close the pane, which is accepted, and an interrupt never retracts an
+  already-written question.
+- A control call never retries. A missed ack is `unknown`, the transport files
+  stay in place, and the next operation's pre-clean removes them. The poller,
+  delivery, reports, closed history and widget are untouched by control, and a
+  live child running older extension code writes no ack, so it reports
+  `unknown`.
 - `herdr-agents.json` is read once at extension load; edits apply on `/reload`.
 - `session_shutdown` stops the poller and awaits the tick in flight, so no tick
   writes state after shutdown.
@@ -167,12 +198,18 @@ Three Vitest projects in `vitest.config.ts`:
 
 - **unit** — `test/*.test.ts` except the files below. Pure helpers, schemas,
   state records (`state-*.test.ts`), Herdr parsing/placement (`herdr-*.test.ts`),
-  widget rendering, profile discovery, child mode, and the Pi SDK boundary.
-  `imports.test.ts` catches a dangling relative import, which breaks Pi at load
-  time and fails nothing else.
+  widget rendering, profile discovery, child mode, the control transport
+  (`control.test.ts`), the child consumer (`child-control.test.ts`), the
+  steer/abort semantics against a real `AgentSession` and real files without
+  Herdr (`pi-control.test.ts`), and the Pi SDK boundary. `imports.test.ts`
+  catches a dangling relative import, which breaks Pi at load time and fails
+  nothing else.
 - **integration** — `integration-*.test.ts` (user-facing flows, one file per
   topic), `contract-*.test.ts` (exact `details` keys, Herdr argv, failure paths,
-  file permissions) and `ui-boundary.test.ts`. The real extension runs through a
+  file permissions) and `ui-boundary.test.ts`. For the control tool,
+  `contract-control.test.ts` owns the exact texts, `details` keys, guards and
+  session ownership; `integration-control.test.ts` owns the flows and the
+  real-poller overlap. The real extension runs through a
   mock `ExtensionAPI` against `FakeHerdr`: `HERDR_BIN_PATH` points at
   `test-support/herdr-shim.mjs`, which forwards each `herdr` call over a socket to
   the fake server inside the test. Simulated children write the same
@@ -181,7 +218,9 @@ Three Vitest projects in `vitest.config.ts`:
   working.
 - **e2e** — `e2e/flow.test.ts`: a real `herdr server` and real Pi children. Only
   the model (`MockLlm`, an `openai-completions` server) and the Orchestrator's
-  own Pi process are simulated.
+  own Pi process are simulated. It is the only place the TUI abort binding runs,
+  so the real steer and interrupt scenarios live there, including the assertion
+  that a queued steer is never consumed after an interrupt.
 
 Isolation: the harnesses redirect `TMPDIR`, `HERDR_AGENTS_STATE_PATH` and
 `PI_CODING_AGENT_DIR` per test. `test-support/state-path-guard.ts` also pins the
@@ -223,5 +262,7 @@ cancels.
 `MockLlm` waits 1.5s per response by default, so e2e tests can observe a live
 pane before the child finishes. Fast-completion scenarios set the delay to zero.
 
-Not covered: the Orchestrator's own Pi process driven by a real model, and the
-zsh `HISTFILE` guard for children (it lives in the user's zsh config).
+Not covered: the Orchestrator's own Pi process driven by a real model, the zsh
+`HISTFILE` guard for children (it lives in the user's zsh config), a child
+started before `/reload` (older child code writes no ack), and a second
+Orchestrator process on one session (the control transport is last-writer-wins).

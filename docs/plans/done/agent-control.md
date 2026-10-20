@@ -1,6 +1,6 @@
 # Agent control: steer and interrupt one running child
 
-Status: implementation slices 0–5 done, docs slice 6 open, revision 10. Slice 0
+Status: **done**, all slices 0–6 completed and reviewed, revision 10. Slice 0
 (SDK alignment) is done and the slice 1 gate is resolved: the user accepted the
 measured late-delivery race
 (option 1 of the [Gate result](#gate-result)). Slice 1's throwaway prototype is
@@ -13,7 +13,8 @@ consumer (`src/child/control.ts`, wired from `src/child.ts`). Slice 4 landed the
 parent tool (`src/tool/control.ts`), its parent-only registration, the prompt
 guidance, the simulated child control consumer and both control suites. Slice 5
 landed the real steer/interrupt e2e and the version capture; evidence is under
-[Slice 5 progress](#slice-5-progress). Slice 6 (docs) is still open.
+[Slice 5 progress](#slice-5-progress). Slice 6 documentation and final
+verification are complete; see [Final verification](#final-verification).
 
 Revision 10 changes (slice 5 review): the Pi/SDK version gate now runs before
 the harness allocates its temp root, mock LLM or server, because a throwing
@@ -192,7 +193,7 @@ Pi runtime is the managed install
   (`:1426`), which is why an aborted run does not run the child's
   `agent_before_settle` handler and the `interrupted` marker written at
   `before_agent_start` survives — the existing invariant in
-  [AGENTS.md](../../AGENTS.md) and [flow.md](../flow.md).
+  [AGENTS.md](../../../AGENTS.md) and [flow.md](../../flow.md).
 - **fact** In TUI mode `ctx.abort()` is bound to
   `restoreQueuedMessagesToEditor({ abort: true })`
   (`dist/modes/interactive/interactive-mode.js:1479`), which calls
@@ -1516,9 +1517,8 @@ check 7 passed as a forced overlap.
     and the TUI-queue-discard assertion (acceptance criterion 4) were still open,
     so criteria 3, 4 and 10 were unproven then. Slice 5 closed them — see
     [Slice 5 progress](#slice-5-progress).
-  - Slice 6 docs are untouched: `README.md`, `docs/tool.md`, `docs/flow.md`,
-    `docs/config.md` and the `AGENTS.md` Files/invariants lists do not mention
-    `herdr_agent_control` yet. The tool is registered but undocumented there.
+  - Slice 6 docs were still open at this point. They are now complete; see
+    [Final verification](#final-verification).
   - Residual risks unchanged: a marker/collection race can still deliver an
     interrupted run (accepted, D5); a lost watch event reports `unknown`
     (limitation 11); an interrupt that races a clean finish leaves a complete
@@ -1703,6 +1703,40 @@ undelivered question while its run stays active (scenario 3).
 
 Docs per §11; confirm no new config key, env var, state field or dependency
 appeared; `npm run format`.
+
+#### Final verification
+
+Slice 6: **done**. Updated `README.md`, `docs/tool.md`, `docs/flow.md`,
+`docs/config.md` and `AGENTS.md` with the implemented contract, ownership,
+transport, recovery paths and accepted limitations. Independent documentation
+review found four wording mismatches, corrected before completion: interrupted
+panes normally stay open but may close during an in-flight delivery; interrupt
+rejects only non-blank messages; incompatible acknowledgements may produce an
+early `unknown`; the existing metadata compaction hook is not a control repair.
+No new configuration key, environment variable, state field, dependency or Herdr
+command kind was added by control. SDK alignment is the separate slice-0 change.
+
+The orchestrator ran the final checks on the completed code and documentation:
+
+- `npm run format`, `npm run typecheck`, `npm run lint`: exit 0.
+- `npm run test:unit`: 36 files, **328 tests passed**.
+- `npm run test:integration`: 24 files, **182 tests passed**.
+- `npm run test:e2e`: **19 tests passed**, 140.03 seconds; captured Pi **1.3.0**
+  and SDK **1.3.0**. Previous cold-shell `agent_pane_busy` failures remain
+  documented above; the test was not skipped or weakened.
+- Real-Pi extension-load smoke with `pi -e ./src/index.ts --no-context-files
+  --no-skills --no-prompt-templates --no-themes -p 'List exact tool names
+  available. Do not use tools.'` listed both `functions.herdr_agent` and
+  `functions.herdr_agent_control`.
+- Focused independent slice-5 re-review passed all three real control scenarios
+  and found no remaining blockers. Earlier implementation reviews and their
+  fixes are recorded above.
+
+Accepted residual risks remain: in-flight result delivery after interrupt,
+reachable watch-event loss yielding `unknown` without retry, heuristic freshness,
+compaction referent loss, old child code and same-session cross-process contention.
+Post-steer status transitions and the orchestrator driven by a real model are
+not covered by the e2e suite. No push was performed.
 
 ## 10. Tests: real versus mocked, and who owns what
 

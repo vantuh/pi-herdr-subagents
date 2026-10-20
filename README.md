@@ -6,7 +6,8 @@ delegate tasks to child Pi agents running in [Herdr](https://herdr.dev).
 The extension adds a `herdr_agent` tool. The main session (the Orchestrator)
 calls it with an agent profile and a task. The extension starts a child Pi in its
 own Herdr tab or pane, returns at once, and delivers the child's result back to
-the Orchestrator as a message when the child finishes.
+the Orchestrator as a message when the child finishes. A second tool,
+`herdr_agent_control`, steers or interrupts a child that is already running.
 
 ## Features
 
@@ -17,6 +18,12 @@ the Orchestrator as a message when the child finishes.
   Orchestrator, and the answer goes back as a normal task with the same label.
 - **Non-blocking.** The Orchestrator keeps working while children run. Results
   and questions arrive exactly once.
+- **Agent control.** `herdr_agent_control` sends a correction into a running
+  agent's next turn, or interrupts its run. It never starts, resumes, answers or
+  closes an agent; the call returns a status, and an interrupted agent normally
+  stays open for continuation or close-and-resume. A delivery already in flight
+  can still arrive and close the pane. See
+  [docs/tool.md](docs/tool.md#2-control-tool-herdr_agent_control).
 - **File-based results.** Results are written to artifact files, so long output
   does not depend on terminal scrollback.
 - **Durable reports.** Every delivered result is also saved as a plain-text
@@ -117,6 +124,23 @@ Tool parameters:
   "task": "Review the current diff for regressions."
 }
 ```
+
+The control tool takes exactly three parameters:
+
+| Parameter  | Description                                                                                        |
+| ---------- | -------------------------------------------------------------------------------------------------- |
+| `tabLabel` | Exact label of a live agent this Orchestrator session started.                                     |
+| `action`   | `steer` injects `message` at the agent's next turn boundary; `interrupt` aborts its current run.   |
+| `message`  | The correction for `steer`, required and non-empty. An `interrupt` carrying a non-blank message is an error. |
+
+A control call returns one status: `queued`, `aborted`, `requested`, `idle`, or
+`unknown`. `queued` means the message reached the agent's steering queue, not
+that the model read it, and an interrupt drops it. `unknown` means no
+acknowledgement arrived within the deadline; do not retry it, check the agent's
+status instead. An interrupted agent normally stays open: continue it manually
+in its pane, or close it with `/herdr-agents` and continue it with `resumeClosed`.
+A delivery already in flight can still arrive and close the pane; ignore a result
+for work you interrupted.
 
 How an agent runs:
 
@@ -239,8 +263,8 @@ and state files, so a running Pi or Herdr session is not affected.
 
 - [docs/config.md](docs/config.md): `herdr-agents.json` fields and defaults.
 - [docs/agent-profiles.md](docs/agent-profiles.md): profile fields and discovery.
-- [docs/tool.md](docs/tool.md): the `herdr_agent` tool contract and the
-  instructions injected into the Orchestrator.
+- [docs/tool.md](docs/tool.md): the `herdr_agent` and `herdr_agent_control`
+  tool contracts, and the instructions injected into the Orchestrator.
 - [docs/flow.md](docs/flow.md): the runtime lifecycle of an agent call.
 
 ## License

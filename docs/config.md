@@ -52,3 +52,8 @@ variables for tests and debugging. The durable-report directory
 (`<agent dir>/herdr-agents-results`) and its 30-day retention are not
 configurable either: the directory follows `PI_CODING_AGENT_DIR`, and the
 retention is the fixed `REPORT_TTL_DAYS` in `src/reports.ts`.
+
+Agent control has no config key either. The ack deadlines (2000 ms for a steer,
+3000 ms for an interrupt, a 25 ms poll), the child's 2000 ms abort-observation
+window and the `control/` directory beside `result.md` are fixed in
+`src/tool/control.ts`, `src/control.ts` and `src/child/control.ts`.

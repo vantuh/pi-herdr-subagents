@@ -209,3 +209,127 @@ A failed state save does not abort the spawn. The child still writes its artifac
 State updates use the existing exclusive directory lock with owner sentinels.
 There is no automatic stale-lock takeover. Native Pi session files are not
 deleted when the extension prunes its bounded closed-history index.
+
+## Agent control
+
+`herdr_agent_control` (`src/tool/control.ts`) acts on a child this Orchestrator
+session already started: it resolves the label in the managed live records,
+requires `ownerSessionId` to equal this session's id, derives the child's control
+directory, publishes one request and waits for the child's acknowledgement. It
+never spawns, resumes, answers, claims, collects or closes an agent, it touches
+no result, question or session artifact, and the poller, delivery, reports and
+closed history are untouched. The parameters,
+guards, exact texts and `details` keys are in [tool.md](tool.md#2-control-tool-herdr_agent_control).
+
+### Transport
+
+The channel is the `control/` directory beside the child's `result.md`
+(`controlDirFor` in `src/control.ts`), derived from the same temp path and
+`result.md` basename as `question.md`, the `interrupted` marker and
+`session.json`, and guarded by the shared managed-temp-path rule. One marker, one
+spelling, and the existing temp cleanup on close removes the whole directory. The
+child creates the directory (`0700`) when it first resolves the result file,
+because it must exist to be watched; the parent creates it too, idempotently,
+before publishing.
+
+Two file names live in it, both `0600`:
+
+```jsonc
+// request.json — one outstanding request per child
+{ "id": "<uuid>", "action": "steer", "message": "<text>", "createdAt": 1792160700675 }
+
+// ack.<uuid>.json — per-id, written only by the child
+{ "id": "<uuid>", "action": "steer", "status": "queued", "at": 1792160700681 }
+```
+
+Both sides validate with `parseJson` + TypeBox (`src/control/schema.ts`). The id
+is the ack file name, so it is schema-constrained to `[A-Za-z0-9-]`. There is no
+version field: child and parent are the same working copy, and a child running
+older extension code writes no ack at all, which the parent reports as `unknown`.
+
+Publishing is `tmp + rename`. The temp file is written one level up, in the agent
+temp directory and not inside `control/`: a temp file in the watched directory can
+have its write coalesced with the rename into a single event that names only the
+temp file, so the request is never read. That loss was measured (1 publish in 40)
+before the temp file moved out.
+
+### Who writes what
+
+The child only ever writes `ack.<id>.json` for the id it consumed. The parent is
+the sole remover, inside a per-directory in-process queue that makes the whole
+publish–wait–clean operation serial per child:
+
+- pre-clean: remove `request.json` and every `ack.*.json` (cancellation is
+  checked before and after this step, so a cancelled call publishes nothing),
+- publish `request.json`, poll `ack.<id>.json` every 25 ms up to 2000 ms
+  (`steer`) or 3000 ms (`interrupt`),
+- on an ack it trusts: remove `request.json` and its own `ack.<id>.json`, best
+  effort; otherwise remove nothing.
+
+An ack counts only when its file name id and payload id both equal the published
+id. Per-id files are what make a late ack harmless: an ack for an old id cannot
+overwrite a newer operation's ack, so the newer call either gets its own ack or
+honestly reports `unknown`. A missing ack or invalid JSON is treated as "not yet
+acked" until the deadline. A schema-valid matching-id ack with an incompatible
+action or status produces `unknown` immediately. Neither case starts a retry,
+timer or background task after the call returns.
+
+### Child consume
+
+The child installs an `fs.watch` on the control directory when it resolves the
+result file and re-targets it if that directory changes; `session_shutdown`
+closes it and drains acknowledgements already being published.
+
+A watch event runs one consume: read `request.json`, validate it, return if the
+id is already reserved, otherwise reserve the id with no `await` after it — so
+duplicate events and re-reads cannot apply one request twice. Then:
+
+- refuse with `idle` when the child's own `active` flag is false, when
+  `ctx.isIdle()` is not `false`, or when `createdAt < runStartedAt`. `active`
+  alone is stale while earlier settle handlers run, and Pi's idle predicate is
+  also false during a standalone compaction, so both checks are required. The
+  `createdAt` comparison is a best-effort staleness heuristic recorded in
+  `before_agent_start`, not run identity: an equal-millisecond timestamp or a
+  wall-clock adjustment can make an old request look fresh.
+- `steer`: `pi.sendMessage(..., { deliverAs: 'steer' })` with `display: false`
+  and `details.requestId`, then ack `queued`. No `await` sits between the check
+  and the call, and `triggerTurn` is never used, so no new turn is started. A
+  steered message is `role: 'custom'`, so it never enters `result.md`.
+- `interrupt`: write the `interrupted` marker, then call `ctx.abort()`, then wait
+  up to 2000 ms for the child's own `agent_settled` and ack `aborted` when it
+  carried `aborted === true`, `requested` otherwise. The marker also has to be set
+  before the abort: an abort can land while `agent_before_settle` runs, which
+  clears it. The child's own `agent_settled` handler sets it again when
+  `event.aborted` is true.
+
+### What the marker does not guarantee
+
+The marker is ordinary-path protection, not a proof. `deliverDetachedOutcomes`
+reads it once, then reads and claims the result without serialization, so a
+marker write that lands after that read loses: a collection tick already in
+flight can still deliver an interrupted run's text as a success and close the
+one-shot pane. That race was measured against the real poller and accepted: the
+interrupt stops work, it does not retract a delivery already begun, and a result
+for work the Orchestrator interrupted is to be ignored. A question is checked
+before the result branch and ignores the marker, so an interrupt never retracts
+an already-written question.
+
+An interrupt that races a clean finish leaves a complete-but-undelivered result
+blocked until the agent is continued: a live child that is not parked on a
+question cannot take a new task, so the recovery paths are a manual turn in its
+pane, or close with `/herdr-agents` and `resumeClosed` with the same `tabLabel`.
+
+### Reachable limits
+
+- Watch-event loss reports `unknown`. A publish made inside a freshly installed
+  watcher's startup window was lost in 1 of 20 measurements, and the window is
+  reachable because the spawn tool returns as soon as Herdr accepts the prompt —
+  the Orchestrator can send a steer right after the child's first run starts.
+  A lost event is honest `unknown`, never a false ack.
+- An in-run compaction can summarize the steer's referent, and Pi may replace a
+  failed response and retry. Nothing detects, reports or repairs that; no
+  control-specific compaction hook detects or repairs that loss.
+- Two Orchestrator processes on one session are outside the contract: ownership
+  scopes children to one session, but the transport itself is last-writer-wins.
+- A live child started before `/reload` runs the older extension code and cannot
+  be controlled.
