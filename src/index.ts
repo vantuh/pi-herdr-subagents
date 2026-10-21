@@ -11,6 +11,8 @@ import {
   parseRunArgs,
   type RunDelegationRequest,
 } from './run.ts';
+import { migrateHerdrAgentStorage } from './state/migrate.ts';
+import { setStorageReady } from './state/store.ts';
 import { executeAgentStop } from './tool/control.ts';
 import {
   executeAgentSend,
@@ -43,13 +45,18 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
     return;
   }
 
+  // One-time rename of the pre-package-name files, before the config read and
+  // before any state read (which waits on it through `setStorageReady`).
+  const storageMigration = migrateHerdrAgentStorage();
+  setStorageReady(storageMigration);
   // Read once per extension load: pi-herdr-subagents.json edits apply on /reload.
-  const configPromise = loadHerdrAgentsConfig();
-  // Sweep expired durable reports at load. The directory is captured
-  // synchronously because the sweep is fire-and-forget: resolving it inside the
-  // sweep would read whatever agent dir the environment holds when it runs.
+  const configPromise = storageMigration.then(() => loadHerdrAgentsConfig());
+  // Sweep expired durable reports at load, after the reports directory moved.
+  // The directory is captured synchronously because the sweep is
+  // fire-and-forget: resolving it inside the sweep would read whatever agent
+  // dir the environment holds when it runs.
   const reportsDir = herdrAgentReportsDir();
-  void pruneExpiredReports({ reportsDir });
+  void storageMigration.then(() => pruneExpiredReports({ reportsDir }));
 
   // Profile names for /run, discovered on session_start (and /reload).
   let agentNames: string[] = [];

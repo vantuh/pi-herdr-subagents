@@ -7,6 +7,7 @@ import type { ExtensionMode } from '@earendil-works/pi-coding-agent';
 
 import herdrAgentsExtension from '../src/index.ts';
 import type { HerdrAgentsState } from '../src/state/schema.ts';
+import { whenStorageReady } from '../src/state/store.ts';
 import { FakeHerdr } from './fake-herdr.ts';
 import {
   type AgentProfileFixture,
@@ -69,6 +70,17 @@ export interface HarnessOptions {
    * must stay open while it inspects the extension's behavior.
    */
   onDialog?: (dialog: HeldDialog) => void;
+  /**
+   * Runs after the fixture dirs and env are ready, before the extension loads:
+   * the place to seed storage the load-time migration is expected to move.
+   */
+  beforeActivation?: (paths: {
+    root: string;
+    cwd: string;
+    agentDir: string;
+    statePath: string;
+    tmp: string;
+  }) => Promise<void>;
   /** Orchestrator pane id reported in HERDR_PANE_ID; defaults to the real one. */
   paneIdEnv?: string;
   sessionId?: string;
@@ -163,6 +175,8 @@ export async function createHarness(
     PI_AGENT_CHILD: undefined,
   });
 
+  await options.beforeActivation?.({ root, cwd, agentDir, statePath, tmp });
+
   const host = createMockHost({
     cwd,
     hasUI: options.hasUI,
@@ -174,6 +188,9 @@ export async function createHarness(
     sessionFile: options.sessionFile,
   });
   await Promise.resolve(herdrAgentsExtension(host.pi));
+  // Loading hands the storage migration to state reads as a gate; a test that
+  // touches state before it settles would race the rename (and the lock).
+  await whenStorageReady();
 
   for (const name of [
     'agent_spawn',

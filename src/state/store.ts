@@ -26,6 +26,20 @@ export const HERDR_AGENTS_STATE_FILE = 'pi-herdr-subagents-state.json';
 
 type StateMutationKind = 'lifecycle' | 'stage' | 'finalize' | 'detached';
 
+// The one-time rename in `migrate.ts` must finish before any state read, or a
+// call starting during load would load the empty new path and save over the
+// closed history the legacy file still holds.
+let storageReady: Promise<void> = Promise.resolve();
+
+export function setStorageReady(promise: Promise<void>): void {
+  storageReady = promise;
+}
+
+/** Resolves once the one-time storage rename has finished. */
+export function whenStorageReady(): Promise<void> {
+  return storageReady;
+}
+
 let failNextStateSaves = 0;
 const failNextMutations: Record<StateMutationKind, number> = {
   lifecycle: 0,
@@ -81,6 +95,7 @@ export async function mutateHerdrAgentsState<T>(
   options: { signal?: AbortSignal; inject?: StateMutationKind },
   mutate: (state: HerdrAgentsState) => StateMutationResult<T>,
 ): Promise<T> {
+  await storageReady;
   return withStateFileLock(
     filePath,
     async () => {
@@ -98,6 +113,7 @@ export async function mutateHerdrAgentsState<T>(
 export async function loadHerdrAgentsState(
   filePath = getHerdrAgentsStatePath(),
 ): Promise<HerdrAgentsState> {
+  await storageReady;
   const raw = await readIfExists(filePath);
   if (raw === undefined) return emptyHerdrAgentsState();
 
