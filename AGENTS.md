@@ -17,7 +17,7 @@ flow, config and profiles. Keep those in sync when behavior changes.
 - `src/index.ts` — extension wiring: events, commands, tool registration, config load.
 - `src/agents.ts` — profile discovery from user and project agent directories.
 - `src/agents/types.ts` — `AgentProfile`.
-- `src/config.ts` — `herdr-agents.json` loading and normalization.
+- `src/config.ts` — `pi-herdr-subagents.json` loading and normalization.
 - `src/config/schema.ts` — layout, configuration and tolerant input schemas.
 - `src/run.ts` — `/run` argument parsing and the injected user message.
 - `src/prompts.ts` — Orchestrator instructions and the child-agent protocol.
@@ -59,6 +59,7 @@ flow, config and profiles. Keep those in sync when behavior changes.
 - `src/state/schema.ts` — state-file schemas: live agent record/input, closed-history status/record/input, `HerdrAgentsState`, `StateEnvelope`.
 - `src/state/store.ts` — state file IO: path resolution, load/save, quarantine of unreadable files, the locked load-mutate-save transaction and failure injection hooks.
 - `src/state/lock.ts` — in-process state-file queue and the cross-process exclusive lock directory.
+- `src/state/migrate.ts` — one-time rename of the legacy storage names at extension load.
 - `src/state/history-policy.ts` — closed-history parsing, TTL/cap policy, reconciliation and pruning.
 - `src/state/live-records.ts` — live-record ownership and snapshot pruning.
 - `src/state/lifecycle.ts` — lifecycle record writes, spawned-warning cleanup and the detached-delivery claim.
@@ -114,8 +115,8 @@ Easy to break and not obvious from one file:
   an unknown-name error. `agent_spawn` needs `agent` and `task` and never reuses
   a live agent.
 - A delivered result is copied to an immutable report under
-  `<getAgentDir()>/herdr-agents-results` between the claim and the close, so the
-  temp artifact never holds the only plain-text copy. Delivery truncates only
+  `<getAgentDir()>/pi-herdr-subagents-results` between the claim and the close, so
+  the temp artifact never holds the only plain-text copy. Delivery truncates only
   when that report exists: a failed save delivers the full text with a warning.
   The directory is a real `0700` directory (never a symlink leaf), reports are
   `0600` created with `wx`, and pruning removes only own names stamped 30 days
@@ -161,7 +162,14 @@ Easy to break and not obvious from one file:
   delivery, reports, closed history and widget are untouched by control, and a
   live child running older extension code writes no ack, so it reports
   `unknown`.
-- `herdr-agents.json` is read once at extension load; edits apply on `/reload`.
+- `pi-herdr-subagents.json` is read once at extension load; edits apply on
+  `/reload`.
+- Storage names derive from the package name. `migrateHerdrAgentStorage` runs once
+  at load, before the config read and before any state read (which awaits
+  `whenStorageReady`): it renames the legacy state file under the state lock and
+  the legacy reports directory in the same parent. When both names exist the new
+  one wins and the old one stays untouched, never merged; a symlinked reports
+  directory is refused. A failed rename warns on stderr and never blocks load.
 - `session_shutdown` stops the poller and awaits the tick in flight, so no tick
   writes state after shutdown.
 - Stored `persistent` records from older versions are kept but never reused,

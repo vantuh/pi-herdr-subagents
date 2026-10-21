@@ -29,9 +29,9 @@ as a message when the child finishes. `agent_send` talks to an existing agent,
 - **File-based results.** Results are written to artifact files, so long output
   does not depend on terminal scrollback.
 - **Durable reports.** Every delivered result is also saved as a plain-text
-  report under `~/.pi/agent/herdr-agents-results` for 30 days. A long result is
-  delivered as a head/tail excerpt plus that path, so one big report cannot
-  flood the Orchestrator's context.
+  report under `~/.pi/agent/pi-herdr-subagents-results` for 30 days. A long
+  result is delivered as a head/tail excerpt plus that path, so one big report
+  cannot flood the Orchestrator's context.
 - **Layouts.** Agents open in a dedicated Herdr workspace (default), as split
   panes, or as tabs in the current workspace.
 - **Commands.** `/run` delegates a task explicitly. `/agents` lists and
@@ -159,8 +159,9 @@ How an agent runs:
    it with `/agents`.
 
 Every delivered result is copied to a report file under
-`~/.pi/agent/herdr-agents-results`, one file per delivered outcome (a resumed
-turn writes its own). The delivered message ends with `Full report saved to <path>`;
+`~/.pi/agent/pi-herdr-subagents-results`, one file per delivered outcome (a
+resumed turn writes its own). The delivered message ends with
+`Full report saved to <path>`;
 read it with `offset`/`limit` to page through the part the message left out. A
 result above 6 000 characters arrives as its first 4 000 and last 2 000
 characters around a `… N characters omitted …` marker — that bound counts
@@ -226,9 +227,11 @@ sessions are not moved and remain visible in the default history.
 
 ## Configuration
 
-Optional settings live in `~/.pi/agent/herdr-agents.json`. The file is read
+Optional settings live in `~/.pi/agent/pi-herdr-subagents.json`. The file is read
 once when the extension loads; run `/reload` after editing it. A missing or
-invalid file uses the defaults:
+invalid file uses the defaults. The state file and reports directory are
+renamed once at load from the older `herdr-agents-*` names; the config file is
+not renamed for you ([docs/config.md](docs/config.md#storage-names)).
 
 ```json
 {
@@ -267,7 +270,7 @@ and state files, so a running Pi or Herdr session is not affected.
 
 ## Documentation
 
-- [docs/config.md](docs/config.md): `herdr-agents.json` fields and defaults.
+- [docs/config.md](docs/config.md): `pi-herdr-subagents.json` fields and defaults.
 - [docs/agent-profiles.md](docs/agent-profiles.md): profile fields and discovery.
 - [docs/tool.md](docs/tool.md): the `agent_spawn`, `agent_send`, `agent_stop` and
   `agent_status` tool contracts, and the instructions injected into the

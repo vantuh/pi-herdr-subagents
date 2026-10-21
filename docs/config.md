@@ -1,7 +1,7 @@
 # Configuration
 
-User settings live in one JSON file, `herdr-agents.json`, in the Pi agent
-directory. The default path is `~/.pi/agent/herdr-agents.json`.
+User settings live in one JSON file, `pi-herdr-subagents.json`, in the Pi agent
+directory. The default path is `~/.pi/agent/pi-herdr-subagents.json`.
 
 The file is read once when the extension is loaded, so it is not re-read per
 spawn. An edit takes effect on `/reload` (or after restarting Pi), never
@@ -43,13 +43,28 @@ the layout now in the file.
 `workspace.label` must not be the label of the Orchestrator's own workspace.
 A match fails the spawn and leaves the Orchestrator workspace unchanged.
 
+## Storage names
+
+All three storage names derive from the package name: this file, the state file
+`pi-herdr-subagents-state.json` and the reports directory
+`pi-herdr-subagents-results/`. The legacy names (`herdr-agents.json`,
+`herdr-agents-state.json`, `herdr-agents-results/`) are migrated once when the
+extension loads: the state file is renamed under the state lock and the reports
+directory in the same parent. When both names exist the new one wins and the old
+one stays untouched; a symlinked reports directory is refused. A failed rename
+warns on stderr and never blocks the load.
+
+This config file is not renamed at runtime: it is managed by chezmoi, so rename
+its source and reload instead. Until then the extension reads only the new name
+and starts with the defaults.
+
 ## Not in this file
 
 Wait timeout (600 s), profile `model` / `thinking` / `tools`, and state-file
 paths are not JSON settings. `PI_AGENTS_STATE_PATH`,
 `PI_AGENTS_LOCK_WAIT_MS`, and `PI_AGENTS_CLAIM_LEASE_MS` are environment
 variables for tests and debugging. The durable-report directory
-(`<agent dir>/herdr-agents-results`) and its 30-day retention are not
+(`<agent dir>/pi-herdr-subagents-results`) and its 30-day retention are not
 configurable either: the directory follows `PI_CODING_AGENT_DIR`, and the
 retention is the fixed `REPORT_TTL_DAYS` in `src/reports.ts`.
 

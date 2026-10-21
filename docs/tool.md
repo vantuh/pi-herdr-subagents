@@ -39,7 +39,7 @@ The tool is registered with a static `agent` description at load. On `session_st
 | `task` | string | yes | — | Self-contained task for the new agent. |
 | `name` | string | no | Title-cased profile name, e.g. `Researcher` | Name of the new agent. Later calls address the agent by this name. |
 
-A blank `agent` or `task` is an error. There are no `layout`, `lifecycle`, `wait`, or `timeoutMs` parameters. Layout comes from `herdr-agents.json` ([config.md](config.md)). The call returns when the prompt is submitted; the widget poller delivers the outcome.
+A blank `agent` or `task` is an error. There are no `layout`, `lifecycle`, `wait`, or `timeoutMs` parameters. Layout comes from `pi-herdr-subagents.json` ([config.md](config.md)). The call returns when the prompt is submitted; the widget poller delivers the outcome.
 
 Starts a new child Pi in a new Herdr target (a tab in the subagents workspace by default), sends the task, and returns `Agent <name> started (<paneId>).` followed by a no-wait hint: `Its outcome arrives as a message automatically. Do not check its status or sleep to wait for it; end your turn or continue unrelated work.` Models otherwise poll status or `sleep` while the agent runs. The widget poller later delivers the outcome as an `agent_result` or `agent_question` message, exactly once. A result is delivered only when the child wrote a non-empty result artifact; a question only when it wrote `question.md`. One-shot targets are closed when the result is delivered. If the agent settles with no artifact the poller delivers nothing and keeps the agent. A status check then reports that the agent finished without a result.
 
@@ -201,10 +201,10 @@ The parked agent stays open until it really finishes, even though it is a one-sh
 ### Bounded delivery
 
 The full text of a delivered result is written once to a report file in
-`herdr-agents-results` inside the Pi agent directory (`src/reports.ts`), and the
-message states its absolute path. Above 6 000 characters the message keeps the
-first 4 000 and the last 2 000 characters (cut at line boundaries) and names the
-exact number of dropped characters. That bound counts retained source characters,
+`pi-herdr-subagents-results` inside the Pi agent directory (`src/reports.ts`),
+and the message states its absolute path. Above 6 000 characters the message
+keeps the first 4 000 and the last 2 000 characters (cut at line boundaries) and
+names the exact number of dropped characters. That bound counts retained source characters,
 not the total message: the marker and the path line are extra. `details` gains no
 key for the path — the model reads it in the message body. Questions, interrupted
 runs and manual closes write no report, and a report save that fails delivers the

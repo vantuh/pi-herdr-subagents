@@ -23,8 +23,13 @@ other prompt sections.
 and the nearest project `.pi/agents`. `session_start` (including `/reload`)
 also rediscovers them to refresh the `Available:` list in the tool schema and
 the profile names `/run` completes and recognizes.
-`herdr-agents.json` is read once at extension load. Project profiles override user profiles
-by name. See [agent-profiles.md](agent-profiles.md) for fields and precedence.
+`src/state/migrate.ts` runs once at extension load, before the config read: it
+renames the legacy `herdr-agents-state.json` under the state lock and the legacy
+`herdr-agents-results/` directory in the same parent, so both storage names
+follow the package name. State reads await that migration through
+`whenStorageReady`. `pi-herdr-subagents.json` is read once at extension load.
+Project profiles override user profiles by name. See
+[agent-profiles.md](agent-profiles.md) for fields and precedence.
 
 New children have fresh context. The role body and child protocol are written
 to `system.md`, passed through `--append-system-prompt` (default) or
@@ -48,8 +53,8 @@ the same resume path for the `/agents` overlay but stops before the
 prompt turn and records the agent with `detached: false`, so the poller never
 delivers or closes it.
 
-Layout comes from `herdr-agents.json` ([config.md](config.md)), never the tool
-parameters.
+Layout comes from `pi-herdr-subagents.json` ([config.md](config.md)), never the
+tool parameters.
 
 Creation responses supply IDs; the extension does not predict them. Placement
 is locked through startup, state recording, and pane-column rebalancing so
@@ -173,8 +178,8 @@ returns/delivers the question and leaves the one-shot open. Answer by sending
 
 After the claim and before the notification, the close and the temp cleanup, the
 complete result is copied once to a report file under
-`<agent dir>/herdr-agents-results` (`src/reports.ts`). The delivered text is
-bounded only when that copy exists: above 6 000 retained source characters it is
+`<agent dir>/pi-herdr-subagents-results` (`src/reports.ts`). The delivered text
+is bounded only when that copy exists: above 6 000 retained source characters it is
 the first 4 000 and the last 2 000 around an exact `… N characters omitted …`
 marker plus the report path. A report write that fails delivers the complete
 text with a warning, never a silent truncation. Questions and interrupted runs
