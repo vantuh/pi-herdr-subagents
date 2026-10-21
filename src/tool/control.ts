@@ -144,8 +144,7 @@ export async function executeHerdrAgentControl(
     );
   }
 
-  // The managed list is terminal-scoped, so a new Pi session in the same pane
-  // still sees the previous session's child; only this session may control it.
+  // The managed list is terminal-scoped; only the owning session may control.
   const ownerSessionId = orchestratorIdentity(ctx).ownerSessionId;
   if (!ownerSessionId || agent.ownerSessionId !== ownerSessionId) {
     return guardFailure(
@@ -171,22 +170,18 @@ export async function executeHerdrAgentControl(
       ? CONTROL_STEER_ACK_TIMEOUT_MS
       : CONTROL_INTERRUPT_ACK_TIMEOUT_MS;
 
-  // Publish, wait, clean: the whole operation holds the per-directory queue, so
-  // a parallel call cannot publish over this request or remove its ack.
+  // The whole operation holds the queue, so no parallel call interferes.
   const status = await withControlDirQueue(dir, async () => {
     signal?.throwIfAborted();
-    // The parent is the sole remover: clean leftovers of an earlier operation
-    // before publishing, so only this request can be consumed and acked.
+    // Clean earlier leftovers so only this request can be consumed and acked.
     await removeControlArtifacts(dir);
-    // Cancellation can land while the pre-clean awaits; without this check the
-    // request would still be published after the caller cancelled.
+    // Cancellation may land during the pre-clean.
     signal?.throwIfAborted();
     await writeControlRequest(dir, request);
     const ack = await awaitControlAck(dir, request.id, timeoutMs, signal);
     const result = acceptedStatus(action, ack) ?? 'unknown';
     if (result !== 'unknown') {
-      // Only a status this caller trusts removes the transport files. A timeout
-      // or an unreadable ack leaves them for the next operation's pre-clean.
+      // `unknown` keeps the files for the next pre-clean.
       await bestEffort(undefined, () =>
         removeControlArtifacts(dir, request.id),
       );

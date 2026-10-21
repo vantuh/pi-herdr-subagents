@@ -28,9 +28,7 @@ export function controlDirFor(
 }
 
 function isManagedControlDir(dir: string): boolean {
-  // The shared managed-temp policy, as for every sibling artifact: the first
-  // segment under `os.tmpdir()` starts with `herdr-agent-`, which also admits
-  // nested paths such as `<tmp>/herdr-agent-X/sub/control`.
+  // Shared managed-temp policy; it also admits nested `herdr-agent-X/sub/control`.
   const resolved = path.resolve(dir);
   return (
     isManagedHerdrTempPath(resolved) &&
@@ -46,13 +44,8 @@ function ackFileName(id: string): string {
   return `${ACK_FILE_PREFIX}${id}${ACK_FILE_SUFFIX}`;
 }
 
-/**
- * `tmp + rename`, so a reader never sees a half-written transport file. The
- * temp file is written beside the control directory, not inside it: the child
- * wakes on a change in that directory, and macOS FSEvents can coalesce the temp
- * write with the rename into one event that names only the temp file, so the
- * published request is never read (measured: one lost publish in 40).
- */
+// Keep temp files outside the watched directory: FSEvents can coalesce their
+// writes with rename and hide publication of the request.
 async function publishPrivateFile(
   dir: string,
   name: string,
@@ -67,8 +60,7 @@ async function publishPrivateFile(
     await fs.writeFile(tempPath, text, { encoding: 'utf8', mode: 0o600 });
     await fs.rename(tempPath, filePath);
   } catch (error) {
-    // Best effort, so a failed publish does not leave a temp file behind; the
-    // original error is what the caller has to see.
+    // Best-effort temp cleanup; rethrow the original error.
     await fs.rm(tempPath, { force: true }).catch(() => {});
     throw error;
   }
@@ -114,10 +106,8 @@ export async function writeControlAck(
   if (!Value.Check(ControlAck, ack)) {
     throw new Error('Refusing to write a malformed control acknowledgement.');
   }
-  // No directory creation here: the parent creates the directory before it
-  // publishes, and the child creates it to watch it. A missing directory means
-  // the agent's temp dir is gone (closed), so the ack must fail rather than
-  // recreate it.
+  // No mkdir: a missing directory means a closed agent, so fail instead of
+  // recreating an orphan.
   await publishPrivateFile(
     dir,
     ackFileName(ack.id),
@@ -132,8 +122,7 @@ async function readAck(
   const raw = await readIfExists(path.join(dir, ackFileName(id)));
   if (raw === undefined) return undefined;
   const ack = parseJson(ControlAck, raw);
-  // Only an ack naming the published id counts: a file for another id, a torn
-  // write or a payload id mismatch means "no acknowledgement", never an error.
+  // Only an ack naming this id counts; anything else is no acknowledgement.
   return ack?.id === id ? ack : undefined;
 }
 
@@ -163,11 +152,7 @@ async function ackFileNames(dir: string): Promise<string[]> {
   );
 }
 
-/**
- * The parent is the sole remover of transport files. Without `id` this is the
- * pre-operation clean (the request and every ack); with `id` it removes the
- * request and only that operation's own ack.
- */
+/** Without `id`: pre-operation clean of the request and every ack. With `id`: the request and that ack only. */
 export async function removeControlArtifacts(
   dir: string,
   id?: string,
@@ -180,16 +165,12 @@ export async function removeControlArtifacts(
     }
     return;
   }
-  // An id that cannot name an ack file is never turned into a path.
   if (!Value.Check(ControlId, id)) return;
   await fs.rm(path.join(dir, ackFileName(id)), { force: true });
 }
 
-// Serializes control operations per child directory, so two parallel calls
-// cannot publish competing requests or clean each other's acknowledgement.
-// The in-process half of `withStateFileLock`, without the lock directory and
-// without a signal: a queued operation is cancelled by its own caller checking
-// its signal before it publishes, not while it waits.
+// Serializes control operations per directory; a queued caller checks its own
+// signal before publishing.
 const controlDirQueues = new Map<string, Promise<unknown>>();
 
 export async function withControlDirQueue<T>(
@@ -202,8 +183,7 @@ export async function withControlDirQueue<T>(
   const current = new Promise<void>((resolve) => {
     releaseQueue = resolve;
   });
-  // Every mapped entry resolves, so a failed operation cannot reject the
-  // operations queued behind it.
+  // `tail` always resolves, so a failure never rejects queued operations.
   const tail = previous.then(() => current);
   controlDirQueues.set(key, tail);
   try {
@@ -211,9 +191,7 @@ export async function withControlDirQueue<T>(
     return await fn();
   } finally {
     releaseQueue();
-    // Only the operation that still owns the entry may drop it: another call on
-    // the same directory has already replaced the mapping with its own tail, so
-    // deleting unconditionally would let a third caller bypass that operation.
+    // Preserve newer queue entries when releasing this operation.
     if (controlDirQueues.get(key) === tail) controlDirQueues.delete(key);
   }
 }

@@ -166,8 +166,7 @@ export function registerChildMode(pi: ExtensionAPI): void {
   pi.on('agent_settled', async (event, ctx) => {
     run.active = false;
     run.context = ctx;
-    // An abort that landed during agent_before_settle cleared the marker with a
-    // completed boundary; the settle is the last chance to restore it.
+    // An abort during agent_before_settle can clear the marker; restore it.
     if (event.aborted) await setAgentResultInterrupted(run.resultFile, true);
   });
 

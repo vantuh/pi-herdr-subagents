@@ -28,21 +28,13 @@ export interface ChildRunState {
   context?: ExtensionContext;
 }
 
-/**
- * Child-side consumer of the control transport (docs/plans/agent-control.md,
- * §7.3). Watches the control directory beside `result.md`, applies at most one
- * admission of each request, and answers with `ack.<id>.json`.
- *
- * Registered after the child's own handlers, so its `agent_settled` observation
- * runs after the interrupted marker write.
- */
+/** Register after child handlers so settle observation follows marker restoration. */
 export function registerChildControl(
   pi: ExtensionAPI,
   state: ChildRunState,
 ): void {
   const reserved = new Set<string>();
-  // Acknowledgements whose publish already started; `session_shutdown` drains
-  // them, so no ack rename lands after shutdown returns.
+  // Drained on shutdown so no ack rename lands after it returns.
   const ackPublishes = new Set<Promise<void>>();
   let watcher: FSWatcher | undefined;
   let watchedDir: string | undefined;
@@ -66,20 +58,14 @@ export function registerChildControl(
     if (!dir || dir === watchedDir) return;
     closeWatcher();
     await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-    // Shutdown can run while the directory creation is in flight; a watcher
-    // installed after it would never be closed.
+    // Shutdown may land during mkdir; a watcher installed then would leak.
     if (closed) return;
     watchedDir = dir;
-    // `fs.watch` from `node:fs`: the promises API returns an async iterator and
-    // delivers no callbacks. A background consume never rejects either: the
-    // outcome of a request is reported through its ack file, and a write that
-    // fails after the parent removed a closed agent's directory (ENOENT) has no
-    // one left to tell.
+    // A close may remove the channel before consumption or acknowledgement completes.
     watcher = watch(dir, () => void consume().catch(() => {}));
   };
 
-  // An unreadable `isIdle` (a context from a replaced runtime throws) is a
-  // refusal, never a success.
+  // A throwing `isIdle` (replaced runtime) is a refusal, not a success.
   const isIdle = (): boolean | undefined => {
     try {
       return state.context?.isIdle();
@@ -100,8 +86,7 @@ export function registerChildControl(
       status,
       at: Date.now(),
     });
-    // Registered with no await in between, so shutdown drains exactly the
-    // publications that had already started before it flipped `closed`.
+    // No await before this add: shutdown drains every publish started before `closed`.
     ackPublishes.add(publish);
     try {
       await publish;
@@ -128,8 +113,7 @@ export function registerChildControl(
     if (!dir || closed) return;
     const request = await readControlRequest(dir);
     if (!request || closed) return;
-    // Read above, reserved here, with no await in between: duplicate watch
-    // events and re-reads cannot admit the same id twice.
+    // No await between read and reserve: an id is admitted once.
     if (reserved.has(request.id)) return;
     reserved.add(request.id);
 
@@ -145,8 +129,7 @@ export function registerChildControl(
     }
 
     if (request.action === 'steer') {
-      // No await between the guard above and this call: Pi's steer branch
-      // enqueues synchronously, and `triggerTurn` is never used.
+      // No await after the guard: the steer must enqueue synchronously. Never `triggerTurn`.
       pi.sendMessage(
         {
           customType: 'herdr_agent_steer',
@@ -160,12 +143,10 @@ export function registerChildControl(
       return;
     }
 
-    // Marker before abort: an aborted run must not reach a completed boundary
-    // that clears it. A context from a replaced runtime throws on `abort`
-    // instead; that is a refusal, and the ordinary boundary clears the marker.
+    // Set the marker before abort to block ordinary result delivery.
+    // `abort` throws on a replaced runtime: that is a refusal.
     await setAgentResultInterrupted(state.resultFile, true);
-    // Shutdown can run while the marker is being written: no waiter, no abort
-    // and no ack after it.
+    // Shutdown may land during the marker write: no abort or ack after it.
     if (closed) return;
     const settled = waitForSettle();
     try {
@@ -185,9 +166,7 @@ export function registerChildControl(
   });
 
   pi.on('before_agent_start', async () => {
-    // Best effort: without a watcher every request reports `unknown` to the
-    // parent, which is the honest status, and a broken channel must not fail
-    // the run.
+    // Best effort: without a watcher the parent reports `unknown`.
     await bestEffort(undefined, ensureWatcher);
   });
 
@@ -200,8 +179,7 @@ export function registerChildControl(
     releaseSettleWaiters(undefined);
     closeWatcher();
     reserved.clear();
-    // Drain, so a publish that started earlier cannot rename its ack after
-    // shutdown returns. A failure has nobody left to read it, as in `acknowledge`.
+    // Failures are ignored: nobody is left to read them.
     await Promise.allSettled([...ackPublishes]);
   });
 }
