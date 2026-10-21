@@ -141,7 +141,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
     },
   });
 
-  pi.registerCommand('herdr-agents', {
+  pi.registerCommand('agents', {
     description: 'Show, focus, and close managed agents',
     handler: async (_args, ctx) => {
       try {
@@ -152,7 +152,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
     },
   });
 
-  pi.registerCommand('herdr-agent-models', {
+  pi.registerCommand('agent-models', {
     description: 'Choose models for agents (edits profile frontmatter)',
     handler: async (_args, ctx) => showAgentModelPicker(ctx),
   });

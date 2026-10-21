@@ -9,7 +9,7 @@ for (const mode of ['rpc', 'json', 'print'] as const) {
     const harness = await createHarness({ mode, hasUI: mode === 'rpc' });
     try {
       await harness.fire('session_start');
-      await harness.runCommand('herdr-agents');
+      await harness.runCommand('agents');
       assert.match(
         harness.notifications.at(-1)?.message ?? '',
         /requires TUI mode/,

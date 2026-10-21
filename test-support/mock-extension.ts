@@ -83,7 +83,7 @@ export function createMockHost(options: {
   sessionFile?: string;
   /**
    * Keystrokes to feed the Nth `ctx.ui.custom` overlay, which is how the
-   * `/herdr-agents` manager is driven without a terminal. A call with no entry
+   * `/agents` manager is driven without a terminal. A call with no entry
    * left cancels, which is what ends the manager loop.
    */
   dialogInputs?: string[][];

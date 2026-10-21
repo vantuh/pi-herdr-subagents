@@ -11,27 +11,27 @@ import { withHarness } from '../test-support/contract-harness.ts';
 import { applyEnv, createMockHost } from '../test-support/mock-extension.ts';
 
 /**
- * Commands and renderers: /run, /herdr-agents, and the result/question
+ * Commands and renderers: /run, /agents, and the result/question
  * message blocks.
  */
 
-test('/herdr-agent-models is registered only in parent mode', async () => {
+test('/agent-models is registered only in parent mode', async () => {
   await withHarness({}, async (harness) => {
-    assert.ok(harness.commands.has('herdr-agent-models'));
+    assert.ok(harness.commands.has('agent-models'));
     const restore = applyEnv({ PI_AGENT_CHILD: '1' });
     try {
       const child = createMockHost({ cwd: harness.cwd });
       herdrAgentsExtension(child.pi);
-      assert.equal(child.commands.has('herdr-agent-models'), false);
+      assert.equal(child.commands.has('agent-models'), false);
     } finally {
       restore();
     }
   });
 });
 
-test('/herdr-agent-models requires TUI mode before discovering profiles or accessing the model registry', async () => {
+test('/agent-models requires TUI mode before discovering profiles or accessing the model registry', async () => {
   await withHarness({}, async (harness) => {
-    const command = harness.commands.get('herdr-agent-models');
+    const command = harness.commands.get('agent-models');
     assert.ok(command);
     await command.handler('', {
       mode: 'rpc',
@@ -42,15 +42,15 @@ test('/herdr-agent-models requires TUI mode before discovering profiles or acces
     });
     assert.equal(
       harness.notifications.at(-1)?.message,
-      '/herdr-agent-models requires TUI mode',
+      '/agent-models requires TUI mode',
     );
     assert.equal(harness.fake.callsMatching('agent', 'start').length, 0);
   });
 });
 
-test('/herdr-agent-models reports an empty roster without opening the overlay', async () => {
+test('/agent-models reports an empty roster without opening the overlay', async () => {
   await withHarness({ profiles: [] }, async (harness) => {
-    const command = harness.commands.get('herdr-agent-models');
+    const command = harness.commands.get('agent-models');
     assert.ok(command);
     await command.handler('', {
       mode: 'tui',
@@ -135,9 +135,9 @@ test('/run completes discovered agent names, then stops offering completions', a
   );
 });
 
-test('/herdr-agents needs TUI mode', async () => {
+test('/agents needs TUI mode', async () => {
   await withHarness({}, async (harness) => {
-    const command = harness.commands.get('herdr-agents');
+    const command = harness.commands.get('agents');
     assert.ok(command);
     await command.handler('', {
       mode: 'print',
@@ -154,11 +154,11 @@ test('/herdr-agents needs TUI mode', async () => {
   });
 });
 
-test('/herdr-agents surfaces a Herdr failure as a notification', async () => {
+test('/agents surfaces a Herdr failure as a notification', async () => {
   await withHarness({}, async (harness) => {
     harness.fake.failCommand('api snapshot', 'server_not_running');
 
-    await harness.runCommand('herdr-agents');
+    await harness.runCommand('agents');
 
     assert.match(
       harness.notifications.at(-1)?.message ?? '',

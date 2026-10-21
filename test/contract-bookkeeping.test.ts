@@ -36,7 +36,7 @@ test('prunes state records for panes Herdr no longer reports', async () => {
     await fs.writeFile(statePath, JSON.stringify(before));
 
     // Any path that lists managed agents reconciles the file.
-    await harness.runCommand('herdr-agents');
+    await harness.runCommand('agents');
 
     const after = await harness.readState();
     assert.deepEqual(

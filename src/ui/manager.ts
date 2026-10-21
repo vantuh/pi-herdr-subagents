@@ -362,7 +362,7 @@ export async function showHerdrAgentsManager(
   configPromise: Promise<HerdrAgentsConfig>,
 ): Promise<void> {
   if (ctx.mode !== 'tui') {
-    ctx.ui.notify('/herdr-agents requires TUI mode', 'error');
+    ctx.ui.notify('/agents requires TUI mode', 'error');
     return;
   }
   const { ownerSessionId } = orchestratorIdentity(ctx);

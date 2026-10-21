@@ -120,7 +120,7 @@ test('shows live agents in the widget and clears it once none remain', async () 
       `widget should list the agent: ${JSON.stringify(lines)}`,
     );
 
-    await harness.runCommand('herdr-agents');
+    await harness.runCommand('agents');
     assert.equal(harness.fake.panes.length, 1);
 
     await harness.waitFor(

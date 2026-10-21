@@ -18,7 +18,7 @@ import {
 } from '../src/ui/manager.ts';
 
 /**
- * The open `/herdr-agents` modal: it keeps watching Herdr and state, keeps the
+ * The open `/agents` modal: it keeps watching Herdr and state, keeps the
  * selected row across rebuilds, and stops touching the screen and the state
  * lock once it closes or the session shuts down.
  */

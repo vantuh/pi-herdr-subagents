@@ -31,11 +31,11 @@ function steerUnknownText(label: string, paneId: string): string {
 }
 
 function interruptAbortedText(label: string, paneId: string): string {
-  return `Agent ${label} (${paneId}) aborted its run, so no result from that run should normally arrive and the agent stays open. A collection already in flight can still deliver that run's text and close the pane; ignore a result for work you interrupted. A live agent cannot take a new task: continue it manually in its pane, or close it with /herdr-agents and then continue it with agent_send and the same name.`;
+  return `Agent ${label} (${paneId}) aborted its run, so no result from that run should normally arrive and the agent stays open. A collection already in flight can still deliver that run's text and close the pane; ignore a result for work you interrupted. A live agent cannot take a new task: continue it manually in its pane, or close it with /agents and then continue it with agent_send and the same name.`;
 }
 
 function interruptRequestedText(label: string, paneId: string): string {
-  return `Stop sent to agent ${label} (${paneId}); the child did not report a settled abort within 2000 ms, so the run may have already finished on its own. On the ordinary path expect no result from that run, but a collection already in flight can still deliver its text; ignore a result for work you interrupted. Check its status, then continue it manually in its pane or close it with /herdr-agents and continue it with agent_send.`;
+  return `Stop sent to agent ${label} (${paneId}); the child did not report a settled abort within 2000 ms, so the run may have already finished on its own. On the ordinary path expect no result from that run, but a collection already in flight can still deliver its text; ignore a result for work you interrupted. Check its status, then continue it manually in its pane or close it with /agents and continue it with agent_send.`;
 }
 
 function interruptIdleText(label: string, paneId: string): string {

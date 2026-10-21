@@ -104,14 +104,14 @@ test('recreates the Agents workspace after the user closed it by hand', async ()
   });
 });
 
-test('/herdr-agents focuses an Agents-workspace agent via tab focus', async () => {
+test('/agents focuses an Agents-workspace agent via tab focus', async () => {
   await withHarness(
     { layout: 'workspace', dialogInputs: [['\r']] },
     async (harness) => {
       harness.fake.setBehavior(() => ({ neverSettle: true }));
       await harness.callRaw({ agent: 'scout', task: 'stay', name: 'Scout Ws' });
 
-      await harness.runCommand('herdr-agents');
+      await harness.runCommand('agents');
 
       const focus = harness.fake.callsMatching('tab', 'focus')[0];
       assert.ok(
@@ -277,7 +277,7 @@ test("refuses a workspace.label that matches the Orchestrator's own workspace", 
         result.content[0].text,
         /workspace\.label matches this Orchestrator's own workspace/,
       );
-      assert.match(result.content[0].text, /herdr-agents\.json/);
+      assert.match(result.content[0].text, /agents\.json/);
       assert.equal(harness.fake.callsMatching('tab', 'create').length, 0);
     },
   );

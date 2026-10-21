@@ -9,11 +9,11 @@ import { withHarness } from '../test-support/integration-harness.ts';
 import type { HeldDialog } from '../test-support/mock-extension.ts';
 
 /**
- * Child session cost in `/herdr-agents`: live rows read the published sample,
+ * Child session cost in `/agents`: live rows read the published sample,
  * closed rows read the frozen history, and the widget stays context-only.
  */
 
-test('/herdr-agents shows the published cost and leaves the widget alone', async () => {
+test('/agents shows the published cost and leaves the widget alone', async () => {
   // An empty key list renders the modal once and cancels it.
   await withHarness({ dialogInputs: [[]] }, async (harness) => {
     harness.fake.setBehavior(() => ({
@@ -40,7 +40,7 @@ test('/herdr-agents shows the published cost and leaves the widget alone', async
       'both agents in the widget',
     );
 
-    await harness.runCommand('herdr-agents');
+    await harness.runCommand('agents');
 
     const rows = harness.dialogLines[0]?.join('\n') ?? '';
     assert.match(
@@ -82,7 +82,7 @@ test('closing a one-shot freezes its cost for the closed row', async () => {
     const archived = (await harness.readState()).closedHistory[0];
     assert.equal(archived?.sessionCost, 0.024);
 
-    await harness.runCommand('herdr-agents');
+    await harness.runCommand('agents');
 
     assert.match(
       harness.dialogLines[0]?.join('\n') ?? '',
@@ -138,12 +138,12 @@ test('a resumed one-shot republishes its cumulative cost without doubling it', a
   });
 });
 
-test('/herdr-agents watches from an empty list until an agent appears', async () => {
+test('/agents watches from an empty list until an agent appears', async () => {
   let dialog: HeldDialog | undefined;
   await withHarness(
     { onDialog: (held) => (dialog = held) },
     async (harness) => {
-      const running = harness.runCommand('herdr-agents');
+      const running = harness.runCommand('agents');
       await harness.waitFor(() => dialog !== undefined, 'the modal to open');
       assert.match(
         dialog!.render().join('\n'),
@@ -175,7 +175,7 @@ test('/herdr-agents watches from an empty list until an agent appears', async ()
   );
 });
 
-test('/herdr-agents updates context and cost and focuses a newly spawned agent', async () => {
+test('/agents updates context and cost and focuses a newly spawned agent', async () => {
   let dialog: HeldDialog | undefined;
   await withHarness(
     { onDialog: (held) => (dialog = held) },
@@ -194,7 +194,7 @@ test('/herdr-agents updates context and cost and focuses a newly spawned agent',
         'the first child context in the widget',
       );
 
-      const running = harness.runCommand('herdr-agents');
+      const running = harness.runCommand('agents');
       await harness.waitFor(() => dialog !== undefined, 'the modal to open');
       const rows = () => dialog!.render().join('\n');
       assert.match(

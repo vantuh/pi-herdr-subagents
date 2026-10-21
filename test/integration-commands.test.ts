@@ -9,7 +9,7 @@ import type { Harness } from '../test-support/harness.ts';
 import { flagValue, withHarness } from '../test-support/integration-harness.ts';
 
 /**
- * Orchestrator instructions and the /herdr-agents manager.
+ * Orchestrator instructions and the /agents manager.
  */
 
 test('injects Orchestrator instructions, and /run instructions for one turn', async () => {
@@ -73,7 +73,7 @@ test('injects Orchestrator instructions, and /run instructions for one turn', as
   });
 });
 
-test('/herdr-agents focuses a managed agent', async () => {
+test('/agents focuses a managed agent', async () => {
   await withHarness(
     // enter selects the single listed agent
     { dialogInputs: [['\r']] },
@@ -81,7 +81,7 @@ test('/herdr-agents focuses a managed agent', async () => {
       harness.fake.setBehavior(() => ({ neverSettle: true }));
       await harness.callRaw({ agent: 'scout', task: 'stay' });
 
-      await harness.runCommand('herdr-agents');
+      await harness.runCommand('agents');
 
       const focus = harness.fake.callsMatching('agent', 'focus')[0];
       assert.ok(
@@ -99,7 +99,7 @@ test('/herdr-agents focuses a managed agent', async () => {
   );
 });
 
-test('/herdr-agents closes a managed agent and cleans up its temp directory', async () => {
+test('/agents closes a managed agent and cleans up its temp directory', async () => {
   await withHarness(
     // d closes the selected agent, then the reopened list is cancelled
     { dialogInputs: [['d']] },
@@ -112,7 +112,7 @@ test('/herdr-agents closes a managed agent and cleans up its temp directory', as
       const tempDir = path.dirname(record?.resultFile ?? '');
       assert.ok(record?.resultFile);
 
-      await harness.runCommand('herdr-agents');
+      await harness.runCommand('agents');
 
       assert.deepEqual(
         harness.fake.panes.map((pane) => pane.pane_id),
@@ -127,15 +127,15 @@ test('/herdr-agents closes a managed agent and cleans up its temp directory', as
   );
 });
 
-test('/herdr-agents reports an empty workspace instead of failing', async () => {
+test('/agents reports an empty workspace instead of failing', async () => {
   await withHarness({}, async (harness) => {
-    await harness.runCommand('herdr-agents');
+    await harness.runCommand('agents');
     assert.deepEqual(harness.notifications, []);
     assert.deepEqual(harness.fake.callsMatching('pane', 'close'), []);
   });
 });
 
-test('/herdr-agents refuses to close a questioned one-shot', async () => {
+test('/agents refuses to close a questioned one-shot', async () => {
   await withHarness({ dialogInputs: [['d']] }, async (harness) => {
     harness.fake.setBehavior(() => ({ question: 'Which module?' }));
     await harness.call({
@@ -144,7 +144,7 @@ test('/herdr-agents refuses to close a questioned one-shot', async () => {
       name: 'Scout Question Close',
     });
     await harness.collect('Scout Question Close');
-    await harness.runCommand('herdr-agents');
+    await harness.runCommand('agents');
     assert.equal(harness.fake.panes.length, 2);
     assert.match(
       harness.notifications.at(-1)?.message ?? '',
@@ -155,7 +155,7 @@ test('/herdr-agents refuses to close a questioned one-shot', async () => {
   });
 });
 
-test('/herdr-agents refuses to close an active resumed one-shot', async () => {
+test('/agents refuses to close an active resumed one-shot', async () => {
   await withHarness({ dialogInputs: [['d']] }, async (harness) => {
     await harness.call({
       agent: 'scout',
@@ -170,7 +170,7 @@ test('/herdr-agents refuses to close an active resumed one-shot', async () => {
     });
     const question = await harness.collect('Scout Resume Close');
     assert.equal(question.customType, 'agent_question');
-    await harness.runCommand('herdr-agents');
+    await harness.runCommand('agents');
     assert.equal(harness.fake.panes.length, 2);
     assert.match(
       harness.notifications.at(-1)?.message ?? '',
@@ -181,7 +181,7 @@ test('/herdr-agents refuses to close an active resumed one-shot', async () => {
   });
 });
 
-test('/herdr-agents lists and reopens a closed one-shot of this session without a task', async () => {
+test('/agents lists and reopens a closed one-shot of this session without a task', async () => {
   // enter opens the closed row; the second run closes the reopened agent
   await withHarness({ dialogInputs: [['\r'], ['d']] }, async (harness) => {
     await harness.call({ agent: 'scout', task: 'first', name: 'Scout Read' });
@@ -198,7 +198,7 @@ test('/herdr-agents lists and reopens a closed one-shot of this session without 
     const prompts = harness.fake.callsMatching('agent', 'prompt').length;
     const messages = harness.messages.length;
 
-    await harness.runCommand('herdr-agents');
+    await harness.runCommand('agents');
 
     const start = harness.fake.callsMatching('agent', 'start').at(-1) ?? [];
     const piArgs = start.slice(start.indexOf('--') + 1);
@@ -222,7 +222,7 @@ test('/herdr-agents lists and reopens a closed one-shot of this session without 
     assert.equal(harness.messages.length, messages);
     assert.equal(harness.fake.panes.length, 2);
 
-    await harness.runCommand('herdr-agents');
+    await harness.runCommand('agents');
 
     assert.equal(harness.fake.panes.length, 1);
     const closed = (await harness.readState()).closedHistory;
@@ -237,7 +237,7 @@ test('/herdr-agents lists and reopens a closed one-shot of this session without 
   });
 });
 
-test('/herdr-agents does not list closed one-shots of another session', async () => {
+test('/agents does not list closed one-shots of another session', async () => {
   // enter would open a listed closed row
   await withHarness({ dialogInputs: [['\r']] }, async (harness) => {
     await harness.call({ agent: 'scout', task: 'first', name: 'Scout Read' });
@@ -246,7 +246,7 @@ test('/herdr-agents does not list closed one-shots of another session', async ()
     state.closedHistory[0]!.ownerSessionId = 'another-session';
     await fs.writeFile(harness.statePath, JSON.stringify(state));
 
-    await harness.runCommand('herdr-agents');
+    await harness.runCommand('agents');
 
     // No rows: the empty-list dialog is shown and nothing is started.
     assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
@@ -262,8 +262,8 @@ async function renderAgentRows(
   harness: Harness,
   width: number,
 ): Promise<string[]> {
-  const command = harness.commands.get('herdr-agents');
-  if (!command) throw new Error('expected a /herdr-agents command');
+  const command = harness.commands.get('agents');
+  if (!command) throw new Error('expected a /agents command');
   const theme = {
     fg: (_color: string, text: string) => text,
     bg: (_color: string, text: string) => text,
@@ -298,7 +298,7 @@ async function renderAgentRows(
   return rows;
 }
 
-test('/herdr-agents shows a label longer than the default name column', async () => {
+test('/agents shows a label longer than the default name column', async () => {
   await withHarness({}, async (harness) => {
     // A held child keeps the agent listed and its row single-line.
     harness.fake.holdChildren();
@@ -328,7 +328,7 @@ test('/herdr-agents shows a label longer than the default name column', async ()
   });
 });
 
-test('/herdr-agents rows stay inside a narrow terminal', async () => {
+test('/agents rows stay inside a narrow terminal', async () => {
   await withHarness({}, async (harness) => {
     harness.fake.holdChildren();
     await harness.callRaw({
@@ -349,14 +349,14 @@ test('/herdr-agents rows stay inside a narrow terminal', async () => {
   });
 });
 
-test('/herdr-agents reports a closed one-shot whose session file is gone', async () => {
+test('/agents reports a closed one-shot whose session file is gone', async () => {
   await withHarness({ dialogInputs: [['\r']] }, async (harness) => {
     await harness.call({ agent: 'scout', task: 'first', name: 'Scout Read' });
     await harness.collect('Scout Read');
     const archived = (await harness.readState()).closedHistory[0]!;
     await fs.rm(archived.childSessionFile);
 
-    await harness.runCommand('herdr-agents');
+    await harness.runCommand('agents');
 
     assert.match(
       harness.notifications.at(-1)?.message ?? '',

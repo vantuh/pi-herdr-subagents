@@ -46,7 +46,7 @@ export async function showAgentModelPicker(
   ctx: ExtensionCommandContext,
 ): Promise<void> {
   if (ctx.mode !== 'tui') {
-    ctx.ui.notify('/herdr-agent-models requires TUI mode', 'error');
+    ctx.ui.notify('/agent-models requires TUI mode', 'error');
     return;
   }
 

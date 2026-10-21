@@ -62,7 +62,7 @@ export interface HarnessOptions {
   hasUI?: boolean;
   mode?: ExtensionMode;
   isIdle?: boolean;
-  /** Keystrokes per `ctx.ui.custom` overlay, for the `/herdr-agents` manager. */
+  /** Keystrokes per `ctx.ui.custom` overlay, for the `/agents` manager. */
   dialogInputs?: string[][];
   /**
    * Takes over each `ctx.ui.custom` overlay, so a test can drive a modal that

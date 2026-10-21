@@ -9,7 +9,7 @@ import { withHarness } from '../test-support/integration-harness.ts';
 
 /**
  * Context metrics on the Orchestrator's two surfaces: the above-editor widget
- * and the `/herdr-agents` rows. The values come from the child's published
+ * and the `/agents` rows. The values come from the child's published
  * session metadata, never from the pane.
  */
 
@@ -67,7 +67,7 @@ test('the widget shows each child context sample and survives a corrupt one', as
   });
 });
 
-test('/herdr-agents still lists and focuses agents while hydrating context', async () => {
+test('/agents still lists and focuses agents while hydrating context', async () => {
   // enter focuses the first listed row.
   await withHarness({ dialogInputs: [['\r']] }, async (harness) => {
     harness.fake.setBehavior(() => ({
@@ -91,7 +91,7 @@ test('/herdr-agents still lists and focuses agents while hydrating context', asy
       'utf8',
     );
 
-    await harness.runCommand('herdr-agents');
+    await harness.runCommand('agents');
 
     const focus = harness.fake.callsMatching('agent', 'focus')[0];
     assert.ok(

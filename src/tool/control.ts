@@ -70,10 +70,10 @@ function statusText(
   }
 
   if (status === 'aborted') {
-    return `Agent ${label} (${paneId}) aborted its run, so no result from that run should normally arrive and the agent stays open. A collection already in flight can still deliver that run's text and close the pane; ignore a result for work you interrupted. A live agent cannot take a new task: continue it manually in its pane, or close it with /herdr-agents and then continue it with agent_send and the same name.`;
+    return `Agent ${label} (${paneId}) aborted its run, so no result from that run should normally arrive and the agent stays open. A collection already in flight can still deliver that run's text and close the pane; ignore a result for work you interrupted. A live agent cannot take a new task: continue it manually in its pane, or close it with /agents and then continue it with agent_send and the same name.`;
   }
   if (status === 'requested') {
-    return `Stop sent to agent ${label} (${paneId}); the child did not report a settled abort within ${CONTROL_ABORT_OBSERVE_MS} ms, so the run may have already finished on its own. On the ordinary path expect no result from that run, but a collection already in flight can still deliver its text; ignore a result for work you interrupted. Check its status, then continue it manually in its pane or close it with /herdr-agents and continue it with agent_send.`;
+    return `Stop sent to agent ${label} (${paneId}); the child did not report a settled abort within ${CONTROL_ABORT_OBSERVE_MS} ms, so the run may have already finished on its own. On the ordinary path expect no result from that run, but a collection already in flight can still deliver its text; ignore a result for work you interrupted. Check its status, then continue it manually in its pane or close it with /agents and continue it with agent_send.`;
   }
   if (status === 'idle') {
     return `Agent ${label} (${paneId}) is not in an active run, so there was nothing to stop. Check its status; its result may still arrive.`;

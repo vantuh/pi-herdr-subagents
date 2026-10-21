@@ -123,7 +123,7 @@ export async function executeAgentStatus(args: {
 
   if (record?.collected) {
     return textResult(
-      `Agent ${label} was already collected. Close it with /herdr-agents if it is still open, then continue it with agent_send and the same name. Do not resend the previous task.`,
+      `Agent ${label} was already collected. Close it with /agents if it is still open, then continue it with agent_send and the same name. Do not resend the previous task.`,
       {
         tabId,
         paneId: pane.pane_id,

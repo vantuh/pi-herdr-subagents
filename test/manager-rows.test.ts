@@ -7,7 +7,7 @@ import type { ClosedAgentHistoryRecord } from '../src/state/schema.ts';
 import { agentMenuItems, type AgentMenuItemPaint } from '../src/ui/manager.ts';
 
 /**
- * `/herdr-agents` rows: what each live and closed line actually shows.
+ * `/agents` rows: what each live and closed line actually shows.
  */
 
 const paint: AgentMenuItemPaint = {
