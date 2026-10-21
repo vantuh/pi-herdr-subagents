@@ -2,7 +2,7 @@
 
 Research report, not an implementation plan. It answers what the seven reference
 projects actually render in comparable panels, and which of those fields fit our
-`/herdr-agents` row if cwd and pane ID are dropped.
+`/agents` row if cwd and pane ID are dropped.
 
 ## Scope and method
 
@@ -201,7 +201,7 @@ execution duration.
 
 Verified by reading local files, not inferred from upstream:
 
-- `/herdr-agents` (`src/ui/manager.ts`, `pickAgentAction`) renders `label (agent)`
+- `/agents` (`src/ui/manager.ts`, `pickAgentAction`) renders `label (agent)`
   rows with description `status:<colored> • pane:<paneId> • <cwd>` for live agents
   and `closed • <localized closedAt> • <cwd>` for closed history. This overlay has
   **no selected-detail area**: the description is the only place those values
@@ -221,7 +221,7 @@ Verified by reading local files, not inferred from upstream:
 - `src/child.ts` (`captureChildSessionMeta`) publishes
   `ChildSessionMeta { sessionId, cwd, sessionFile?, updatedAt? }`
   (`src/artifacts/schema.ts`) through `writeAgentSessionMeta` (`src/artifacts.ts`,
-  `HERDR_AGENT_SESSION_META`) at `session_start`, after every assistant
+  `PI_AGENT_SESSION_META`) at `session_start`, after every assistant
   `message_end`, and on `ask_question`: a per-message publish channel with **no
   metric fields today**.
 - Closed-history records (`src/state/schema.ts` `ClosedAgentHistoryRecord`) carry

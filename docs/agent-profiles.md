@@ -3,7 +3,7 @@
 This page documents profile parsing and child startup in `src/agents.ts`,
 and `src/tool/child-args.ts`.
 
-An agent profile is a markdown file: YAML frontmatter plus a body. `herdr_agent`
+An agent profile is a markdown file: YAML frontmatter plus a body. `agent_spawn`
 selects one by its `agent` parameter and uses it to start the child Pi process.
 
 ## Example
@@ -69,15 +69,15 @@ protocol text.
   Use `mcp__server__*` to allow one MCP server. Other broad patterns do not opt
   into MCP access. These restrictions select tools, not an OS sandbox.
 - `ask_question` is model-only: it cannot run inside a codemode script.
-- Child panes run with `HERDR_AGENT_CHILD=1`. In that mode the extension
-  registers only `ask_question`: the `herdr_agent` tool, commands and
+- Child panes run with `PI_AGENT_CHILD=1`. In that mode the extension
+  registers only `ask_question`: the `agent_*` tools, commands and
   instruction injection are not available, so children cannot delegate through
-  this extension. Listing `herdr_agent` in `tools` has no effect. This does not
+  this extension. Listing an `agent_*` tool in `tools` has no effect. This does not
   restrict delegation tools provided by other extensions.
 
 ## Discovery and precedence
 
-Profiles are loaded on every `herdr_agent` call from:
+Profiles are loaded on every `agent_spawn` call from:
 
 1. User directory: `getAgentDir()/agents/*.md` (default `~/.pi/agent/agents`).
 2. Project directory: the nearest `.pi/agents` found by walking up from the
@@ -90,7 +90,7 @@ filesystem order, which is not defined; keep names unique.
 
 ## Choosing a model
 
-In a TUI session, run `/herdr-agent-models`, select a profile, then select a
+In a TUI session, run `/agent-models`, select a profile, then select a
 model. The model step shows `Scope: all | scoped`, with the active scope colored
 like Pi's model selector. Press Tab to switch without losing the search filter.
 `Scoped` contains only Pi's scoped models. `All` contains scoped models first,
@@ -107,7 +107,7 @@ counterpart, so saving that profile changes a file in the project's git tree.
 The save status includes the file path. Saving returns to the profile list with
 the new model; Escape goes back from models or closes the profile list.
 
-No Pi reload is needed: the next `herdr_agent` spawn reads the updated file.
+No Pi reload is needed: the next `agent_spawn` reads the updated file.
 Already-running panes keep their current model. The command does not write
 `settings.json`, `subagents.agentOverrides`, or `subagents.modelScope`.
 

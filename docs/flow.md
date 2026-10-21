@@ -1,4 +1,4 @@
-# herdr_agent flow
+# Agent flow
 
 Current runtime: Pi `1.3.0`, Herdr client/server `0.9.5`, official Pi integration
 `v9`. See [README.md](../README.md) for loading and tool parameters.
@@ -6,14 +6,18 @@ Current runtime: Pi `1.3.0`, Herdr client/server `0.9.5`, official Pi integratio
 ## Loading and profiles
 
 Pi loads `src/index.ts` through the package manifest or an explicit
-`pi -e ./src/index.ts`. The main session registers `herdr_agent`, commands,
-renderers, and orchestration guidance; the tool entry is
-`src/tool/execute.ts` (`executeHerdrAgent`), which resolves the profile, applies
-the TUI/config/resume guards, then dispatches to `src/tool/status.ts` (taskless
-status) or the spawn flow in `src/tool/spawn/`. `HERDR_AGENT_CHILD=1` registers
-only the child result/session writer and model-only `ask_question`.
-Orchestration guidance uses the named `herdr_agents` system-prompt section for
-both user and custom-message runs, preserving Pi's other prompt sections.
+`pi -e ./src/index.ts`. The main session registers `agent_spawn`, `agent_send`,
+`agent_stop` and `agent_status`, commands, renderers, and orchestration
+guidance. The tool entries are in `src/tool/execute.ts` (`executeAgentSpawn`,
+`executeAgentSend`, `executeAgentStatusCall`) and `src/tool/control.ts`
+(`executeAgentStop`, `controlLiveAgent`). `agent_spawn` resolves the profile,
+applies the TUI/config guards and runs the spawn flow in `src/tool/spawn/`;
+`agent_send` dispatches by the named agent's state (below); `agent_status` calls
+`src/tool/status.ts` for one agent or lists the owned live ones.
+`PI_AGENT_CHILD=1` registers only the child result/session writer and
+model-only `ask_question`. Orchestration guidance uses the named `agents`
+system-prompt section for both user and custom-message runs, preserving Pi's
+other prompt sections.
 
 `src/agents.ts` discovers profiles on every call from `getAgentDir()/agents`
 and the nearest project `.pi/agents`. `session_start` (including `/reload`)
@@ -25,7 +29,7 @@ by name. See [agent-profiles.md](agent-profiles.md) for fields and precedence.
 New children have fresh context. The role body and child protocol are written
 to `system.md`, passed through `--append-system-prompt` (default) or
 `--system-prompt` (profile `system-prompt: replace`).
-The task prompt includes the private `HERDR_RESULT_FILE` marker.
+The task prompt includes the private `AGENT_RESULT_FILE` marker.
 
 ## Target placement and startup
 
@@ -35,10 +39,12 @@ over UI focus because focus can change while a tool runs.
 The spawn feature owns its phases: `spawn/flow.ts` (`runAgentTask`) holds the
 placement lock, the rollback of partially spawned resumed agents and the prompt
 handoff; `spawn/targets.ts` resolves placement and creates the tab or split
-pane; `spawn/continuation.ts` reuses a parked question and claims closed
-history for `resumeClosed`; `spawn/lifecycle.ts` starts the child, records its
-lifecycle and runs the prompt turn. `openClosedAgent` in `spawn/flow.ts` runs the
-same `resumeClosed` path for the `/herdr-agents` overlay but stops before the
+pane; `spawn/continuation.ts` refuses a live name for a spawn, reuses a parked
+question for an answer and claims closed history for a resume;
+`spawn/lifecycle.ts` starts the child, records its lifecycle and runs the prompt
+turn. The entry point picks the spawn mode (`spawn`, `answer` or `resume`); it
+is never inferred from tool parameters. `openClosedAgent` in `spawn/flow.ts` runs
+the same resume path for the `/agents` overlay but stops before the
 prompt turn and records the agent with `detached: false`, so the poller never
 delivers or closes it.
 
@@ -50,7 +56,7 @@ is locked through startup, state recording, and pane-column rebalancing so
 parallel spawns see each other's targets. Exact equal-height ratios use
 `layout.export` and `layout.set_split_ratio` through the socket API.
 
-Child shells receive `HERDR_AGENT_CHILD=1` and `PROCESS_LAUNCHED_BY_Q=1`. The
+Child shells receive `PI_AGENT_CHILD=1` and `PROCESS_LAUNCHED_BY_Q=1`. The
 latter prevents Kiro's shell wrapper from obscuring the real shell. A shell's
 history isolation still requires its own child-marker configuration.
 
@@ -81,21 +87,29 @@ tick hands the managed agents to `deliverDetachedOutcomes` in
 `src/ui/detached-outcomes.ts`, which delivers a settled result or question and
 closes a finished one-shot. The extension never sends an extra Enter.
 
-`herdr_agent` requires TUI mode. RPC, JSON, and print sessions are rejected
-before any Herdr call, because they have no widget poller. The profile is
-resolved first, so an unknown profile is reported even outside TUI.
+The agent tools require TUI mode. RPC, JSON, and print sessions are rejected
+before any Herdr call, because they have no widget poller. `agent_spawn`
+resolves the profile first, so an unknown profile is reported even outside TUI.
 
-`agent` is required to start a new agent. A call that omits it must pass a
-`tabLabel`, which `execute` resolves against this session's managed state — the
-live record, or the owned closed-history record when `resumeClosed` is set — to
-the profile name it continues with. An unresolved label is an error, never a
-spawn.
+`agent_spawn` always starts a fresh agent and needs `agent` and `task`. An
+explicit `name` that matches a live agent is rejected; a default name gets a
+suffix. It never reuses a live agent.
 
-A call without `task` (or with a blank one) is a status check. It first returns
-a parked question or an already-collected notice if there is one. Otherwise it
-reads the status from `herdr agent get` and previews the child's latest captured
-assistant text from `result.md`. It never prompts, waits, claims, closes,
-resurrects a closed agent, or reads the terminal.
+`agent_send` never spawns. It resolves `name` against this session's managed
+state and picks one path, in this order: a live agent with a parked question
+takes the message as its answer (same pane, a new prompt turn); any other live
+agent gets a steer through the control transport (below); with no live agent, an
+owned closed-history record of that exact name is resumed, taking its profile
+from the stored record; otherwise the call reports an unknown name. A live agent
+that already settled answers the steer with `idle`, which the call reports as
+"the result arrives automatically".
+
+`agent_status` with a `name` first returns a parked question or an
+already-collected notice if there is one. Otherwise it reads the status from
+`herdr agent get` and previews the child's latest captured assistant text from
+`result.md`. Without a `name` it lists the live agents this session owns. It
+never prompts, waits, claims, closes, resurrects a closed agent, or reads the
+terminal.
 
 ## Questions and result collection
 
@@ -103,7 +117,7 @@ Child `message_end` appends each non-empty finalized assistant response to
 `result.md`, separated by a blank line, so an answer split across several
 messages is delivered whole. The child retains its result channel across manual
 user, steering and custom-message continuations, including a model switch after
-quota exhaustion. A new valid `HERDR_RESULT_FILE:` marker replaces the channel;
+quota exhaustion. A new valid `AGENT_RESULT_FILE:` marker replaces the channel;
 starting, resuming or forking a session clears it.
 
 Each managed run writes an `interrupted` marker beside `result.md` before work
@@ -155,7 +169,7 @@ question and returns `terminate: true`, without a redundant assistant response
 or provider request. Call it alone, not in a batch with other tools. Failed
 question delivery does not terminate the turn. The parent
 returns/delivers the question and leaves the one-shot open. Answer by sending
-a normal `task` with the same `tabLabel`.
+`agent_send` with the same `name`.
 
 After the claim and before the notification, the close and the temp cleanup, the
 complete result is copied once to a report file under
@@ -192,17 +206,18 @@ is written before that close, so closing never discards the delivered text. Clos
 failures return the collected output with a warning and leave the target
 inspectable.
 
-`resumeClosed: true` requires an explicit `tabLabel` and a non-empty `task`.
-The extension validates session ID/cwd against the native JSONL header and
+`agent_send` resumes only when no live agent carries the name and this session
+owns a closed one-shot of that exact name; the closed-history record supplies the
+profile. The extension validates session ID/cwd against the native JSONL header and
 claims the matching owner-session history slot. Pi starts with `--session`
 pointing at that file, using the current profile policy from the archived cwd.
 It closes again after the next successful result. Resumed children also receive
 `--session-dir`, but `--session` keeps the archived file at its existing path.
 Sessions created before directory isolation are not moved.
 
-A live label takes precedence: answer a parked question, check the status of
-active work, or wait for a detached outcome to be delivered. Resume never
-spawns a closed copy over live work. Concurrent resumes have one claim winner.
+A live name takes precedence: `agent_send` answers a parked question or steers
+active work, and a settled result is waited for until it is delivered. Resume
+never spawns a closed copy over live work. Concurrent resumes have one claim winner.
 
 A failed state save does not abort the spawn. The child still writes its artifact, and the poller cannot deliver or close that agent because it has no record.
 
@@ -212,14 +227,15 @@ deleted when the extension prunes its bounded closed-history index.
 
 ## Agent control
 
-`herdr_agent_control` (`src/tool/control.ts`) acts on a child this Orchestrator
-session already started: it resolves the label in the managed live records,
+A steer (`agent_send` to a live agent with no parked question) and `agent_stop`
+(`src/tool/control.ts`) act on a child this Orchestrator
+session already started: they resolve the name in the managed live records,
 requires `ownerSessionId` to equal this session's id, derives the child's control
 directory, publishes one request and waits for the child's acknowledgement. It
 never spawns, resumes, answers, claims, collects or closes an agent, it touches
 no result, question or session artifact, and the poller, delivery, reports and
 closed history are untouched. The parameters,
-guards, exact texts and `details` keys are in [tool.md](tool.md#2-control-tool-herdr_agent_control).
+guards, exact texts and `details` keys are in [tool.md](tool.md#2-control-path).
 
 ### Transport
 
@@ -317,7 +333,7 @@ an already-written question.
 An interrupt that races a clean finish leaves a complete-but-undelivered result
 blocked until the agent is continued: a live child that is not parked on a
 question cannot take a new task, so the recovery paths are a manual turn in its
-pane, or close with `/herdr-agents` and `resumeClosed` with the same `tabLabel`.
+pane, or close with `/agents` and continue it with `agent_send` and the same `name`.
 
 ### Reachable limits
 

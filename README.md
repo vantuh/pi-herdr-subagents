@@ -3,27 +3,29 @@
 A [Pi](https://github.com/earendil-works/pi) extension that lets a Pi session
 delegate tasks to child Pi agents running in [Herdr](https://herdr.dev).
 
-The extension adds a `herdr_agent` tool. The main session (the Orchestrator)
-calls it with an agent profile and a task. The extension starts a child Pi in its
-own Herdr tab or pane, returns at once, and delivers the child's result back to
-the Orchestrator as a message when the child finishes. A second tool,
-`herdr_agent_control`, steers or interrupts a child that is already running.
+The extension adds four tools: `agent_spawn`, `agent_send`, `agent_stop` and
+`agent_status`. The main session (the Orchestrator) calls `agent_spawn` with an
+agent profile and a task. The extension starts a child Pi in its own Herdr tab or
+pane, returns at once, and delivers the child's result back to the Orchestrator
+as a message when the child finishes. `agent_send` talks to an existing agent,
+`agent_stop` aborts a running one, and `agent_status` checks one or lists them.
 
 ## Features
 
 - **One-shot agents.** Each child starts with a fresh context and closes after it
-  delivers a result. `resumeClosed` reopens a closed agent with its prior
-  conversation.
+  delivers a result. `agent_send` to a closed agent's name reopens it with its
+  prior conversation.
 - **Questions.** A child can call `ask_question`. The question reaches the
-  Orchestrator, and the answer goes back as a normal task with the same label.
+  Orchestrator, and the answer goes back through `agent_send` with the same
+  name.
 - **Non-blocking.** The Orchestrator keeps working while children run. Results
   and questions arrive exactly once.
-- **Agent control.** `herdr_agent_control` sends a correction into a running
-  agent's next turn, or interrupts its run. It never starts, resumes, answers or
-  closes an agent; the call returns a status, and an interrupted agent normally
-  stays open for continuation or close-and-resume. A delivery already in flight
-  can still arrive and close the pane. See
-  [docs/tool.md](docs/tool.md#2-control-tool-herdr_agent_control).
+- **Agent control.** `agent_send` to a running agent sends a correction into its
+  next turn, and `agent_stop` interrupts its run. Neither starts, resumes,
+  answers or closes an agent through the control channel; the call returns a
+  status, and a stopped agent normally stays open for continuation or
+  close-and-resume. A delivery already in flight can still arrive and close the
+  pane. See [docs/tool.md](docs/tool.md#2-control-path).
 - **File-based results.** Results are written to artifact files, so long output
   does not depend on terminal scrollback.
 - **Durable reports.** Every delivered result is also saved as a plain-text
@@ -32,8 +34,8 @@ the Orchestrator as a message when the child finishes. A second tool,
   flood the Orchestrator's context.
 - **Layouts.** Agents open in a dedicated Herdr workspace (default), as split
   panes, or as tabs in the current workspace.
-- **Commands.** `/run` delegates a task explicitly. `/herdr-agents` lists and
-  focuses your agents, and closes finished ones. `/herdr-agent-models` chooses
+- **Commands.** `/run` delegates a task explicitly. `/agents` lists and
+  focuses your agents, and closes finished ones. `/agent-models` chooses
   models by editing profile frontmatter; new spawns use the pin without reload.
 
 ## Requirements
@@ -62,7 +64,7 @@ inside Herdr with `pi -e ./src/index.ts`.
 
 ## Agent profiles
 
-`herdr_agent` runs a child from a profile: a markdown file with YAML
+`agent_spawn` runs a child from a profile: a markdown file with YAML
 frontmatter. The extension ships no profiles; create at least one. Profiles are
 read on every call from:
 
@@ -94,7 +96,7 @@ described with the rest in [docs/agent-profiles.md](docs/agent-profiles.md).
 
 ## Usage
 
-The Orchestrator calls `herdr_agent` on its own when delegation helps. You can
+The Orchestrator calls `agent_spawn` on its own when delegation helps. You can
 also ask for it explicitly:
 
 ```text
@@ -108,52 +110,56 @@ guarantee: the Orchestrator may pick a clearly better one. `/run` is refused
 while the Orchestrator is busy with a turn. Profiles added mid-session appear
 after `/reload`.
 
-Tool parameters:
+Tool parameters (each tool has its own required set; no mode is chosen by
+leaving a parameter out):
 
-| Parameter      | Description                                                                                        |
-| -------------- | -------------------------------------------------------------------------------------------------- |
-| `agent`        | Profile name. Required to start a new agent; omit it when `tabLabel` addresses an existing one.    |
-| `task`         | Self-contained task. Omit it to check the status of a live agent by `tabLabel`.                    |
-| `tabLabel`     | Agent label. Defaults to the title-cased profile name. Used for status checks, answers and resume. |
-| `resumeClosed` | Reopen a closed agent, matched by `tabLabel`, with its prior conversation. Requires `task` and an explicit `tabLabel`; only agents started by the current Orchestrator session can be resumed. |
+| Tool           | Parameters                                                                                      |
+| -------------- | ----------------------------------------------------------------------------------------------- |
+| `agent_spawn`  | `agent` (profile, required), `task` (self-contained, required), `name` (optional; defaults to the title-cased profile name). A `name` that matches a live agent is rejected. |
+| `agent_send`   | `name` (exact name of an agent this session owns, required), `message` (required).              |
+| `agent_stop`   | `name` (a live agent this session owns, required).                                              |
+| `agent_status` | `name` (optional): one agent's status and a preview of its latest text; without it, the live agents this session owns. |
 
 ```json
 {
   "agent": "reviewer",
-  "tabLabel": "Diff review",
+  "name": "Diff review",
   "task": "Review the current diff for regressions."
 }
 ```
 
-The control tool takes exactly three parameters:
+`agent_send` picks what to do from the state of `name`:
 
-| Parameter  | Description                                                                                        |
-| ---------- | -------------------------------------------------------------------------------------------------- |
-| `tabLabel` | Exact label of a live agent this Orchestrator session started.                                     |
-| `action`   | `steer` injects `message` at the agent's next turn boundary; `interrupt` aborts its current run.   |
-| `message`  | The correction for `steer`, required and non-empty. An `interrupt` carrying a non-blank message is an error. |
+1. A live agent that asked a question: `message` is the answer.
+2. A live agent that is working: `message` is a steer, injected at its next turn
+   boundary. An agent that already settled reports that its result arrives
+   automatically.
+3. No live agent, but a closed one of this session: it resumes with its prior
+   conversation and `message` is the new task. The profile comes from the stored
+   record.
+4. Otherwise the call reports an unknown name.
 
-A control call returns one status: `queued`, `aborted`, `requested`, `idle`, or
-`unknown`. `queued` means the message reached the agent's steering queue, not
-that the model read it, and an interrupt drops it. `unknown` means no
+A steer or stop call returns one status: `queued`, `aborted`, `requested`,
+`idle`, or `unknown`. `queued` means the message reached the agent's steering
+queue, not that the model read it, and a stop drops it. `unknown` means no
 acknowledgement arrived within the deadline; do not retry it, check the agent's
-status instead. An interrupted agent normally stays open: continue it manually
-in its pane, or close it with `/herdr-agents` and continue it with `resumeClosed`.
-A delivery already in flight can still arrive and close the pane; ignore a result
-for work you interrupted.
+status instead. A stopped agent normally stays open: continue it manually in its
+pane, or close it with `/agents` and continue it with `agent_send`. A delivery
+already in flight can still arrive and close the pane; ignore a result for work
+you interrupted.
 
 How an agent runs:
 
 1. The call returns as soon as the task is sent to the child.
 2. When the child finishes, its result arrives in the Orchestrator as a message
    and the child closes.
-3. If the child asks a question, it stays open. Answer it with `task` set to the
-   answer and the same `tabLabel`.
+3. If the child asks a question, it stays open. Answer it with `agent_send` and
+   the same `name`.
 4. A child that stops without writing a result stays open. Inspect it or close
-   it with `/herdr-agents`.
+   it with `/agents`.
 
 Every delivered result is copied to a report file under
-`~/.pi/agent/herdr-agents-results`, one file per delivered outcome (a `resumeClosed`
+`~/.pi/agent/herdr-agents-results`, one file per delivered outcome (a resumed
 turn writes its own). The delivered message ends with `Full report saved to <path>`;
 read it with `offset`/`limit` to page through the part the message left out. A
 result above 6 000 characters arrives as its first 4 000 and last 2 000
@@ -170,13 +176,13 @@ turns stay open with their partial output until a successful continuation.
 You can also press Escape in the child pane and send a correction to continue
 the same task without losing its context or result channel.
 
-A new task sent with an explicit `tabLabel` that belongs to a live agent is
-rejected, so work is never duplicated: check its status, answer its question,
-or wait until it closes and use `resumeClosed`. Without `tabLabel`, a second call
-for the same profile starts another agent with a suffixed label, such as
+`agent_spawn` with an explicit `name` that belongs to a live agent is rejected,
+so work is never duplicated: use `agent_send` to answer or steer it, or wait
+until it closes and `agent_send` to continue it. Without `name`, a second call
+for the same profile starts another agent with a suffixed name, such as
 `Reviewer #2`.
 
-`/herdr-agents` lists the agents this Orchestrator started, across workspaces:
+`/agents` lists the agents this Orchestrator started, across workspaces:
 `Enter` focuses an agent, `d` or `Ctrl+D` closes it, `Esc` exits. Only finished
 agents can be closed; a working agent or one waiting on a question is kept. The
 list refreshes once a second while it stays open, so an agent spawned in
@@ -189,7 +195,7 @@ Below the live agents it lists the closed one-shots of the current Orchestrator
 session. `Enter` on one reopens its Pi session in a new pane or tab without
 sending a task, so you can read what it did; close it with `d` to archive it
 again. Anything typed into the reopened agent extends its session, and
-`resumeClosed` on that label is rejected while it stays open.
+`agent_send` to that name steers or answers it while it stays open.
 
 Above the editor, a widget lists the same agents with their task time, label and
 status. Both surfaces show the child's current context as `ctx 38k / 200k`: the
@@ -200,7 +206,7 @@ measured empty context. The value is published after each finalized child turn,
 so it can lag the turn in progress, and after compaction it stays unknown until
 the next response.
 
-The `/herdr-agents` rows also show the child session's recorded cost estimate as
+The `/agents` rows also show the child session's recorded cost estimate as
 `~$0.024`: the sum of the usage Pi stored across the whole child session
 (assistant messages, tool results, standalone usage and compaction), not the
 current task's share. `<$0.001` is a recorded amount below that rounding,
@@ -215,7 +221,7 @@ state for focus, close and resume.
 
 New child sessions are stored in `<getAgentDir()>/herdr-agent-sessions`
 (default: `~/.pi/agent/herdr-agent-sessions`), outside the default `/resume`
-history. Use `resumeClosed` or `/herdr-agents` to reopen them. Existing child
+history. Use `agent_send` or `/agents` to reopen them. Existing child
 sessions are not moved and remain visible in the default history.
 
 ## Configuration
@@ -241,7 +247,7 @@ invalid file uses the defaults:
 runs in; otherwise starting an agent fails.
 
 Let running agents finish before you change `layout`. Agents started with the
-old layout stay visible in `/herdr-agents`, but status checks and reuse no
+old layout stay visible in `/agents`, but status checks and reuse no
 longer find them. See [docs/config.md](docs/config.md).
 
 ## Development
@@ -263,8 +269,9 @@ and state files, so a running Pi or Herdr session is not affected.
 
 - [docs/config.md](docs/config.md): `herdr-agents.json` fields and defaults.
 - [docs/agent-profiles.md](docs/agent-profiles.md): profile fields and discovery.
-- [docs/tool.md](docs/tool.md): the `herdr_agent` and `herdr_agent_control`
-  tool contracts, and the instructions injected into the Orchestrator.
+- [docs/tool.md](docs/tool.md): the `agent_spawn`, `agent_send`, `agent_stop` and
+  `agent_status` tool contracts, and the instructions injected into the
+  Orchestrator.
 - [docs/flow.md](docs/flow.md): the runtime lifecycle of an agent call.
 
 ## License

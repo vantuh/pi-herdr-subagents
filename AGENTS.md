@@ -1,8 +1,9 @@
 # AGENTS.md — pi-herdr-subagents
 
-Pi extension that adds the `herdr_agent` tool: one-shot delegation to child Pi
-agents running in Herdr. A parent-only companion tool, `herdr_agent_control`,
-steers or interrupts a child this session already started. Targets the installed
+Pi extension that adds four backend-neutral agent tools: `agent_spawn`,
+`agent_send`, `agent_stop` and `agent_status`. `agent_spawn` starts a one-shot
+child Pi agent in Herdr; the other three answer, steer, stop or check an agent
+this session already started. Targets the installed
 Pi `1.3.0`, Herdr client/server `0.9.5`, and Herdr's Pi integration `v9`; no
 compatibility layer for older versions. The development dependencies
 `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` are pinned to
@@ -41,10 +42,10 @@ flow, config and profiles. Keep those in sync when behavior changes.
 - `src/herdr/layout.ts` — split-ratio computation, pane-column rebalance, `layout.export` / `layout.set_split_ratio` calls.
 - `src/herdr/layout/schema.ts` — `PortableLayoutNode`, `ExportedLayoutResponse`, `PaneLayout`.
 - `src/herdr/agent.ts` — `herdr agent start`, `prompt` and `read` wrappers.
-- `src/tool/schema.ts` — tool parameter schema.
-- `src/tool/execute.ts` — the `herdr_agent` entry: profile resolution, TUI/config guards, resume-argument guards, dispatch to status or the spawn flow.
-- `src/tool/status.ts` — taskless status check and the resume-over-live-agent decision.
-- `src/tool/control.ts` — `herdr_agent_control`: parameter schema, ordered guards including session ownership, status texts, ack wait without retry.
+- `src/tool/schema.ts` — the four tools' parameter schemas and the dynamic `agent` listing.
+- `src/tool/execute.ts` — `agent_spawn` (profile resolution, TUI/config guards, spawn flow), `agent_send` (question, steer, resume dispatch), `agent_status` (one agent, or the owned live list) and the shared unknown-profile and unresolved-target results.
+- `src/tool/status.ts` — one-agent status check and the resume-over-live-agent refusal.
+- `src/tool/control.ts` — `agent_stop`, `controlLiveAgent` (ordered guards including session ownership, status texts, ack wait without retry) for stop and steer.
 - `src/tool/one-shot.ts` — one-shot close, collected spawn-warning cleanup, state cleanup.
 - `src/tool/spawn/types.ts` — spawn types: invocation, settings, shared spawn state, placement, target results.
 - `src/tool/spawn/schema.ts` — Herdr tab-create, pane-split and pane-layout response schemas.
@@ -61,11 +62,11 @@ flow, config and profiles. Keep those in sync when behavior changes.
 - `src/state/history-policy.ts` — closed-history parsing, TTL/cap policy, reconciliation and pruning.
 - `src/state/live-records.ts` — live-record ownership and snapshot pruning.
 - `src/state/lifecycle.ts` — lifecycle record writes, spawned-warning cleanup and the detached-delivery claim.
-- `src/state/closed-history.ts` — archive and claim of closed one-shots for `resumeClosed`.
+- `src/state/closed-history.ts` — archive and claim of closed one-shots a resume reopens.
 - `src/ui/detached-outcomes.ts` — detached outcome delivery: result/question formatting, fresh settled-status recheck, claim, notification and one-shot close.
 - `src/ui/poller.ts` — per-second poller: widget lifecycle and the tick that hands agents to delivery.
-- `src/ui/widget.ts`, `src/ui/manager.ts`, `src/ui/renderers.ts` — widget, `/herdr-agents` overlay, message renderers.
-- `src/ui/agent-models/command.ts` — `/herdr-agent-models`: profile/model snapshots and save/refresh wiring.
+- `src/ui/widget.ts`, `src/ui/manager.ts`, `src/ui/renderers.ts` — widget, `/agents` overlay, message renderers.
+- `src/ui/agent-models/command.ts` — `/agent-models`: profile/model snapshots and save/refresh wiring.
 - `src/ui/agent-models/picker.ts` — two-step agent/model overlay with filtering and save status.
 - `src/ui/agent-models/write.ts` — atomic, symlink-preserving profile `model:` edits.
 - `test-support/` — test harnesses and fixtures (see Tests). `fake-herdr/`
@@ -102,8 +103,13 @@ Easy to break and not obvious from one file:
   successful `agent_before_settle` removes it; Escape skips that boundary, so
   aborted runs stay blocked. The poller must not claim or close partial results.
   The parent clears old result/interruption artifacts before a new task.
-- `herdr_agent` refuses to run outside TUI mode before any Herdr call, because
+- Every agent tool refuses to run outside TUI mode before any Herdr call, because
   only the TUI poller delivers outcomes.
+- `agent_send` has no `agent` parameter: it dispatches on the named agent's state
+  in a fixed order — parked question, then steer for any other live agent, then
+  resume of an owned closed record whose `profileName` supplies the profile, then
+  an unknown-name error. `agent_spawn` needs `agent` and `task` and never reuses
+  a live agent.
 - A delivered result is copied to an immutable report under
   `<getAgentDir()>/herdr-agents-results` between the claim and the close, so the
   temp artifact never holds the only plain-text copy. Delivery truncates only
@@ -115,18 +121,19 @@ Easy to break and not obvious from one file:
   can move while a tool runs.
 - Every child starts with `--session-dir <getAgentDir()>/herdr-agent-sessions`,
   so child sessions stay out of the default project sessions tree the
-  Orchestrator's `/resume` picker reads. `resumeClosed` still reopens an archived
+  Orchestrator's `/resume` picker reads. A resume still reopens an archived
   child by its explicit `--session` path.
-- Children start with `HERDR_AGENT_CHILD=1`, which registers only
+- Children start with `PI_AGENT_CHILD=1`, which registers only
   `ask_question` and the result writer, so children cannot delegate. They also
   get `PROCESS_LAUNCHED_BY_Q=1`, so Kiro's terminal wrapper does not hide the
   real shell from `herdr agent start`.
-- An agent's logical label comes from managed state, never from a tab title the
-  user may rename. A task sent to the label of a live agent is rejected.
+- An agent's logical name comes from managed state, never from a tab title the
+  user may rename. `agent_spawn` refuses an explicit `name` that matches a live
+  agent; `agent_send` is the way to reach it.
 - In pane layout, the placement lock is held through `agent start`, the state
   write and rebalancing, so parallel calls cannot build competing right columns.
 - Only the session that owns a child's live record can control it: the managed
-  lookup is terminal-scoped, so `herdr_agent_control` additionally requires
+  lookup is terminal-scoped, so a steer or `agent_stop` additionally requires
   `ownerSessionId` to equal this session's id. A missing owner, or a legacy
   record without one, is refused.
 - A control call never spawns, resumes, prompts, claims, collects, closes, or
@@ -139,14 +146,14 @@ Easy to break and not obvious from one file:
 - A steer is applied only with the child's `active` flag true, `ctx.isIdle()`
   false and no `await` between that check and `pi.sendMessage`, using
   `deliverAs: 'steer'` and never `triggerTurn`. `queued` is not `applied`: an
-  interrupt drops the queued message.
-- An interrupt writes the `interrupted` marker before `ctx.abort()` and again on
+  stop drops the queued message.
+- A stop writes the `interrupted` marker before `ctx.abort()` and again on
   `agent_settled.aborted`, because an abort can land while `agent_before_settle`
   runs and that boundary clears the marker. This is ordinary-path protection
   only: a collection tick that already read the marker can still deliver the run
-  and close the pane, which is accepted, and an interrupt never retracts an
+  and close the pane, which is accepted, and a stop never retracts an
   already-written question.
-- A control call never retries. A missed ack is `unknown`, the transport files
+- A steer or stop call never retries. A missed ack is `unknown`, the transport files
   stay in place, and the next operation's pre-clean removes them. The poller,
   delivery, reports, closed history and widget are untouched by control, and a
   live child running older extension code writes no ack, so it reports
@@ -209,7 +216,9 @@ Three Vitest projects in `vitest.config.ts`:
   file permissions) and `ui-boundary.test.ts`. For the control tool,
   `contract-control.test.ts` owns the exact texts, `details` keys, guards and
   session ownership; `integration-control.test.ts` owns the flows and the
-  real-poller overlap. The real extension runs through a
+  real-poller overlap. `integration-send.test.ts` owns the `agent_send` dispatch
+  order and the `agent_spawn` name refusal; `integration-status.test.ts` owns the
+  `agent_status` listing. The real extension runs through a
   mock `ExtensionAPI` against `FakeHerdr`: `HERDR_BIN_PATH` points at
   `test-support/herdr-shim.mjs`, which forwards each `herdr` call over a socket to
   the fake server inside the test. Simulated children write the same
@@ -222,7 +231,7 @@ Three Vitest projects in `vitest.config.ts`:
   so the real steer and interrupt scenarios live there, including the assertion
   that a queued steer is never consumed after an interrupt.
 
-Isolation: the harnesses redirect `TMPDIR`, `HERDR_AGENTS_STATE_PATH` and
+Isolation: the harnesses redirect `TMPDIR`, `PI_AGENTS_STATE_PATH` and
 `PI_CODING_AGENT_DIR` per test. `test-support/state-path-guard.ts` also pins the
 state path to a sentinel file for the whole run and fails the run if anything
 wrote to it.
@@ -255,7 +264,7 @@ await withHarness({}, async (harness) => {
 - `omitCreatedTabId`, `focusedPaneId`, `completeAgent`.
 - Inspection: `callsMatching`, `layoutFor`, `ratioUpdates`.
 
-The `/herdr-agents` overlay is driven by `dialogInputs`: keystrokes per
+The `/agents` overlay is driven by `dialogInputs`: keystrokes per
 `ctx.ui.custom` call (`"\r"` focuses, `"d"` closes); running out of entries
 cancels.
 
