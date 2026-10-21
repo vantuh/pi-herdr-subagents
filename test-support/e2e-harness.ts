@@ -96,8 +96,9 @@ export interface E2eHarness {
     params: Record<string, unknown>,
     options?: { signal?: AbortSignal },
   ): Promise<any>;
-  /** Call `herdr_agent_control` exactly as Pi would. */
-  control(
+  /** Call any registered tool, e.g. `agent_send`, exactly as Pi would. */
+  callTool(
+    name: string,
     params: Record<string, unknown>,
     options?: { signal?: AbortSignal },
   ): Promise<any>;
@@ -127,7 +128,7 @@ function isAgentOutcome(message: SentMessage, label?: string): boolean {
     return false;
   }
   if (!label) return true;
-  return message.details.tabLabel === label;
+  return message.details.name === label;
 }
 
 function run(
@@ -346,12 +347,17 @@ export async function createE2eHarness(
 
   const host = createMockHost({ cwd });
   await Promise.resolve(herdrAgentsExtension(host.pi));
-  for (const name of ['herdr_agent', 'herdr_agent_control']) {
+  for (const name of [
+    'agent_spawn',
+    'agent_send',
+    'agent_stop',
+    'agent_status',
+  ]) {
     if (!host.tools.get(name))
       throw new Error(`${name} tool was not registered`);
   }
 
-  // Resolved per call: `/reload` re-registers both tools on the same host.
+  // Resolved per call: `/reload` re-registers the tools on the same host.
   const executeTool = (
     name: string,
     params: Record<string, unknown>,
@@ -377,11 +383,10 @@ export async function createE2eHarness(
     messages: host.messages,
     events: host.events,
     call: (params, callOptions) =>
-      executeTool('herdr_agent', params, callOptions),
+      executeTool('agent_spawn', params, callOptions),
     callRaw: (params, callOptions) =>
-      executeTool('herdr_agent', params, callOptions),
-    control: (params, callOptions) =>
-      executeTool('herdr_agent_control', params, callOptions),
+      executeTool('agent_spawn', params, callOptions),
+    callTool: executeTool,
     collect: (label, timeoutMs) => {
       const start = host.messages.length;
       return waitFor(

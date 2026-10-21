@@ -13,11 +13,7 @@ import { flagValue, withHarness } from '../test-support/contract-harness.ts';
 test('keeps new tab labels unique across spawns', async () => {
   await withHarness({ layout: 'tab' }, async (harness) => {
     harness.fake.setBehavior(() => ({ neverSettle: true }));
-    await harness.callRaw({
-      agent: 'scout',
-      task: 'one',
-      tabLabel: 'Scout A',
-    });
+    await harness.callRaw({ agent: 'scout', task: 'one', name: 'Scout A' });
     assert.equal(
       flagValue(
         harness.fake.callsMatching('tab', 'create')[0] ?? [],
@@ -67,17 +63,14 @@ test("does not reprint spawn warnings on a reused agent's next turn", async () =
           ? { question: 'Which approach?' }
           : { result: 'worker done' },
       );
-      const first = await harness.call({
-        agent: 'worker',
-        task: 'one',
-      });
+      const first = await harness.call({ agent: 'worker', task: 'one' });
       assert.equal(first.details.reused, false);
       assert.match(first.content[0].text, /Skills not found: ghost-skill/);
       await harness.collect('Worker');
 
-      const reused = await harness.call({
-        agent: 'worker',
-        task: 'two',
+      const reused = await harness.callTool('agent_send', {
+        name: 'Worker',
+        message: 'two',
       });
       assert.equal(reused.details.reused, true);
       assert.doesNotMatch(reused.content[0].text, /Skills not found/);
@@ -96,7 +89,7 @@ test('resolves a renamed tab by pane id when tab create omits the tab id', async
     // Recovered silently: the start completed and the poller closed the tab by id.
     assert.equal(result.isError, undefined);
     assert.ok(result.details.tabId);
-    assert.equal(result.details.tabLabel, 'Scout');
+    assert.equal(result.details.name, 'Scout');
     await harness.collect('Scout');
     assert.equal(
       harness.fake.callsMatching('tab', 'close')[0]?.[2],
@@ -114,7 +107,7 @@ test('shows live agents in the widget and clears it once none remain', async () 
     await harness.callRaw({
       agent: 'scout',
       task: 'stay',
-      tabLabel: 'Scout Widget',
+      name: 'Scout Widget',
     });
 
     await harness.waitFor(
@@ -140,11 +133,7 @@ test('shows live agents in the widget and clears it once none remain', async () 
 test('shows a live agent in the widget while its task is still running', async () => {
   await withHarness({}, async (harness) => {
     harness.fake.setBehavior(() => ({ neverSettle: true }));
-    await harness.call({
-      agent: 'scout',
-      task: 'slow',
-      tabLabel: 'Scout Awaited',
-    });
+    await harness.call({ agent: 'scout', task: 'slow', name: 'Scout Awaited' });
     await harness.waitFor(
       () => harness.widgets.has(AGENTS_WIDGET_ID),
       'widget to appear',

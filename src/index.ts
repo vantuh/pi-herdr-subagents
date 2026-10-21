@@ -11,12 +11,19 @@ import {
   parseRunArgs,
   type RunDelegationRequest,
 } from './run.ts';
+import { executeAgentStop } from './tool/control.ts';
 import {
-  buildHerdrAgentControlParams,
-  executeHerdrAgentControl,
-} from './tool/control.ts';
-import { executeHerdrAgent } from './tool/execute.ts';
-import { buildHerdrAgentParams, describeAgentProfiles } from './tool/schema.ts';
+  executeAgentSend,
+  executeAgentSpawn,
+  executeAgentStatusCall,
+} from './tool/execute.ts';
+import {
+  buildAgentSendParams,
+  buildAgentSpawnParams,
+  buildAgentStatusParams,
+  buildAgentStopParams,
+  describeAgentProfiles,
+} from './tool/schema.ts';
 import { showAgentModelPicker } from './ui/agent-models/command.ts';
 import { showHerdrAgentsManager } from './ui/manager.ts';
 import {
@@ -47,8 +54,10 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
   // Profile names for /run, discovered on session_start (and /reload).
   let agentNames: string[] = [];
 
-  registerHerdrAgentTool(pi);
-  registerHerdrAgentControlTool(pi);
+  registerAgentSpawnTool(pi);
+  registerAgentSendTool(pi);
+  registerAgentStopTool(pi);
+  registerAgentStatusTool(pi);
   // A /reload leaves the previous instance's poller running with a stale ctx.
   initializeAgentsWidgetPoller(pi);
 
@@ -155,7 +164,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
     try {
       const agents = await discoverAgents(cwd);
       agentNames = agents.map((agent) => agent.name);
-      registerHerdrAgentTool(pi, describeAgentProfiles(agents));
+      registerAgentSpawnTool(pi, describeAgentProfiles(agents));
     } catch (error) {
       process.stderr.write(
         `herdr-agents: failed to refresh agent listing: ${errorMessage(error)}\n`,
@@ -163,29 +172,75 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
     }
   }
 
-  /**
-   * Parent-only: a child registers `ask_question` and the result writer and
-   * returns before this branch, so children cannot steer each other.
-   */
-  function registerHerdrAgentControlTool(pi: ExtensionAPI): void {
+  // Parent-only: a child registers `ask_question` and the result writer and
+  // returns before these registrations, so children cannot delegate or steer.
+
+  function registerAgentSendTool(pi: ExtensionAPI): void {
     pi.registerTool({
-      name: 'herdr_agent_control',
-      label: 'Herdr Agent Control',
+      name: 'agent_send',
+      label: 'Agent Send',
       description:
-        'Steer or interrupt a running Herdr agent that this session spawned. It cannot start, resume, answer, or close an agent.',
+        'Send a message to an agent this session owns, addressed by name. Answers a question the agent asked, steers a running agent at its next turn boundary, or gives a closed agent a follow-up task that keeps its context.',
       promptSnippet:
-        'Steer or interrupt a running Herdr agent when work already in progress needs a correction or must stop.',
+        'Answer an agent question, steer a running agent, or continue a closed agent with a follow-up task.',
       promptGuidelines: [
-        'Steer (action "steer") only when a correction must reach work already in progress; never to check progress.',
-        'Interrupt (action "interrupt") only when the user or a decision requires stopping the run.',
-        'A steer is queued at the next turn boundary and can be dropped by an interrupt.',
-        'If the call reports idle, check the agent status with herdr_agent instead of sending it a task.',
-        'Never repeat a control call that reported unknown.',
+        'Use agent_send to answer a question an agent asked, using its exact name and your answer as the message.',
+        'Steer a running agent only when a correction must reach work already in progress; never to check progress.',
+        'To continue a closed agent with its context, send it a new self-contained task by its exact name.',
+        'If agent_send reports the agent is not in an active run, wait for its result instead of sending a task.',
+        'Never repeat an agent_send call that reported no acknowledgement.',
       ],
-      parameters: buildHerdrAgentControlParams(),
+      parameters: buildAgentSendParams(),
+
+      async execute(_toolCallId, params, signal, onUpdate, ctx) {
+        return await executeAgentSend(
+          pi,
+          params,
+          signal,
+          onUpdate,
+          ctx,
+          configPromise,
+        );
+      },
+    });
+  }
+
+  function registerAgentStopTool(pi: ExtensionAPI): void {
+    pi.registerTool({
+      name: 'agent_stop',
+      label: 'Agent Stop',
+      description:
+        'Abort the current run of a running agent this session owns. The agent stays open. It cannot start, answer, resume, or close an agent.',
+      promptSnippet:
+        'Stop the current run of a running agent when the user or a decision requires it.',
+      promptGuidelines: [
+        'Use agent_stop only when the user or a decision requires stopping the run.',
+        'A stop drops a queued steer.',
+        'Never repeat an agent_stop call that reported no acknowledgement.',
+      ],
+      parameters: buildAgentStopParams(),
 
       async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-        return await executeHerdrAgentControl(params, signal, ctx);
+        return await executeAgentStop(params, signal, ctx);
+      },
+    });
+  }
+
+  function registerAgentStatusTool(pi: ExtensionAPI): void {
+    pi.registerTool({
+      name: 'agent_status',
+      label: 'Agent Status',
+      description:
+        'Check one live agent by name (status and a preview of its latest text), or list the live agents this session owns. Read-only: never sends work, claims, or closes.',
+      promptSnippet:
+        'Check an agent when the user asks or a decision depends on its progress.',
+      promptGuidelines: [
+        'Use agent_status only when the user asks or a decision depends on progress, never to wait for completion: the outcome arrives as a message automatically.',
+      ],
+      parameters: buildAgentStatusParams(),
+
+      async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+        return await executeAgentStatusCall(params, signal, ctx, configPromise);
       },
     });
   }
@@ -196,25 +251,25 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
    * by name, so the refreshed schema wins. Pi `/reload` emits session_start
    * with reason "reload", which is the path that restores Available.
    */
-  function registerHerdrAgentTool(
+  function registerAgentSpawnTool(
     pi: ExtensionAPI,
     agentDescription?: string,
   ): void {
     pi.registerTool({
-      name: 'herdr_agent',
-      label: 'Herdr Agent',
+      name: 'agent_spawn',
+      label: 'Agent Spawn',
       description:
-        'Spawn a one-shot Herdr agent with a named profile from ~/.pi/agent/agents. Agents close after delivering their result; continue a closed one-shot with its context via resumeClosed and the same tabLabel.',
+        'Spawn a one-shot agent with a named profile from ~/.pi/agent/agents. Agents close after delivering their result; continue a closed one with agent_send and the same name.',
       promptSnippet:
-        'Delegate exploration, research, planning, review, and isolated implementation to a one-shot Herdr agent.',
+        'Delegate exploration, research, planning, review, and isolated implementation to a one-shot agent.',
       promptGuidelines: [
-        'Use herdr_agent when isolated context helps, after /run, or on an explicit delegation request.',
-        'Follow the Herdr agents system instructions for self-contained tasks, independent parallel calls, avoiding duplicate work, status checks, and resume.',
+        'Use agent_spawn when isolated context helps, after /run, or on an explicit delegation request.',
+        'Follow the agents system instructions for self-contained tasks, independent parallel calls, avoiding duplicate work, status checks, and continuing agents.',
       ],
-      parameters: buildHerdrAgentParams(agentDescription),
+      parameters: buildAgentSpawnParams(agentDescription),
 
       async execute(_toolCallId, params, signal, onUpdate, ctx) {
-        return await executeHerdrAgent(
+        return await executeAgentSpawn(
           pi,
           params,
           signal,

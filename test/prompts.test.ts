@@ -13,12 +13,22 @@ describe('prompts', () => {
     assert.ok(CHILD_PROTOCOL.includes('Do not start other agents'));
   });
 
-  it('GLOBAL_INSTRUCTIONS names herdr_agent and the one-shot contract', () => {
-    assert.ok(GLOBAL_INSTRUCTIONS.includes('herdr_agent'));
+  it('GLOBAL_INSTRUCTIONS names the four agent tools and the one-shot contract', () => {
+    for (const tool of [
+      'agent_spawn',
+      'agent_send',
+      'agent_stop',
+      'agent_status',
+    ]) {
+      assert.ok(GLOBAL_INSTRUCTIONS.includes(tool), tool);
+    }
+    assert.doesNotMatch(
+      GLOBAL_INSTRUCTIONS,
+      /herdr_agent|resumeClosed|tabLabel/,
+    );
     assert.ok(
       GLOBAL_INSTRUCTIONS.includes('Agents close after delivering a result'),
     );
-    assert.ok(GLOBAL_INSTRUCTIONS.includes('resumeClosed: true'));
     // Profiles are user-defined: the prompt must not name any of them.
     assert.doesNotMatch(
       GLOBAL_INSTRUCTIONS,
@@ -46,7 +56,9 @@ describe('prompts', () => {
   });
 
   it('GLOBAL_INSTRUCTIONS covers status checks', () => {
-    assert.ok(GLOBAL_INSTRUCTIONS.includes('no `task`'));
+    assert.ok(
+      GLOBAL_INSTRUCTIONS.includes('Check an agent with `agent_status`'),
+    );
     assert.ok(GLOBAL_INSTRUCTIONS.includes('Never wait for it'));
   });
 

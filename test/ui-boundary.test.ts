@@ -16,14 +16,17 @@ for (const mode of ['rpc', 'json', 'print'] as const) {
       );
       assert.deepEqual(harness.userMessages, []);
 
-      for (const task of ['Find it', undefined]) {
-        const rejected = await harness.call({
-          agent: 'scout',
-          tabLabel: 'Scout',
-          ...(task ? { task } : {}),
-        });
-        assert.equal(rejected.isError, true);
-        assert.match(rejected.content[0].text, /requires TUI mode/);
+      const calls: Array<[string, Record<string, unknown>]> = [
+        ['agent_spawn', { agent: 'scout', task: 'Find it' }],
+        ['agent_send', { name: 'Scout', message: 'Go' }],
+        ['agent_stop', { name: 'Scout' }],
+        ['agent_status', { name: 'Scout' }],
+        ['agent_status', {}],
+      ];
+      for (const [tool, params] of calls) {
+        const rejected = await harness.callTool(tool, params);
+        assert.equal(rejected.isError, true, tool);
+        assert.match(rejected.content[0].text, /requires TUI mode/, tool);
       }
       assert.equal(harness.fake.calls.length, 0);
       assert.equal(harness.widgets.size, 0);

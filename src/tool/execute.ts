@@ -7,145 +7,217 @@ import type {
 
 import { discoverAgents } from '../agents.ts';
 import type { AgentProfile } from '../agents/types.ts';
+import { readAgentQuestion } from '../artifacts.ts';
 import { getHerdrAgentsLayout } from '../config.ts';
 import type { HerdrAgentsConfig } from '../config/schema.ts';
-import { listManagedWorkspaceAgents } from '../herdr/placement.ts';
+import {
+  findUnresolvedOwnedAgent,
+  listManagedWorkspaceAgents,
+} from '../herdr/placement.ts';
 import { loadContextWithState } from '../herdr/snapshot.ts';
 import { findOwnedClosedHistory } from '../state/closed-history.ts';
-import { titleCase } from '../utils.ts';
+import { bestEffort, titleCase } from '../utils.ts';
 import { orchestratorIdentity } from './child-args.ts';
+import { controlLiveAgent } from './control.ts';
 import { textResult } from './result.ts';
-import type { HerdrAgentParams } from './schema.ts';
+import type {
+  AgentSendParams,
+  AgentSpawnParams,
+  AgentStatusParams,
+} from './schema.ts';
 import { runAgentTask } from './spawn/flow.ts';
-import { executeAgentStatus } from './status.ts';
+import { executeAgentStatus, unresolvedOwnedAgentResult } from './status.ts';
+
+type ToolResult = AgentToolResult<Record<string, unknown>>;
 
 function unknownProfileResult(
   agents: readonly AgentProfile[],
   name: string,
-): AgentToolResult<Record<string, unknown>> {
+): ToolResult {
   // Hidden (disable-model-invocation) profiles stay spawnable by exact name.
   const listable = agents.filter((item) => !item.disableModelInvocation);
   const available = listable.map((item) => item.name).join(', ') || 'none';
   return textResult(
-    `Unknown Herdr agent: ${name}. Available: ${available}`,
+    `Unknown agent profile: ${name}. Available: ${available}`,
     { availableAgents: listable },
     true,
   );
 }
 
-/**
- * A call without `agent` addresses an existing agent through its label, so the
- * profile name comes from the record this Orchestrator session owns.
- */
-async function resolveProfileNameByLabel(
-  label: string,
-  resumeClosed: boolean,
-  ownerSessionId: string | undefined,
-  signal: AbortSignal | undefined,
-): Promise<string | undefined> {
-  const { context, state } = await loadContextWithState(signal);
-  const live = listManagedWorkspaceAgents(context, state).find(
-    (item) => item.tabLabel === label,
+function requiresTuiResult(tool: string): ToolResult {
+  return textResult(
+    `${tool} requires TUI mode. Non-TUI sessions have no widget poller to deliver the result.`,
+    {},
+    true,
   );
-  if (live) return live.agent;
-  if (!resumeClosed || !ownerSessionId) return undefined;
-  return findOwnedClosedHistory(state, ownerSessionId, label)?.profileName;
 }
 
-export async function executeHerdrAgent(
+export async function executeAgentSpawn(
   pi: ExtensionAPI,
-  params: HerdrAgentParams,
+  params: AgentSpawnParams,
   signal: AbortSignal | undefined,
   onUpdate: AgentToolUpdateCallback<Record<string, unknown>> | undefined,
   ctx: ExtensionToolContext,
   configPromise: Promise<HerdrAgentsConfig>,
-): Promise<AgentToolResult<Record<string, unknown>>> {
-  const agents = await discoverAgents(ctx.cwd);
+): Promise<ToolResult> {
   const requestedName = params.agent?.trim();
-  const tabLabel = params.tabLabel?.trim();
-  const resumeClosed = params.resumeClosed === true;
-  const owner = orchestratorIdentity(ctx);
+  if (!requestedName) return textResult('agent is required.', {}, true);
+  if (!params.task?.trim()) return textResult('task is required.', {}, true);
 
-  const named = requestedName
-    ? agents.find((item) => item.name === requestedName)
-    : undefined;
-  // Checked before the TUI gate, so an unknown name is reported outside TUI too.
-  if (requestedName && !named) {
-    return unknownProfileResult(agents, requestedName);
-  }
-
-  if (ctx.mode !== 'tui') {
-    return textResult(
-      'herdr_agent requires TUI mode. Non-TUI sessions have no widget poller to deliver the result.',
-      {},
-      true,
-    );
-  }
-
-  const profileName =
-    requestedName ??
-    (tabLabel
-      ? await resolveProfileNameByLabel(
-          tabLabel,
-          resumeClosed,
-          owner.ownerSessionId,
-          signal,
-        )
-      : undefined);
-  if (!profileName) {
-    return textResult(
-      tabLabel
-        ? `No agent labeled "${tabLabel}" found for this session. Pass agent to start a new one.`
-        : 'agent is required to start a new agent; tabLabel is required to address an existing one.',
-      {},
-      true,
-    );
-  }
-  const agent = named ?? agents.find((item) => item.name === profileName);
-  if (!agent) {
-    return unknownProfileResult(agents, profileName);
-  }
+  const agents = await discoverAgents(ctx.cwd);
+  const agent = agents.find((item) => item.name === requestedName);
+  // Checked before the TUI gate, so an unknown profile is reported outside TUI too.
+  if (!agent) return unknownProfileResult(agents, requestedName);
+  if (ctx.mode !== 'tui') return requiresTuiResult('agent_spawn');
 
   const config = await configPromise;
-  const layout = getHerdrAgentsLayout(config);
-  const baseLabel = tabLabel || titleCase(agent.name);
-
-  if (resumeClosed) {
-    if (!params.task?.trim()) {
-      return textResult(
-        'resumeClosed requires a non-empty task. Omit resumeClosed and task to check the status of a still-running agent.',
-        { resumeClosed: true },
-        true,
-      );
-    }
-    if (!tabLabel) {
-      return textResult(
-        'resumeClosed requires an explicit non-empty tabLabel.',
-        { resumeClosed: true },
-        true,
-      );
-    }
-  }
-
-  if (!params.task?.trim()) {
-    // Status check: no new task. Looks up the live agent and returns its
-    // status plus a preview of its latest captured assistant text. It never
-    // prompts, claims, collects, or closes.
-    // Omitting task never resurrects a closed agent.
-    return await executeAgentStatus({
-      agent,
-      tabLabel,
-      baseLabel,
-      layout,
-      config,
-      ownerSessionId: owner.ownerSessionId,
-      signal,
-    });
-  }
-
-  const task = params.task;
+  const name = params.name?.trim();
   return await runAgentTask(
-    { pi, params, task, signal, onUpdate, ctx },
-    { agent, config, layout, baseLabel, resumeClosed, owner },
+    { pi, task: params.task, signal, onUpdate, ctx },
+    {
+      agent,
+      config,
+      layout: getHerdrAgentsLayout(config),
+      baseLabel: name || titleCase(agent.name),
+      mode: 'spawn',
+      explicitName: !!name,
+      owner: orchestratorIdentity(ctx),
+    },
   );
+}
+
+/**
+ * Dispatches by the named agent's state: a live agent with a parked question
+ * takes the message as its answer, any other live agent gets it as a steer,
+ * and a closed one-shot of this session resumes with it as the new task. The
+ * profile of a closed agent comes from its stored history record.
+ */
+export async function executeAgentSend(
+  pi: ExtensionAPI,
+  params: AgentSendParams,
+  signal: AbortSignal | undefined,
+  onUpdate: AgentToolUpdateCallback<Record<string, unknown>> | undefined,
+  ctx: ExtensionToolContext,
+  configPromise: Promise<HerdrAgentsConfig>,
+): Promise<ToolResult> {
+  const name = params.name?.trim() ?? '';
+  const message = params.message?.trim() ?? '';
+  if (!name) return textResult('name is required.', {}, true);
+  if (!message) return textResult('message is required.', { name }, true);
+  if (ctx.mode !== 'tui') return requiresTuiResult('agent_send');
+
+  const owner = orchestratorIdentity(ctx);
+  const { context, state } = await loadContextWithState(signal);
+  const live = listManagedWorkspaceAgents(context, state).find(
+    (item) => item.tabLabel === name,
+  );
+  const closed =
+    !live && owner.ownerSessionId
+      ? findOwnedClosedHistory(state, owner.ownerSessionId, name)
+      : undefined;
+  const profileName = live ? live.agent : closed?.profileName;
+  if (!profileName) {
+    const unresolved = findUnresolvedOwnedAgent(
+      context,
+      state,
+      name,
+      owner.ownerSessionId,
+    );
+    if (unresolved) return unresolvedOwnedAgentResult(unresolved);
+    return textResult(
+      `No agent named "${name}" found for this session. Use agent_spawn to start one.`,
+      { name },
+      true,
+    );
+  }
+
+  const answeringQuestion =
+    !!live &&
+    (await bestEffort(undefined, () => readAgentQuestion(live.resultFile))) !==
+      undefined;
+  if (live && !answeringQuestion) {
+    return await controlLiveAgent(live, 'steer', message, signal, ctx);
+  }
+
+  const agents = await discoverAgents(ctx.cwd);
+  const agent = agents.find((item) => item.name === profileName);
+  if (!agent) return unknownProfileResult(agents, profileName);
+
+  const config = await configPromise;
+  return await runAgentTask(
+    { pi, task: params.message, signal, onUpdate, ctx },
+    {
+      agent,
+      config,
+      layout: getHerdrAgentsLayout(config),
+      baseLabel: name,
+      mode: live ? 'answer' : 'resume',
+      explicitName: true,
+      owner,
+    },
+  );
+}
+
+export async function executeAgentStatusCall(
+  params: AgentStatusParams,
+  signal: AbortSignal | undefined,
+  ctx: ExtensionToolContext,
+  configPromise: Promise<HerdrAgentsConfig>,
+): Promise<ToolResult> {
+  if (ctx.mode !== 'tui') return requiresTuiResult('agent_status');
+
+  const name = params.name?.trim();
+  const { context, state } = await loadContextWithState(signal);
+  const live = listManagedWorkspaceAgents(context, state);
+  const ownerSessionId = orchestratorIdentity(ctx).ownerSessionId;
+
+  if (!name) {
+    const owned = live.filter(
+      (item) => !!ownerSessionId && item.ownerSessionId === ownerSessionId,
+    );
+    const lines = owned.map(
+      (item) => `${item.tabLabel} (${item.agent}): ${item.status}`,
+    );
+    return textResult(
+      owned.length > 0
+        ? `Live agents owned by this session:\n${lines.join('\n')}`
+        : 'No live agents are owned by this session.',
+      {
+        agents: owned.map((item) => ({
+          name: item.tabLabel,
+          agent: item.agent,
+          status: item.status,
+        })),
+      },
+    );
+  }
+
+  const profileName = live.find((item) => item.tabLabel === name)?.agent;
+  if (!profileName) {
+    const unresolved = findUnresolvedOwnedAgent(
+      context,
+      state,
+      name,
+      ownerSessionId,
+    );
+    if (unresolved) return unresolvedOwnedAgentResult(unresolved);
+    return textResult(
+      `No running agent named "${name}" found for this session.`,
+      { name },
+      true,
+    );
+  }
+  const agents = await discoverAgents(ctx.cwd);
+  const agent = agents.find((item) => item.name === profileName);
+  if (!agent) return unknownProfileResult(agents, profileName);
+
+  const config = await configPromise;
+  return await executeAgentStatus({
+    agent,
+    name,
+    layout: getHerdrAgentsLayout(config),
+    config,
+    ownerSessionId,
+    signal,
+  });
 }

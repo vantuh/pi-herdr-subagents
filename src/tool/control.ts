@@ -4,8 +4,6 @@ import type {
   AgentToolResult,
   ExtensionToolContext,
 } from '@earendil-works/pi-coding-agent';
-import { Type } from 'typebox';
-import type { Static } from 'typebox';
 
 import { CONTROL_ABORT_OBSERVE_MS } from '../child/control.ts';
 import {
@@ -22,32 +20,14 @@ import type {
 } from '../control/schema.ts';
 import { listManagedWorkspaceAgents } from '../herdr/placement.ts';
 import { loadContextWithState } from '../herdr/snapshot.ts';
+import type { HerdrAgentInfo } from '../herdr/types.ts';
 import { bestEffort } from '../utils.ts';
 import { orchestratorIdentity } from './child-args.ts';
 import { textResult } from './result.ts';
+import type { AgentStopParams } from './schema.ts';
 
 export const CONTROL_STEER_ACK_TIMEOUT_MS = 2000;
 export const CONTROL_INTERRUPT_ACK_TIMEOUT_MS = 3000;
-
-export type HerdrAgentControlParams = Static<
-  ReturnType<typeof buildHerdrAgentControlParams>
->;
-
-export function buildHerdrAgentControlParams() {
-  return Type.Object({
-    tabLabel: Type.String({
-      description:
-        'Exact label of a live Herdr agent owned by this session. Required.',
-    }),
-    action: Type.Union([Type.Literal('steer'), Type.Literal('interrupt')]),
-    message: Type.Optional(
-      Type.String({
-        description:
-          'Correction to inject at the next turn boundary of the running agent. Required for steer.',
-      }),
-    ),
-  });
-}
 
 /**
  * Statuses the parent accepts for each action. An acknowledgement that names
@@ -81,57 +61,46 @@ function statusText(
 ): string {
   if (action === 'steer') {
     if (status === 'queued') {
-      return `Steer queued for Herdr agent ${label} (${paneId}). It enters the run at its next turn boundary; queuing is not proof the agent has read it. Its answer still arrives with the final result — do not re-send it as a task.`;
+      return `Message queued for agent ${label} (${paneId}). It enters the run at its next turn boundary; queuing is not proof the agent has read it. Its answer still arrives with the final result — do not re-send it as a task.`;
     }
     if (status === 'idle') {
-      return `Herdr agent ${label} (${paneId}) did not apply the steer: it was not in an active run, or the request was already stale. Check its status with the same tabLabel: answer a parked question with a task, or wait for its result.`;
+      return `Agent ${label} (${paneId}) did not take the message: it is not in an active run, or the request was already stale. Its result arrives automatically; wait for it. Check it with agent_status only if a decision depends on it.`;
     }
-    return `No acknowledgement from Herdr agent ${label} (${paneId}) within ${CONTROL_STEER_ACK_TIMEOUT_MS} ms. The steer may or may not be applied; do not retry it. Check its status before deciding what to send next.`;
+    return `No acknowledgement from agent ${label} (${paneId}) within ${CONTROL_STEER_ACK_TIMEOUT_MS} ms. The message may or may not be applied; do not retry it. Check its status before deciding what to send next.`;
   }
 
   if (status === 'aborted') {
-    return `Herdr agent ${label} (${paneId}) aborted its run, so no result from that run should normally arrive and the agent stays open. A collection already in flight can still deliver that run's text and close the pane; ignore a result for work you interrupted. A live agent cannot take a new task: continue it manually in its pane, or close it with /herdr-agents and then continue it with resumeClosed and the same tabLabel.`;
+    return `Agent ${label} (${paneId}) aborted its run, so no result from that run should normally arrive and the agent stays open. A collection already in flight can still deliver that run's text and close the pane; ignore a result for work you interrupted. A live agent cannot take a new task: continue it manually in its pane, or close it with /herdr-agents and then continue it with agent_send and the same name.`;
   }
   if (status === 'requested') {
-    return `Interrupt sent to Herdr agent ${label} (${paneId}); the child did not report a settled abort within ${CONTROL_ABORT_OBSERVE_MS} ms, so the run may have already finished on its own. On the ordinary path expect no result from that run, but a collection already in flight can still deliver its text; ignore a result for work you interrupted. Check its status, then continue it manually in its pane or close it with /herdr-agents and continue it with resumeClosed.`;
+    return `Stop sent to agent ${label} (${paneId}); the child did not report a settled abort within ${CONTROL_ABORT_OBSERVE_MS} ms, so the run may have already finished on its own. On the ordinary path expect no result from that run, but a collection already in flight can still deliver its text; ignore a result for work you interrupted. Check its status, then continue it manually in its pane or close it with /herdr-agents and continue it with agent_send.`;
   }
   if (status === 'idle') {
-    return `Herdr agent ${label} (${paneId}) is not in an active run, so there was nothing to interrupt. Check its status; its result may still arrive.`;
+    return `Agent ${label} (${paneId}) is not in an active run, so there was nothing to stop. Check its status; its result may still arrive.`;
   }
-  return `No acknowledgement from Herdr agent ${label} (${paneId}) within ${CONTROL_INTERRUPT_ACK_TIMEOUT_MS} ms. The interrupt may or may not have been applied; do not retry it. Check its status before assuming it stopped.`;
+  return `No acknowledgement from agent ${label} (${paneId}) within ${CONTROL_INTERRUPT_ACK_TIMEOUT_MS} ms. The stop may or may not have been applied; do not retry it. Check its status before assuming it stopped.`;
 }
 
 /**
- * `herdr_agent_control`: one operation on a live child this session owns.
+ * `agent_stop`: aborts the current run of a live child this session owns and
+ * keeps it open.
  *
  * The guards run in order and no control-channel write happens before all of
  * them pass; the reused `loadContextWithState` does its own state pruning, as
- * D2 allows. The call never spawns, prompts, claims, collects or closes: it only
- * publishes a request in the child's control directory and reads its
- * acknowledgement.
+ * D2 allows.
  */
-export async function executeHerdrAgentControl(
-  params: HerdrAgentControlParams,
+export async function executeAgentStop(
+  params: AgentStopParams,
   signal: AbortSignal | undefined,
   ctx: ExtensionToolContext,
 ): Promise<AgentToolResult<Record<string, unknown>>> {
-  const label = params.tabLabel?.trim() ?? '';
-  const action = params.action;
-  const message = params.message?.trim() ?? '';
+  const label = params.name?.trim() ?? '';
   const guardFailure = (text: string) =>
-    textResult(text, { tabLabel: label, action }, true);
+    textResult(text, { name: label, action: 'interrupt' }, true);
 
-  if (!label) return guardFailure('tabLabel is required.');
-  if (action === 'steer' && !message) {
-    return guardFailure('action "steer" requires a non-empty message.');
-  }
-  if (action === 'interrupt' && message) {
-    return guardFailure(
-      'action "interrupt" takes no message; a steer cannot be combined with an interrupt.',
-    );
-  }
+  if (!label) return guardFailure('name is required.');
   if (ctx.mode !== 'tui') {
-    return guardFailure('herdr_agent_control requires TUI mode.');
+    return guardFailure('agent_stop requires TUI mode.');
   }
 
   const { context, state } = await loadContextWithState(signal);
@@ -140,22 +109,41 @@ export async function executeHerdrAgentControl(
   );
   if (!agent) {
     return guardFailure(
-      `No running Herdr agent named "${label}" found for this session. Pass its exact label; do not start a new agent to steer.`,
+      `No running agent named "${label}" found for this session. Pass its exact name.`,
     );
   }
+  return await controlLiveAgent(agent, 'interrupt', undefined, signal, ctx);
+}
+
+/**
+ * One control operation on a live child, called after its caller found the
+ * agent. The call never spawns, prompts, claims, collects or closes: it only
+ * publishes a request in the child's control directory and reads its
+ * acknowledgement.
+ */
+export async function controlLiveAgent(
+  agent: HerdrAgentInfo,
+  action: ControlAction,
+  message: string | undefined,
+  signal: AbortSignal | undefined,
+  ctx: ExtensionToolContext,
+): Promise<AgentToolResult<Record<string, unknown>>> {
+  const label = agent.tabLabel;
+  const guardFailure = (text: string) =>
+    textResult(text, { name: label, action }, true);
 
   // The managed list is terminal-scoped; only the owning session may control.
   const ownerSessionId = orchestratorIdentity(ctx).ownerSessionId;
   if (!ownerSessionId || agent.ownerSessionId !== ownerSessionId) {
     return guardFailure(
-      `Herdr agent "${label}" is not owned by this Orchestrator session, so it cannot be controlled.`,
+      `Agent "${label}" is not owned by this Orchestrator session, so it cannot be controlled.`,
     );
   }
 
   const dir = controlDirFor(agent.resultFile);
   if (!dir) {
     return guardFailure(
-      `Herdr agent "${label}" has no control channel recorded. Check its status before retrying.`,
+      `Agent "${label}" has no control channel recorded. Check its status before retrying.`,
     );
   }
 
@@ -190,7 +178,7 @@ export async function executeHerdrAgentControl(
   });
 
   return textResult(statusText(action, status, label, agent.paneId), {
-    tabLabel: label,
+    name: label,
     paneId: agent.paneId,
     action,
     status,

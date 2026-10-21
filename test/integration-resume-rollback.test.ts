@@ -13,19 +13,13 @@ import { withHarness } from '../test-support/integration-harness.ts';
 
 test('spawn failure after claim releases the closed history slot', async () => {
   await withHarness({}, async (harness) => {
-    await harness.call({
-      agent: 'scout',
-      task: 'first',
-      tabLabel: 'Scout Resume',
-    });
+    await harness.call({ agent: 'scout', task: 'first', name: 'Scout Resume' });
     await harness.collect('Scout Resume');
     harness.fake.failEveryStart('agent_start_failed');
     await assert.rejects(() =>
-      harness.call({
-        agent: 'scout',
-        task: 'again',
-        tabLabel: 'Scout Resume',
-        resumeClosed: true,
+      harness.callTool('agent_send', {
+        message: 'again',
+        name: 'Scout Resume',
       }),
     );
     const history = (await harness.readState()).closedHistory ?? [];
@@ -35,19 +29,13 @@ test('spawn failure after claim releases the closed history slot', async () => {
 
 test('malformed target creation after claim rolls the history slot back', async () => {
   await withHarness({}, async (harness) => {
-    await harness.call({
-      agent: 'scout',
-      task: 'first',
-      tabLabel: 'Scout Resume',
-    });
+    await harness.call({ agent: 'scout', task: 'first', name: 'Scout Resume' });
     await harness.collect('Scout Resume');
     harness.fake.malformCommand('pane split', '<html>nope</html>');
     await assert.rejects(() =>
-      harness.call({
-        agent: 'scout',
-        task: 'again',
-        tabLabel: 'Scout Resume',
-        resumeClosed: true,
+      harness.callTool('agent_send', {
+        message: 'again',
+        name: 'Scout Resume',
       }),
     );
     const history = (await harness.readState()).closedHistory ?? [];
@@ -58,19 +46,13 @@ test('malformed target creation after claim rolls the history slot back', async 
 
 test('lifecycle write failure after start releases the claim and closes the partial target', async () => {
   await withHarness({}, async (harness) => {
-    await harness.call({
-      agent: 'scout',
-      task: 'first',
-      tabLabel: 'Scout Resume',
-    });
+    await harness.call({ agent: 'scout', task: 'first', name: 'Scout Resume' });
     await harness.collect('Scout Resume');
     setFailNextStateMutation('lifecycle');
     await assert.rejects(() =>
-      harness.call({
-        agent: 'scout',
-        task: 'again',
-        tabLabel: 'Scout Resume',
-        resumeClosed: true,
+      harness.callTool('agent_send', {
+        message: 'again',
+        name: 'Scout Resume',
       }),
     );
     const history = (await harness.readState()).closedHistory ?? [];
@@ -81,11 +63,7 @@ test('lifecycle write failure after start releases the claim and closes the part
 
 test('failed resume spawn redacts session and temp paths from the error', async () => {
   await withHarness({}, async (harness) => {
-    await harness.call({
-      agent: 'scout',
-      task: 'first',
-      tabLabel: 'Scout Resume',
-    });
+    await harness.call({ agent: 'scout', task: 'first', name: 'Scout Resume' });
     await harness.collect('Scout Resume');
     const history = (await harness.readState()).closedHistory ?? [];
     const sessionFile = history[0]?.childSessionFile;
@@ -93,11 +71,9 @@ test('failed resume spawn redacts session and temp paths from the error', async 
     harness.fake.failEveryStart('agent_start_failed');
     await assert.rejects(
       () =>
-        harness.call({
-          agent: 'scout',
-          task: 'again',
-          tabLabel: 'Scout Resume',
-          resumeClosed: true,
+        harness.callTool('agent_send', {
+          message: 'again',
+          name: 'Scout Resume',
         }),
       (error: unknown) => {
         const text = String(error);
@@ -115,18 +91,14 @@ test('aborted resume spawn still cleans up with an independent signal', async ()
     await harness.call({
       agent: 'scout',
       task: 'first',
-      tabLabel: 'Scout Resume Abort',
+      name: 'Scout Resume Abort',
     });
     await harness.collect('Scout Resume Abort');
     harness.fake.delayAgentStart(800);
     const controller = new AbortController();
-    const pending = harness.call(
-      {
-        agent: 'scout',
-        task: 'again',
-        tabLabel: 'Scout Resume Abort',
-        resumeClosed: true,
-      },
+    const pending = harness.callTool(
+      'agent_send',
+      { message: 'again', name: 'Scout Resume Abort' },
       { signal: controller.signal },
     );
     await harness.waitFor(
@@ -146,17 +118,15 @@ test('unconfirmed rollback close keeps the claim instead of a resumable duplicat
     await harness.call({
       agent: 'scout',
       task: 'first',
-      tabLabel: 'Scout Resume CloseFail',
+      name: 'Scout Resume CloseFail',
     });
     await harness.collect('Scout Resume CloseFail');
     harness.fake.failEveryStart('agent_start_failed');
     harness.fake.failCommand('pane close', 'pane_close_failed');
     await assert.rejects(() =>
-      harness.call({
-        agent: 'scout',
-        task: 'again',
-        tabLabel: 'Scout Resume CloseFail',
-        resumeClosed: true,
+      harness.callTool('agent_send', {
+        message: 'again',
+        name: 'Scout Resume CloseFail',
       }),
     );
     const history = (await harness.readState()).closedHistory ?? [];
@@ -170,18 +140,16 @@ test('prompt failure after a durable resume leaves the live generation recoverab
     await harness.call({
       agent: 'scout',
       task: 'first',
-      tabLabel: 'Scout Resume Prompt',
+      name: 'Scout Resume Prompt',
     });
     await harness.collect('Scout Resume Prompt');
     harness.fake.failCommand('agent prompt', 'agent_prompt_failed', {
       times: 1,
     });
     await assert.rejects(() =>
-      harness.call({
-        agent: 'scout',
-        task: 'again',
-        tabLabel: 'Scout Resume Prompt',
-        resumeClosed: true,
+      harness.callTool('agent_send', {
+        message: 'again',
+        name: 'Scout Resume Prompt',
       }),
     );
     const state = await harness.readState();
@@ -196,7 +164,7 @@ test('failed resume spawn redacts session paths that contain whitespace', async 
     await harness.call({
       agent: 'scout',
       task: 'first',
-      tabLabel: 'Scout Space Path',
+      name: 'Scout Space Path',
     });
     await harness.collect('Scout Space Path');
     const state = JSON.parse(await fs.readFile(harness.statePath, 'utf8'));
@@ -214,11 +182,9 @@ test('failed resume spawn redacts session paths that contain whitespace', async 
     harness.fake.failEveryStart('agent_start_failed');
     await assert.rejects(
       () =>
-        harness.call({
-          agent: 'scout',
-          task: 'again',
-          tabLabel: 'Scout Space Path',
-          resumeClosed: true,
+        harness.callTool('agent_send', {
+          message: 'again',
+          name: 'Scout Space Path',
         }),
       (error: unknown) => {
         const text = String(error);

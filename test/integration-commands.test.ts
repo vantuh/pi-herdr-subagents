@@ -147,7 +147,7 @@ test('/herdr-agents refuses to close a questioned one-shot', async () => {
     await harness.call({
       agent: 'scout',
       task: 'ask',
-      tabLabel: 'Scout Question Close',
+      name: 'Scout Question Close',
     });
     await harness.collect('Scout Question Close');
     await harness.runCommand('herdr-agents');
@@ -166,15 +166,13 @@ test('/herdr-agents refuses to close an active resumed one-shot', async () => {
     await harness.call({
       agent: 'scout',
       task: 'first',
-      tabLabel: 'Scout Resume Close',
+      name: 'Scout Resume Close',
     });
     await harness.collect('Scout Resume Close');
     harness.fake.setBehavior(() => ({ question: 'Which module?' }));
-    await harness.call({
-      agent: 'scout',
-      task: 'again',
-      tabLabel: 'Scout Resume Close',
-      resumeClosed: true,
+    await harness.callTool('agent_send', {
+      message: 'again',
+      name: 'Scout Resume Close',
     });
     const question = await harness.collect('Scout Resume Close');
     assert.equal(question.customType, 'herdr_agent_question');
@@ -192,11 +190,7 @@ test('/herdr-agents refuses to close an active resumed one-shot', async () => {
 test('/herdr-agents lists and reopens a closed one-shot of this session without a task', async () => {
   // enter opens the closed row; the second run closes the reopened agent
   await withHarness({ dialogInputs: [['\r'], ['d']] }, async (harness) => {
-    await harness.call({
-      agent: 'scout',
-      task: 'first',
-      tabLabel: 'Scout Read',
-    });
+    await harness.call({ agent: 'scout', task: 'first', name: 'Scout Read' });
     await harness.collect('Scout Read');
     const state = await harness.readState();
     const archived = state.closedHistory[0]!;
@@ -252,11 +246,7 @@ test('/herdr-agents lists and reopens a closed one-shot of this session without 
 test('/herdr-agents does not list closed one-shots of another session', async () => {
   // enter would open a listed closed row
   await withHarness({ dialogInputs: [['\r']] }, async (harness) => {
-    await harness.call({
-      agent: 'scout',
-      task: 'first',
-      tabLabel: 'Scout Read',
-    });
+    await harness.call({ agent: 'scout', task: 'first', name: 'Scout Read' });
     await harness.collect('Scout Read');
     const state = await harness.readState();
     state.closedHistory[0]!.ownerSessionId = 'another-session';
@@ -320,7 +310,7 @@ test('/herdr-agents shows a label longer than the default name column', async ()
     harness.fake.holdChildren();
     await harness.callRaw({
       agent: 'scout',
-      tabLabel: 'release-audit-specialist',
+      name: 'release-audit-specialist',
       task: 'stay',
     });
 
@@ -349,7 +339,7 @@ test('/herdr-agents rows stay inside a narrow terminal', async () => {
     harness.fake.holdChildren();
     await harness.callRaw({
       agent: 'scout',
-      tabLabel: 'release-audit-specialist',
+      name: 'release-audit-specialist',
       task: 'stay',
     });
 
@@ -367,11 +357,7 @@ test('/herdr-agents rows stay inside a narrow terminal', async () => {
 
 test('/herdr-agents reports a closed one-shot whose session file is gone', async () => {
   await withHarness({ dialogInputs: [['\r']] }, async (harness) => {
-    await harness.call({
-      agent: 'scout',
-      task: 'first',
-      tabLabel: 'Scout Read',
-    });
+    await harness.call({ agent: 'scout', task: 'first', name: 'Scout Read' });
     await harness.collect('Scout Read');
     const archived = (await harness.readState()).closedHistory[0]!;
     await fs.rm(archived.childSessionFile);

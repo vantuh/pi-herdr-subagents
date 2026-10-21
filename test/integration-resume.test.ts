@@ -16,7 +16,7 @@ test('rejects a task addressed to a live agent by its label', async () => {
     const first = await harness.callRaw({
       agent: 'scout',
       task: 'First task',
-      tabLabel: 'Scout — repo',
+      name: 'Scout — repo',
     });
     assert.equal(first.isError ?? false, false);
 
@@ -25,15 +25,14 @@ test('rejects a task addressed to a live agent by its label', async () => {
     const duplicate = await harness.call({
       agent: 'scout',
       task: 'Follow-up task',
-      tabLabel: 'Scout — repo',
+      name: 'Scout — repo',
     });
     assert.equal(duplicate.isError, true);
     assert.match(
       duplicate.content[0].text,
-      /live Herdr agent named "Scout — repo" already exists/,
+      /live agent named "Scout — repo" already exists/,
     );
-    assert.match(duplicate.content[0].text, /check its status/);
-    assert.match(duplicate.content[0].text, /resumeClosed/);
+    assert.match(duplicate.content[0].text, /Use agent_send with that name/);
     assert.equal(harness.fake.panes.length, 2); // orchestrator + agent
     assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
     assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
@@ -61,22 +60,20 @@ for (const layout of ['tab', 'workspace'] as const) {
       assert.ok(tab);
       tab.label = 'pi';
       const question = await harness.collect('Scout');
-      assert.match(question.content, /tabLabel "Scout"/);
+      assert.match(question.content, /name "Scout"/);
 
-      const rewaited = await harness.call({
-        agent: 'scout',
-        tabLabel: 'Scout',
+      const rewaited = await harness.callTool('agent_status', {
+        name: 'Scout',
       });
-      assert.equal(rewaited.details.tabLabel, 'Scout');
+      assert.equal(rewaited.details.name, 'Scout');
       assert.equal(rewaited.details.status, 'question');
 
-      const answered = await harness.call({
-        agent: 'scout',
-        tabLabel: 'Scout',
-        task: 'Use green',
+      const answered = await harness.callTool('agent_send', {
+        name: 'Scout',
+        message: 'Use green',
       });
       assert.equal(answered.details.reused, true);
-      assert.equal(answered.details.tabLabel, 'Scout');
+      assert.equal(answered.details.name, 'Scout');
       await harness.collect('Scout');
       assert.equal(
         (await harness.readState()).closedHistory[0]?.tabLabel,
@@ -84,14 +81,12 @@ for (const layout of ['tab', 'workspace'] as const) {
       );
 
       harness.fake.setBehavior(() => ({ result: 'green remembered' }));
-      const resumed = await harness.call({
-        agent: 'scout',
-        tabLabel: 'Scout',
-        task: 'Recall color',
-        resumeClosed: true,
+      const resumed = await harness.callTool('agent_send', {
+        name: 'Scout',
+        message: 'Recall color',
       });
       assert.equal(resumed.details.resumed, true);
-      assert.equal(resumed.details.tabLabel, 'Scout');
+      assert.equal(resumed.details.name, 'Scout');
       const remembered = await harness.collect('Scout');
       assert.match(remembered.content, /green remembered/);
     });
@@ -108,7 +103,7 @@ for (const layout of ['tab', 'workspace'] as const) {
       tab.label = 'pi';
 
       const second = await harness.callRaw({ agent: 'scout', task: 'Second' });
-      assert.equal(second.details.tabLabel, 'Scout #2');
+      assert.equal(second.details.name, 'Scout #2');
       assert.deepEqual(
         Object.values((await harness.readState()).agents)
           .map((record) => record.tabLabel)
@@ -124,16 +119,14 @@ test('continues a closed workspace agent via resumeClosed', async () => {
     const first = await harness.call({
       agent: 'scout',
       task: 'first',
-      tabLabel: 'Scout Ws',
+      name: 'Scout Ws',
     });
     await harness.collect('Scout Ws');
     assert.equal(first.details.reused, false);
 
-    const second = await harness.call({
-      agent: 'scout',
-      task: 'second',
-      tabLabel: 'Scout Ws',
-      resumeClosed: true,
+    const second = await harness.callTool('agent_send', {
+      message: 'second',
+      name: 'Scout Ws',
     });
     await harness.collect('Scout Ws');
     assert.equal(second.details.resumed, true);
@@ -149,17 +142,15 @@ test('resumeClosed archives and resumes in workspace mode', async () => {
     const first = await harness.call({
       agent: 'scout',
       task: 'Remember the token ALPHA-42.',
-      tabLabel: 'Scout Ws Resume',
+      name: 'Scout Ws Resume',
     });
-    await harness.collect(first.details.tabLabel);
+    await harness.collect(first.details.name);
     const history = (await harness.readState()).closedHistory;
     assert.equal(history.length, 1);
 
-    const resumed = await harness.call({
-      agent: 'scout',
-      task: 'What token did I ask you to remember?',
-      tabLabel: 'Scout Ws Resume',
-      resumeClosed: true,
+    const resumed = await harness.callTool('agent_send', {
+      message: 'What token did I ask you to remember?',
+      name: 'Scout Ws Resume',
     });
     const remembered = await harness.collect('Scout Ws Resume');
     assert.equal(resumed.details.resumed, true);
@@ -172,9 +163,9 @@ test('archives a completed one-shot and resumes it with --session', async () => 
     const first = await harness.call({
       agent: 'scout',
       task: 'first slice',
-      tabLabel: 'Scout Resume',
+      name: 'Scout Resume',
     });
-    await harness.collect(first.details.tabLabel);
+    await harness.collect(first.details.name);
     const history = (await harness.readState()).closedHistory ?? [];
     assert.equal(history.length, 1);
     assert.equal(history[0]?.tabLabel, 'Scout Resume');
@@ -182,11 +173,9 @@ test('archives a completed one-shot and resumes it with --session', async () => 
     const sessionFile = history[0]?.childSessionFile;
     assert.ok(sessionFile && path.isAbsolute(sessionFile));
 
-    const resumed = await harness.call({
-      agent: 'scout',
-      task: 'second slice',
-      tabLabel: 'Scout Resume',
-      resumeClosed: true,
+    const resumed = await harness.callTool('agent_send', {
+      message: 'second slice',
+      name: 'Scout Resume',
     });
     await harness.collect('Scout Resume');
     if (resumed.isError) {
@@ -217,14 +206,13 @@ test('resumeClosed resolves the profile from the closed history when agent is om
     const first = await harness.call({
       agent: 'scout',
       task: 'first slice',
-      tabLabel: 'Scout Label Resume',
+      name: 'Scout Label Resume',
     });
-    await harness.collect(first.details.tabLabel);
+    await harness.collect(first.details.name);
 
-    const resumed = await harness.call({
-      task: 'second slice',
-      tabLabel: 'Scout Label Resume',
-      resumeClosed: true,
+    const resumed = await harness.callTool('agent_send', {
+      message: 'second slice',
+      name: 'Scout Label Resume',
     });
 
     assert.equal(resumed.isError, undefined);
@@ -234,19 +222,22 @@ test('resumeClosed resolves the profile from the closed history when agent is om
   });
 });
 
-test('resumeClosed does not spawn over a live working agent', async () => {
+test('agent_send steers a live working agent instead of resuming its closed copy', async () => {
   await withHarness({}, async (harness) => {
     await harness.call({
       agent: 'scout',
       task: 'first',
-      tabLabel: 'Scout Live Working',
+      name: 'Scout Live Working',
     });
     await harness.collect('Scout Live Working');
-    harness.fake.setBehavior(() => ({ neverSettle: true }));
+    harness.fake.setBehavior(() => ({
+      neverSettle: true,
+      controlAck: 'queued',
+    }));
     await harness.call({
       agent: 'scout',
       task: 'live',
-      tabLabel: 'Scout Live Working',
+      name: 'Scout Live Working',
     });
     await harness.waitFor(
       () =>
@@ -257,26 +248,29 @@ test('resumeClosed does not spawn over a live working agent', async () => {
         ),
       'live agent to report working',
     );
-    const blocked = await harness.call({
-      agent: 'scout',
-      task: 'resume anyway',
-      tabLabel: 'Scout Live Working',
-      resumeClosed: true,
+    const closedBefore = (await harness.readState()).closedHistory;
+
+    const steered = await harness.callTool('agent_send', {
+      message: 'correction',
+      name: 'Scout Live Working',
     });
-    assert.equal(blocked.isError, true);
-    assert.match(blocked.content[0].text, /still working/);
+
+    assert.equal(steered.isError, undefined);
+    assert.equal(steered.details.action, 'steer');
+    assert.equal(steered.details.status, 'queued');
     assert.equal(harness.fake.callsMatching('agent', 'start').length, 2);
+    assert.deepEqual((await harness.readState()).closedHistory, closedBefore);
   });
 });
 
-test('resumeClosed does not spawn over a settled detached live agent', async () => {
+test('agent_send does not resume over a settled detached live agent', async () => {
   await withHarness({}, async (harness) => {
     // No result artifact: the poller leaves the settled agent detached.
-    harness.fake.setBehavior(() => ({}));
+    harness.fake.setBehavior(() => ({ controlAck: 'idle' }));
     await harness.call({
       agent: 'scout',
       task: 'first',
-      tabLabel: 'Scout Live Settled',
+      name: 'Scout Live Settled',
     });
     await harness.waitFor(
       () =>
@@ -288,14 +282,12 @@ test('resumeClosed does not spawn over a settled detached live agent', async () 
       'detached live agent to settle',
     );
     await new Promise((resolve) => setTimeout(resolve, 1200));
-    const blocked = await harness.call({
-      agent: 'scout',
-      task: 'resume anyway',
-      tabLabel: 'Scout Live Settled',
-      resumeClosed: true,
+    const refused = await harness.callTool('agent_send', {
+      message: 'resume anyway',
+      name: 'Scout Live Settled',
     });
-    assert.equal(blocked.isError, true);
-    assert.match(blocked.content[0].text, /waiting to be delivered/);
+    assert.equal(refused.details.status, 'idle');
+    assert.match(refused.content[0].text, /result arrives automatically/);
     assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
     assert.equal(harness.messages.length, 0);
   });

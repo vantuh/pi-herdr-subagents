@@ -21,7 +21,7 @@ import {
 
 /**
  * Boots the real extension with a mock ExtensionAPI against a FakeHerdr, so a
- * test can call `herdr_agent` exactly as Pi would and then assert on the Herdr
+ * test can call the agent tools exactly as Pi would and then assert on the Herdr
  * commands, the pane layout, the state file and the messages the extension
  * pushed back into the session.
  *
@@ -38,7 +38,7 @@ function isAgentOutcome(message: SentMessage, label?: string): boolean {
     return false;
   }
   if (!label) return true;
-  return message.details.tabLabel === label;
+  return message.details.name === label;
 }
 
 const SHIM_PATH = path.join(
@@ -88,7 +88,7 @@ export interface Harness {
   renderers: Map<string, unknown>;
   /** Rendered lines of each `ctx.ui.custom` overlay, before its keys ran. */
   dialogLines: string[][];
-  /** Call the registered `herdr_agent` tool. Returns once the prompt is submitted. */
+  /** Call the registered `agent_spawn` tool. Returns once the prompt is submitted. */
   call(
     params: Record<string, unknown>,
     options?: { signal?: AbortSignal },
@@ -98,7 +98,7 @@ export interface Harness {
     params: Record<string, unknown>,
     options?: { signal?: AbortSignal },
   ): Promise<any>;
-  /** Call any other registered tool, e.g. `herdr_agent_control`. */
+  /** Call any other registered tool, e.g. `agent_send`. */
   callTool(
     name: string,
     params: Record<string, unknown>,
@@ -175,8 +175,15 @@ export async function createHarness(
   });
   await Promise.resolve(herdrAgentsExtension(host.pi));
 
-  const tool = host.tools.get('herdr_agent');
-  if (!tool) throw new Error('herdr_agent tool was not registered');
+  for (const name of [
+    'agent_spawn',
+    'agent_send',
+    'agent_stop',
+    'agent_status',
+  ]) {
+    if (!host.tools.has(name))
+      throw new Error(`${name} tool was not registered`);
+  }
 
   const callTool = (
     name: string,
@@ -206,9 +213,9 @@ export async function createHarness(
     commands: host.commands,
     renderers: host.renderers,
     dialogLines: host.dialogLines,
-    call: (params, callOptions) => callTool('herdr_agent', params, callOptions),
+    call: (params, callOptions) => callTool('agent_spawn', params, callOptions),
     callRaw: (params, callOptions) =>
-      callTool('herdr_agent', params, callOptions),
+      callTool('agent_spawn', params, callOptions),
     callTool,
     collect: (label, timeoutMs) => {
       const start = host.messages.length;

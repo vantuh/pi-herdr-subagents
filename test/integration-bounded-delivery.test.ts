@@ -228,7 +228,7 @@ test('a resume turn archives its own report and leaves the first immutable', asy
     await harness.call({
       agent: 'scout',
       task: 'First slice',
-      tabLabel: 'Scout Slice',
+      name: 'Scout Slice',
     });
     const firstDelivery = await harness.collect('Scout Slice');
     const firstReport = reportPathIn(firstDelivery.content);
@@ -236,11 +236,9 @@ test('a resume turn archives its own report and leaves the first immutable', asy
     const firstBytes = await fs.readFile(firstReport, 'utf8');
     assert.equal(firstBytes, first);
 
-    await harness.call({
-      agent: 'scout',
-      tabLabel: 'Scout Slice',
-      resumeClosed: true,
-      task: 'Second slice',
+    await harness.callTool('agent_send', {
+      name: 'Scout Slice',
+      message: 'Second slice',
     });
     const secondDelivery = await harness.collect('Scout Slice');
     const secondReport = reportPathIn(secondDelivery.content);

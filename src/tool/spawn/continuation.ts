@@ -20,7 +20,10 @@ import {
 import { paneStateKey } from '../../state/live-records.ts';
 import { bestEffort } from '../../utils.ts';
 import { textResult } from '../result.ts';
-import { resumeClosedLiveDecision } from '../status.ts';
+import {
+  liveAgentResumeRefusal,
+  unresolvedOwnedAgentResult,
+} from '../status.ts';
 import type {
   AgentPlacement,
   SpawnSettings,
@@ -34,9 +37,8 @@ export async function reuseParkedAgent(
   spawn: SpawnState,
   placement: AgentPlacement,
 ): Promise<AgentToolResult<Record<string, unknown>> | undefined> {
-  const { params } = invocation;
   const { current, state, tabs, usesTabs } = placement;
-  const { baseLabel, resumeClosed } = settings;
+  const { baseLabel, mode } = settings;
   const unresolved = findUnresolvedOwnedAgent(
     current,
     state,
@@ -44,11 +46,7 @@ export async function reuseParkedAgent(
     settings.owner.ownerSessionId,
   );
   if (unresolved) {
-    return textResult(
-      `Owned Herdr target ${unresolved.automationName} is still live, but its legacy owner/pane identity cannot be reconciled safely. Inspect that target; do not resend the task or spawn a replacement.`,
-      { tabLabel: baseLabel },
-      true,
-    );
+    return unresolvedOwnedAgentResult(unresolved);
   }
 
   const candidateTab = usesTabs
@@ -65,21 +63,15 @@ export async function reuseParkedAgent(
       readAgentQuestion(candidateRecord.resultFile),
     )) !== undefined;
 
-  // A task explicitly addressed by label to a live agent is almost
-  // certainly a failed reuse: silently spawning a
-  // duplicate ("... #2") would orphan the live pane. Default labels
-  // fall through — parallel spawns of one profile get suffixed labels
-  // via uniqueLabel. Fail loudly with the alternatives instead.
-  if (
-    params.tabLabel?.trim() &&
-    !resumeClosed &&
-    !answeringQuestion &&
-    candidatePane
-  ) {
+  // A caller-chosen name that matches a live agent is almost certainly a
+  // failed reuse: silently spawning a duplicate ("... #2") would orphan the
+  // live pane. Default names fall through — parallel spawns of one profile get
+  // suffixed labels via uniqueLabel.
+  if (mode === 'spawn' && settings.explicitName && candidatePane) {
     return textResult(
-      `A live Herdr agent named "${baseLabel}" already exists and cannot receive a new task. If it is still working, call herdr_agent again with the same tabLabel and no task to check its status. If it already settled, wait for the result to be delivered, then use resumeClosed: true with the same tabLabel to continue it with its context. If you want a fresh agent, pass a different tabLabel.`,
+      `A live agent named "${baseLabel}" already exists. Use agent_send with that name to answer or steer it, or pass a different name for a fresh agent.`,
       {
-        tabLabel: baseLabel,
+        name: baseLabel,
         paneId: candidatePane.pane_id,
         existingLifecycle: candidateRecord?.lifecycle,
       },
@@ -87,29 +79,32 @@ export async function reuseParkedAgent(
     );
   }
 
-  if (resumeClosed && candidatePane) {
-    const decision = resumeClosedLiveDecision({
+  if (mode === 'resume' && candidatePane) {
+    const refusal = liveAgentResumeRefusal({
       label: baseLabel,
       pane: candidatePane,
       record: candidateRecord,
-      answeringQuestion,
     });
-    if (decision.action === 'reject') {
+    return textResult(
+      refusal,
+      {
+        name: baseLabel,
+        paneId: candidatePane.pane_id,
+        liveStatus: candidatePane.agent_status,
+        detached: candidateRecord?.detached === true,
+      },
+      true,
+    );
+  }
+
+  if (mode === 'answer') {
+    if (!answeringQuestion || !candidatePane) {
       return textResult(
-        decision.text,
-        {
-          resumeClosed: true,
-          tabLabel: baseLabel,
-          paneId: candidatePane.pane_id,
-          liveStatus: candidatePane.agent_status,
-          detached: candidateRecord?.detached === true,
-        },
+        `Agent "${baseLabel}" has no parked question to answer.`,
+        { name: baseLabel },
         true,
       );
     }
-  }
-
-  if (answeringQuestion && candidatePane) {
     spawn.reused = true;
     spawn.tabId = candidateTab?.tab.tab_id ?? candidatePane.tab_id;
     spawn.tabLabel = candidateRecord?.tabLabel ?? baseLabel;
@@ -129,26 +124,25 @@ export async function claimClosedHistoryForResume(
   spawn: SpawnState,
   placement: AgentPlacement,
 ): Promise<AgentToolResult<Record<string, unknown>> | undefined> {
-  const { params } = invocation;
-  const { resumeClosed, owner } = settings;
-  if (!resumeClosed || spawn.reused) return undefined;
+  const { mode, owner, baseLabel } = settings;
+  if (mode !== 'resume' || spawn.reused) return undefined;
 
   if (!owner.ownerSessionId) {
     return textResult(
       'Cannot resume a closed agent: this Orchestrator session has no session id.',
-      { resumeClosed: true },
+      { name: baseLabel },
       true,
     );
   }
   const existing = findOwnedClosedHistory(
     placement.state,
     owner.ownerSessionId,
-    params.tabLabel!.trim(),
+    baseLabel,
   );
   if (!existing) {
     return textResult(
-      `No closed one-shot Herdr agent named "${params.tabLabel!.trim()}" is owned by this Orchestrator session.`,
-      { resumeClosed: true },
+      `No closed one-shot Herdr agent named "${baseLabel}" is owned by this Orchestrator session.`,
+      { name: baseLabel },
       true,
     );
   }
@@ -158,7 +152,7 @@ export async function claimClosedHistoryForResume(
     profileName: spawn.agent.name,
   });
   if (!claimed.ok) {
-    return textResult(claimed.error, { resumeClosed: true }, true);
+    return textResult(claimed.error, { name: baseLabel }, true);
   }
 
   spawn.resumeClaim = claimed.record;
@@ -186,7 +180,7 @@ export async function claimClosedHistoryForResume(
       cwdError
         ? `Cannot resume "${record.tabLabel}": ${cwdError}`
         : `Cannot resume "${record.tabLabel}": child session file is missing, corrupt, or does not match the stored session id/cwd.`,
-      { resumeClosed: true },
+      { name: baseLabel },
       true,
     );
   }
@@ -194,6 +188,6 @@ export async function claimClosedHistoryForResume(
   spawn.tabLabel = claimed.record.tabLabel;
   const resumedAgents = await discoverAgents(claimed.record.cwd);
   spawn.agent =
-    resumedAgents.find((item) => item.name === params.agent) ?? spawn.agent;
+    resumedAgents.find((item) => item.name === spawn.agent.name) ?? spawn.agent;
   return undefined;
 }

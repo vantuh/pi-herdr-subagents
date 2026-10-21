@@ -16,12 +16,12 @@ test('a successful one-shot reports the full details contract', async () => {
 
     assert.deepEqual(Object.keys(result.details).sort(), [
       'agent',
+      'name',
       'paneId',
       'reused',
       'tabId',
-      'tabLabel',
     ]);
-    assert.equal(result.details.tabLabel, 'Scout');
+    assert.equal(result.details.name, 'Scout');
     assert.match(result.content[0].text, /started/);
     // The agent profile travels back whole, not just by name.
     assert.equal(result.details.agent.name, 'scout');
@@ -34,9 +34,9 @@ test('a successful one-shot reports the full details contract', async () => {
 test('status check reports status only and never reads the pane', async () => {
   await withHarness({}, async (harness) => {
     harness.fake.setBehavior(() => ({}));
-    await harness.call({ agent: 'scout', task: 'Find it', tabLabel: 'Scout' });
+    await harness.call({ agent: 'scout', task: 'Find it', name: 'Scout' });
     await new Promise((resolve) => setTimeout(resolve, 500));
-    const status = await harness.call({ agent: 'scout', tabLabel: 'Scout' });
+    const status = await harness.callTool('agent_status', { name: 'Scout' });
 
     assert.equal(
       status.content[0].text,
@@ -52,7 +52,7 @@ test('status check reports status only and never reads the pane', async () => {
       record.resultFile,
       'Working on the status path.\n\n• bullet kept\n────',
     );
-    const previewed = await harness.call({ agent: 'scout', tabLabel: 'Scout' });
+    const previewed = await harness.callTool('agent_status', { name: 'Scout' });
 
     assert.equal(
       previewed.content[0].text,

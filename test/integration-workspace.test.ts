@@ -73,11 +73,7 @@ test('recreates the Agents workspace after the user closed it by hand', async ()
   await withHarness({ layout: 'workspace' }, async (harness) => {
     // A detached, never-settling spawn keeps the first workspace alive.
     harness.fake.setBehavior(() => ({ neverSettle: true }));
-    await harness.callRaw({
-      agent: 'scout',
-      task: 'stay',
-      tabLabel: 'Scout One',
-    });
+    await harness.callRaw({ agent: 'scout', task: 'stay', name: 'Scout One' });
     const first = harness.fake.workspaces.find(
       (workspace) => workspace.label === 'subagents',
     );
@@ -90,7 +86,7 @@ test('recreates the Agents workspace after the user closed it by hand', async ()
     await harness.callRaw({
       agent: 'scout',
       task: 'second',
-      tabLabel: 'Scout Two',
+      name: 'Scout Two',
     });
     assert.equal(harness.fake.callsMatching('workspace', 'create').length, 2);
     const secondWorkspaceId = flagValue(
@@ -113,11 +109,7 @@ test('/herdr-agents focuses an Agents-workspace agent via tab focus', async () =
     { layout: 'workspace', dialogInputs: [['\r']] },
     async (harness) => {
       harness.fake.setBehavior(() => ({ neverSettle: true }));
-      await harness.callRaw({
-        agent: 'scout',
-        task: 'stay',
-        tabLabel: 'Scout Ws',
-      });
+      await harness.callRaw({ agent: 'scout', task: 'stay', name: 'Scout Ws' });
 
       await harness.runCommand('herdr-agents');
 
@@ -235,22 +227,17 @@ test('serializes parallel workspace spawns into one workspace and unique labels'
 
 test('status check in workspace mode is a pure lookup and never creates the workspace', async () => {
   await withHarness({ layout: 'workspace' }, async (harness) => {
-    const ghost = await harness.call({ agent: 'scout', tabLabel: 'Ghost' });
+    const ghost = await harness.callTool('agent_status', { name: 'Ghost' });
     assert.equal(ghost.isError, true);
-    assert.match(ghost.content[0].text, /No running Herdr agent named "Ghost"/);
+    assert.match(ghost.content[0].text, /No running agent named "Ghost"/);
     // A missing workspace means "nothing to find", not a fresh workspace.
     assert.equal(harness.fake.callsMatching('workspace', 'create').length, 0);
 
     // A live detached agent is still findable by label.
     harness.fake.setBehavior(() => ({ neverSettle: true }));
-    await harness.call({
-      agent: 'scout',
-      task: 'stay',
-      tabLabel: 'Scout Live',
-    });
-    const rewait = await harness.call({
-      agent: 'scout',
-      tabLabel: 'Scout Live',
+    await harness.call({ agent: 'scout', task: 'stay', name: 'Scout Live' });
+    const rewait = await harness.callTool('agent_status', {
+      name: 'Scout Live',
     });
     assert.match(rewait.content[0].text, /status: /);
     // Still exactly the one workspace the spawn above created — the status check
@@ -262,11 +249,7 @@ test('status check in workspace mode is a pure lookup and never creates the work
 test('follow-up spawns perform no extra spawn-phase tab close', async () => {
   await withHarness({ layout: 'workspace' }, async (harness) => {
     harness.fake.setBehavior(() => ({ neverSettle: true }));
-    await harness.callRaw({
-      agent: 'scout',
-      task: 'first',
-      tabLabel: 'Scout Ws',
-    });
+    await harness.callRaw({ agent: 'scout', task: 'first', name: 'Scout Ws' });
     const closesAfterFirst = harness.fake.callsMatching('tab', 'close').length;
     // Creating spawn closes the workspace root tab; the agent tab stays open.
     assert.equal(closesAfterFirst, 1);
@@ -274,7 +257,7 @@ test('follow-up spawns perform no extra spawn-phase tab close', async () => {
     await harness.callRaw({
       agent: 'scout',
       task: 'second',
-      tabLabel: 'Scout Ws 2',
+      name: 'Scout Ws 2',
     });
     assert.equal(
       harness.fake.callsMatching('tab', 'close').length,

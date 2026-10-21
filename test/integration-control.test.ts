@@ -8,7 +8,7 @@ import type { Harness } from '../test-support/harness.ts';
 import { withHarness } from '../test-support/integration-harness.ts';
 
 /**
- * Control flows against the real poller (docs/plans/agent-control.md).
+ * Control flows against the real poller (docs/plans/done/agent-control.md).
  *
  * Real extension, real timer-driven poller, real claim and close, against
  * FakeHerdr. The only seam is a test-only `fs.promises.readFile` interposition
@@ -22,7 +22,7 @@ import { withHarness } from '../test-support/integration-harness.ts';
  * [Gate result]): a marker write that loses to a collection tick already in
  * flight does not stop that delivery, and the pane closes. The ordinary-path
  * protection — a marker on disk before the poller's read — still blocks
- * delivery. Check 7 forces the other overlap: a real `herdr_agent_control` call
+ * delivery. Check 7 forces the other overlap: a real `agent_stop` call
  * publishes and waits while a collection is held after its marker read, and the
  * collection is released while the tool is still in flight.
  */
@@ -221,11 +221,7 @@ async function startWorkingChild(
   },
 ) {
   harness.fake.setBehavior(() => ({ ...options }));
-  await harness.call({
-    agent: 'scout',
-    task: 'Long job',
-    tabLabel: 'Scout Work',
-  });
+  await harness.call({ agent: 'scout', task: 'Long job', name: 'Scout Work' });
   const record = Object.values((await harness.readState()).agents)[0];
   assert.ok(record?.resultFile, 'the record has a result file');
   assert.ok(record.paneId, 'the record has a pane id');
@@ -246,9 +242,8 @@ test('a steer keeps the child working and its text arrives in the single result'
       result: 'work done',
     });
 
-    const steer = await harness.callTool('herdr_agent_control', {
-      tabLabel: child.tabLabel,
-      action: 'steer',
+    const steer = await harness.callTool('agent_send', {
+      name: child.tabLabel,
       message: 'use the cache layer',
     });
     assert.equal(steer.details.status, 'queued');
@@ -278,9 +273,8 @@ test('an interrupt leaves the run undelivered and the agent open', async () => {
       result: 'text of an interrupted run',
     });
 
-    const interrupt = await harness.callTool('herdr_agent_control', {
-      tabLabel: child.tabLabel,
-      action: 'interrupt',
+    const interrupt = await harness.callTool('agent_stop', {
+      name: child.tabLabel,
     });
     assert.equal(interrupt.details.status, 'aborted');
 
@@ -310,9 +304,8 @@ test('a question written before an interrupt is still delivered', async () => {
       'utf8',
     );
 
-    const interrupt = await harness.callTool('herdr_agent_control', {
-      tabLabel: child.tabLabel,
-      action: 'interrupt',
+    const interrupt = await harness.callTool('agent_stop', {
+      name: child.tabLabel,
     });
     assert.equal(interrupt.details.status, 'aborted');
 
@@ -387,7 +380,7 @@ test('control gate 7: a control call never claims, collects or closes a collecti
       const agentCallsBefore = agentCalls();
       let controlSettled = false;
       const control = harness
-        .callTool('herdr_agent_control', { tabLabel, action: 'interrupt' })
+        .callTool('agent_stop', { name: tabLabel })
         .then((result) => {
           controlSettled = true;
           return result;
@@ -462,7 +455,7 @@ test('a simulated control write that loses to a close stays contained and fenced
     await harness.call({
       agent: 'scout',
       task: 'Long job',
-      tabLabel: 'Scout Work',
+      name: 'Scout Work',
     });
     const record = Object.values((await harness.readState()).agents)[0];
     assert.ok(record?.resultFile, 'the record has a result file');

@@ -80,21 +80,9 @@ test('keeps a single right column when a third agent joins two live ones', async
   await withHarness({}, async (harness) => {
     // Detached spawns that never settle keep three agents live at once.
     harness.fake.setBehavior(() => ({ neverSettle: true }));
-    await harness.callRaw({
-      agent: 'scout',
-      task: 'one',
-      tabLabel: 'Scout A',
-    });
-    await harness.callRaw({
-      agent: 'scout',
-      task: 'two',
-      tabLabel: 'Scout B',
-    });
-    await harness.callRaw({
-      agent: 'scout',
-      task: 'three',
-      tabLabel: 'Scout C',
-    });
+    await harness.callRaw({ agent: 'scout', task: 'one', name: 'Scout A' });
+    await harness.callRaw({ agent: 'scout', task: 'two', name: 'Scout B' });
+    await harness.callRaw({ agent: 'scout', task: 'three', name: 'Scout C' });
 
     const root = harness.fake.layoutFor(harness.fake.orchestratorPane.tab_id);
     const directions = splitDirections(root);

@@ -21,20 +21,12 @@ test('/herdr-agents shows the published cost and leaves the widget alone', async
       context: { tokens: 38_000, contextWindow: 200_000 },
       cost: 0.024,
     }));
-    await harness.call({
-      agent: 'scout',
-      task: 'first',
-      tabLabel: 'Scout Cost',
-    });
+    await harness.call({ agent: 'scout', task: 'first', name: 'Scout Cost' });
     harness.fake.setBehavior(() => ({
       question: 'Which file next?',
       context: { tokens: 5_000, contextWindow: 200_000 },
     }));
-    await harness.call({
-      agent: 'scout',
-      task: 'second',
-      tabLabel: 'Scout Free',
-    });
+    await harness.call({ agent: 'scout', task: 'second', name: 'Scout Free' });
     const widgetLines = () =>
       (harness.widgets.get(AGENTS_WIDGET_ID) ?? []) as string[];
     await harness.waitFor(
@@ -76,11 +68,7 @@ test('closing a one-shot freezes its cost for the closed row', async () => {
       context: { tokens: 4_000, contextWindow: 200_000 },
       cost: 0.024,
     }));
-    await harness.call({
-      agent: 'scout',
-      task: 'first',
-      tabLabel: 'Scout Frozen',
-    });
+    await harness.call({ agent: 'scout', task: 'first', name: 'Scout Frozen' });
     const record = Object.values((await harness.readState()).agents)[0];
     const tempDir = path.dirname(record?.resultFile ?? '');
     await harness.collect('Scout Frozen');
@@ -106,11 +94,7 @@ test('closing a one-shot freezes its cost for the closed row', async () => {
 test('a resumed one-shot republishes its cumulative cost without doubling it', async () => {
   await withHarness({}, async (harness) => {
     harness.fake.setBehavior(() => ({ result: 'first', cost: 0.024 }));
-    await harness.call({
-      agent: 'scout',
-      task: 'first',
-      tabLabel: 'Scout Resume',
-    });
+    await harness.call({ agent: 'scout', task: 'first', name: 'Scout Resume' });
     await harness.collect('Scout Resume');
     await harness.waitFor(
       async () => (await harness.readState()).closedHistory.length === 1,
@@ -119,11 +103,9 @@ test('a resumed one-shot republishes its cumulative cost without doubling it', a
 
     // A close that raced the publish keeps the same session's frozen total.
     harness.fake.setBehavior(() => ({ result: 'second' }));
-    await harness.call({
-      agent: 'scout',
-      task: 'second',
-      tabLabel: 'Scout Resume',
-      resumeClosed: true,
+    await harness.callTool('agent_send', {
+      message: 'second',
+      name: 'Scout Resume',
     });
     await harness.collect('Scout Resume');
     await harness.waitFor(
@@ -139,11 +121,9 @@ test('a resumed one-shot republishes its cumulative cost without doubling it', a
     // The next generation publishes a larger cumulative total, which replaces
     // the frozen one instead of adding to it.
     harness.fake.setBehavior(() => ({ result: 'third', cost: 0.03 }));
-    await harness.call({
-      agent: 'scout',
-      task: 'third',
-      tabLabel: 'Scout Resume',
-      resumeClosed: true,
+    await harness.callTool('agent_send', {
+      message: 'third',
+      name: 'Scout Resume',
     });
     await harness.collect('Scout Resume');
     await harness.waitFor(
@@ -172,11 +152,7 @@ test('/herdr-agents watches from an empty list until an agent appears', async ()
 
       // A parallel spawn must appear without reopening the command.
       harness.fake.setBehavior(() => ({ question: 'Which file next?' }));
-      await harness.call({
-        agent: 'scout',
-        task: 'first',
-        tabLabel: 'Scout Late',
-      });
+      await harness.call({ agent: 'scout', task: 'first', name: 'Scout Late' });
       await harness.waitFor(
         () => dialog!.render().join('\n').includes('Scout Late (scout)'),
         'the spawned agent in the open modal',
@@ -209,11 +185,7 @@ test('/herdr-agents updates context and cost and focuses a newly spawned agent',
         context: { tokens: 38_000, contextWindow: 200_000 },
         cost: 0.024,
       }));
-      await harness.call({
-        agent: 'scout',
-        task: 'first',
-        tabLabel: 'Scout A',
-      });
+      await harness.call({ agent: 'scout', task: 'first', name: 'Scout A' });
       await harness.waitFor(
         () =>
           ((harness.widgets.get(AGENTS_WIDGET_ID) ?? []) as string[]).some(
@@ -255,11 +227,7 @@ test('/herdr-agents updates context and cost and focuses a newly spawned agent',
       // A second agent appears in the same open modal, and the selection
       // resolves against the refreshed rows.
       harness.fake.setBehavior(() => ({ question: 'Which file next?' }));
-      await harness.call({
-        agent: 'scout',
-        task: 'second',
-        tabLabel: 'Scout B',
-      });
+      await harness.call({ agent: 'scout', task: 'second', name: 'Scout B' });
       await harness.waitFor(
         () => rows().includes('Scout B (scout)'),
         'the second agent in the open modal',

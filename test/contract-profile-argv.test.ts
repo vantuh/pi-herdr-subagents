@@ -93,10 +93,7 @@ test('a profile with every optional frontmatter field drives the exact spawn arg
       );
 
       // Detached keeps the temp dir alive so the system file is readable.
-      const result = await harness.callRaw({
-        agent: 'worker',
-        task: 'Slice',
-      });
+      const result = await harness.callRaw({ agent: 'worker', task: 'Slice' });
       assert.equal(result.isError, undefined);
 
       const start = harness.fake.callsMatching('agent', 'start')[0];
@@ -220,7 +217,7 @@ test('session_start refreshes the agent listing in the schema description', asyn
     async (harness) => {
       await harness.fire('session_start');
 
-      const tool = harness.getTool('herdr_agent') as
+      const tool = harness.getTool('agent_spawn') as
         | { parameters: { properties: Record<string, any> } }
         | undefined;
       assert.ok(tool);
@@ -240,7 +237,7 @@ test('session_start with no profiles still refreshes the agent listing', async (
   await withHarness({ profiles: [] }, async (harness) => {
     await harness.fire('session_start');
 
-    const tool = harness.getTool('herdr_agent') as
+    const tool = harness.getTool('agent_spawn') as
       | { parameters: { properties: Record<string, any> } }
       | undefined;
     assert.ok(tool);
@@ -263,7 +260,7 @@ test('session_start reload reason refreshes the agent listing', async () => {
     async (harness) => {
       await harness.fire('session_start', { reason: 'reload' });
 
-      const tool = harness.getTool('herdr_agent') as
+      const tool = harness.getTool('agent_spawn') as
         | { parameters: { properties: Record<string, any> } }
         | undefined;
       assert.ok(tool);

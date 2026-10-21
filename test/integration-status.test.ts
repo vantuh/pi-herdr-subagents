@@ -16,7 +16,7 @@ test('status check reports a settled child without a result and reads no pane', 
 
     await harness.call({ agent: 'scout', task: 'Look around' });
     await new Promise((resolve) => setTimeout(resolve, 500));
-    const result = await harness.call({ agent: 'scout', tabLabel: 'Scout' });
+    const result = await harness.callTool('agent_status', { name: 'Scout' });
 
     assert.match(result.content[0].text, /finished without a result/);
     assert.doesNotMatch(result.content[0].text, /preview/);
@@ -47,7 +47,7 @@ test('status check previews the child assistant text without reading the pane', 
       ].join('\n'),
     );
 
-    const result = await harness.call({ agent: 'scout', tabLabel: 'Scout' });
+    const result = await harness.callTool('agent_status', { name: 'Scout' });
 
     assert.equal(result.details.status, 'working');
     assert.match(result.content[0].text, /status: working/);
@@ -73,7 +73,7 @@ test('status check never prompts, waits, claims, or closes', async () => {
     harness.fake.setBehavior(() => ({ neverSettle: true }));
 
     await harness.call({ agent: 'scout', task: 'Look around' });
-    const result = await harness.call({ agent: 'scout', tabLabel: 'Scout' });
+    const result = await harness.callTool('agent_status', { name: 'Scout' });
 
     assert.equal(result.isError, undefined);
     assert.equal(result.details.status, 'working');
@@ -101,55 +101,56 @@ test('status check resolves the profile from the label when agent is omitted', a
     harness.fake.setBehavior(() => ({ neverSettle: true }));
 
     await harness.call({ agent: 'scout', task: 'Look around' });
-    const result = await harness.call({ tabLabel: 'Scout' });
+    const result = await harness.callTool('agent_status', { name: 'Scout' });
 
     assert.equal(result.isError, undefined);
     assert.equal(result.details.status, 'working');
     assert.equal(result.details.agent.name, 'scout');
-    assert.equal(result.details.tabLabel, 'Scout');
+    assert.equal(result.details.name, 'Scout');
     assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
   });
 });
 
 test('rejects a status check for an unknown label', async () => {
   await withHarness({}, async (harness) => {
-    const result = await harness.call({ agent: 'scout', tabLabel: 'Ghost' });
+    const result = await harness.callTool('agent_status', { name: 'Ghost' });
 
     assert.equal(result.isError, true);
-    assert.match(
-      result.content[0].text,
-      /No running Herdr agent named "Ghost"/,
-    );
+    assert.match(result.content[0].text, /No running agent named "Ghost"/);
   });
 });
 
-test('requires a label when task is omitted', async () => {
+test('agent_status without a name says when no live agent is owned', async () => {
   await withHarness({}, async (harness) => {
-    const result = await harness.call({ agent: 'scout' });
+    const result = await harness.callTool('agent_status', {});
 
-    assert.equal(result.isError, true);
-    assert.match(result.content[0].text, /tabLabel is required/);
+    assert.equal(result.isError, undefined);
+    assert.match(result.content[0].text, /No live agents are owned/);
+    assert.deepEqual(result.details.agents, []);
   });
 });
 
-test('a blank task is a status check and does not spawn', async () => {
+test('agent_status without a name lists only agents this session owns', async () => {
   await withHarness({}, async (harness) => {
-    const missing = await harness.call({ agent: 'scout', task: '   ' });
-    assert.equal(missing.isError, true);
-    assert.match(missing.content[0].text, /tabLabel is required/);
-    assert.equal(harness.fake.callsMatching('agent', 'start').length, 0);
+    harness.fake.setBehavior(() => ({ neverSettle: true }));
+    await harness.call({ agent: 'scout', task: 'mine', name: 'Mine' });
+    await harness.call({ agent: 'scout', task: 'theirs', name: 'Theirs' });
+    const state = await harness.readState();
+    for (const record of Object.values(state.agents)) {
+      if (record.tabLabel === 'Theirs') record.ownerSessionId = 'other-session';
+    }
+    await fs.writeFile(harness.statePath, JSON.stringify(state));
+    const prompts = harness.fake.callsMatching('agent', 'prompt').length;
 
-    const unknown = await harness.call({
-      agent: 'scout',
-      task: '',
-      tabLabel: 'Ghost',
-    });
-    assert.equal(unknown.isError, true);
-    assert.match(
-      unknown.content[0].text,
-      /No running Herdr agent named "Ghost"/,
-    );
-    assert.equal(harness.fake.callsMatching('agent', 'start').length, 0);
+    const result = await harness.callTool('agent_status', {});
+
+    assert.equal(result.isError, undefined);
+    assert.deepEqual(result.details.agents, [
+      { name: 'Mine', agent: 'scout', status: 'working' },
+    ]);
+    assert.match(result.content[0].text, /Mine \(scout\): working/);
+    assert.doesNotMatch(result.content[0].text, /Theirs/);
+    assert.equal(harness.fake.callsMatching('agent', 'prompt').length, prompts);
   });
 });
 
@@ -163,16 +164,15 @@ test('status check keeps ownership after a simulated handoff changes both termin
     await harness.call({
       agent: 'scout',
       task: 'One task',
-      tabLabel: 'Handoff Question',
+      name: 'Handoff Question',
     });
     const before = Object.values((await harness.readState()).agents)[0];
     harness.fake.simulateLiveHandoff();
-    const result = await harness.call({
-      agent: 'scout',
-      tabLabel: 'Handoff Question',
+    const result = await harness.callTool('agent_status', {
+      name: 'Handoff Question',
     });
     assert.equal(result.isError, undefined);
-    assert.equal(result.details.tabLabel, 'Handoff Question');
+    assert.equal(result.details.name, 'Handoff Question');
     await harness.fake.releaseChildren();
     const delivered = await harness.collect('Handoff Question');
     assert.match(delivered.content, /Handoff question/);
@@ -182,10 +182,9 @@ test('status check keeps ownership after a simulated handoff changes both termin
     assert.equal(after?.automationName, before?.automationName);
     assert.equal(harness.fake.callsMatching('pane', 'close').length, 0);
     harness.fake.setBehavior(() => ({ result: 'HANDOFF_ANSWER' }));
-    const answered = await harness.call({
-      agent: 'scout',
-      tabLabel: 'Handoff Question',
-      task: 'Answer',
+    const answered = await harness.callTool('agent_send', {
+      name: 'Handoff Question',
+      message: 'Answer',
     });
     assert.equal(answered.details.reused, true);
     const answer = await harness.collect('Handoff Question');
@@ -200,15 +199,14 @@ test('unreconcilable legacy handoff records are retained without adopting or rep
     await harness.call({
       agent: 'scout',
       task: 'One task',
-      tabLabel: 'Legacy Handoff',
+      name: 'Legacy Handoff',
     });
     const state = await harness.readState();
     for (const record of Object.values(state.agents)) delete record.ownerPaneId;
     await fs.writeFile(harness.statePath, JSON.stringify(state));
     harness.fake.simulateLiveHandoff();
-    const rewait = await harness.call({
-      agent: 'scout',
-      tabLabel: 'Legacy Handoff',
+    const rewait = await harness.callTool('agent_status', {
+      name: 'Legacy Handoff',
     });
     assert.equal(rewait.isError, true);
     assert.match(
@@ -217,7 +215,7 @@ test('unreconcilable legacy handoff records are retained without adopting or rep
     );
     const duplicate = await harness.call({
       agent: 'scout',
-      tabLabel: 'Legacy Handoff',
+      name: 'Legacy Handoff',
       task: 'Do not duplicate',
     });
     assert.equal(duplicate.isError, true);

@@ -121,7 +121,7 @@ export async function deliverDetachedOutcomes(
         ),
         display: true,
         details: {
-          tabLabel: agent.tabLabel,
+          name: agent.tabLabel,
           agent: agent.agent,
           paneId: agent.paneId,
           question,
@@ -215,7 +215,7 @@ export async function deliverDetachedOutcomes(
       ].join('\n'),
       display: true,
       details: {
-        tabLabel: agent.tabLabel,
+        name: agent.tabLabel,
         agent: agent.agent,
         paneId: agent.paneId,
         // The renderer shows this on its own under a header; `content` keeps

@@ -38,11 +38,7 @@ function failStateReadOnce(
 async function seedClosedOneShotWithMissingSession(
   harness: Harness,
 ): Promise<Awaited<ReturnType<Harness['readState']>>> {
-  await harness.call({
-    agent: 'scout',
-    task: 'first',
-    tabLabel: 'Scout Resume',
-  });
+  await harness.call({ agent: 'scout', task: 'first', name: 'Scout Resume' });
   await harness.collect('Scout Resume');
   await harness.fire('session_shutdown');
   const state = await harness.readState();
@@ -53,11 +49,7 @@ async function seedClosedOneShotWithMissingSession(
 
 test('resumeClosed fails closed when placement state pruning fails', async () => {
   await withHarness({}, async (harness) => {
-    await harness.call({
-      agent: 'scout',
-      task: 'first',
-      tabLabel: 'Scout Resume',
-    });
+    await harness.call({ agent: 'scout', task: 'first', name: 'Scout Resume' });
     await harness.collect('Scout Resume');
     await harness.fire('session_shutdown');
     const state = await harness.readState();
@@ -72,16 +64,14 @@ test('resumeClosed fails closed when placement state pruning fails', async () =>
     await fs.writeFile(harness.statePath, JSON.stringify(state));
     setFailNextStateSaves(1);
 
-    const result = await harness.call({
-      agent: 'scout',
-      task: 'again',
-      tabLabel: 'Scout Resume',
-      resumeClosed: true,
+    const result = await harness.callTool('agent_send', {
+      message: 'again',
+      name: 'Scout Resume',
     });
     assert.equal(result.isError, true);
     assert.equal(
       result.content[0].text,
-      'No closed one-shot Herdr agent named "Scout Resume" is owned by this Orchestrator session.',
+      'No agent named "Scout Resume" found for this session. Use agent_spawn to start one.',
     );
     assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
     assert.equal(harness.fake.callsMatching('pane', 'split').length, 1);
@@ -99,11 +89,9 @@ test('resumeClosed releases no claim when invalidation succeeded', async () => {
       raw.includes('"status": "invalid"'),
     );
     try {
-      const result = await harness.call({
-        agent: 'scout',
-        task: 'again',
-        tabLabel: 'Scout Resume',
-        resumeClosed: true,
+      const result = await harness.callTool('agent_send', {
+        message: 'again',
+        name: 'Scout Resume',
       });
       assert.equal(result.isError, true);
       assert.equal(
@@ -128,11 +116,9 @@ test('resumeClosed releases the claim again when invalidation failed', async () 
       raw.includes('"status": "claimed"'),
     );
     try {
-      const result = await harness.call({
-        agent: 'scout',
-        task: 'again',
-        tabLabel: 'Scout Resume',
-        resumeClosed: true,
+      const result = await harness.callTool('agent_send', {
+        message: 'again',
+        name: 'Scout Resume',
       });
       assert.equal(result.isError, true);
       assert.match(
@@ -155,29 +141,15 @@ test('resumeClosed releases the claim again when invalidation failed', async () 
 
 test('concurrent resumeClosed has a single winner', async () => {
   await withHarness({}, async (harness) => {
-    await harness.call({
-      agent: 'scout',
-      task: 'first',
-      tabLabel: 'Scout Resume',
-    });
+    await harness.call({ agent: 'scout', task: 'first', name: 'Scout Resume' });
     await harness.collect('Scout Resume');
     harness.fake.setBehavior(() => ({
       result: 'resumed',
       delayMs: 400,
     }));
     const results = await Promise.all([
-      harness.call({
-        agent: 'scout',
-        task: 'a',
-        tabLabel: 'Scout Resume',
-        resumeClosed: true,
-      }),
-      harness.call({
-        agent: 'scout',
-        task: 'b',
-        tabLabel: 'Scout Resume',
-        resumeClosed: true,
-      }),
+      harness.callTool('agent_send', { message: 'a', name: 'Scout Resume' }),
+      harness.callTool('agent_send', { message: 'b', name: 'Scout Resume' }),
     ]);
     assert.equal(results.filter((item) => !item.isError).length, 1);
     assert.equal(results.filter((item) => item.isError).length, 1);

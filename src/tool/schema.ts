@@ -2,7 +2,7 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
 export const DEFAULT_AGENT_PARAM_DESCRIPTION =
-  'Agent profile name from ~/.pi/agent/agents/*.md or the project .pi/agents. Required to start a new agent; omit it when tabLabel addresses an existing one (status check, answering a question, resumeClosed).';
+  'Agent profile name from ~/.pi/agent/agents/*.md or the project .pi/agents.';
 
 /**
  * The `agent` parameter is model-facing: profiles marked
@@ -32,33 +32,61 @@ export function describeAgentProfiles(
   return `${DEFAULT_AGENT_PARAM_DESCRIPTION}${listing}`;
 }
 
-export type HerdrAgentParams = Static<ReturnType<typeof buildHerdrAgentParams>>;
+export type AgentSpawnParams = Static<ReturnType<typeof buildAgentSpawnParams>>;
 
-export function buildHerdrAgentParams(
+export function buildAgentSpawnParams(
   agentDescription: string = DEFAULT_AGENT_PARAM_DESCRIPTION,
 ) {
   return Type.Object({
-    agent: Type.Optional(
-      Type.String({
-        description: agentDescription,
-      }),
-    ),
-    task: Type.Optional(
-      Type.String({
-        description:
-          'Self-contained task to give the Herdr agent. Omit to check a live agent matched by tabLabel: the call returns its status and a preview of its latest captured assistant text, and does not send a new prompt. A blank task is treated the same way. Check only when the user asks or a decision depends on its progress, never to wait for completion: the outcome arrives as a message automatically.',
-      }),
-    ),
-    tabLabel: Type.Optional(
+    agent: Type.String({ description: agentDescription }),
+    task: Type.String({
+      description:
+        'Self-contained task to give the new agent. The outcome arrives as a message automatically; never wait for it.',
+    }),
+    name: Type.Optional(
       Type.String({
         description:
-          'Herdr agent label. Defaults to the agent role, e.g. Researcher. Required when task is omitted, to identify which live agent to check.',
+          'Name of the new agent. Defaults to the agent role, e.g. Researcher. Must not match a live agent: use agent_send to reach one.',
       }),
     ),
-    resumeClosed: Type.Optional(
-      Type.Boolean({
+  });
+}
+
+export type AgentSendParams = Static<ReturnType<typeof buildAgentSendParams>>;
+
+export function buildAgentSendParams() {
+  return Type.Object({
+    name: Type.String({
+      description:
+        'Exact name of an agent owned by this session, live or closed.',
+    }),
+    message: Type.String({
+      description:
+        'What to send. Answers a parked question, steers a running agent at its next turn boundary, or gives a closed agent a follow-up task that keeps its context.',
+    }),
+  });
+}
+
+export type AgentStopParams = Static<ReturnType<typeof buildAgentStopParams>>;
+
+export function buildAgentStopParams() {
+  return Type.Object({
+    name: Type.String({
+      description: 'Exact name of a live agent owned by this session.',
+    }),
+  });
+}
+
+export type AgentStatusParams = Static<
+  ReturnType<typeof buildAgentStatusParams>
+>;
+
+export function buildAgentStatusParams() {
+  return Type.Object({
+    name: Type.Optional(
+      Type.String({
         description:
-          'Give a follow-up task to a closed agent from this session, keeping its context. Matched by exact tabLabel; requires a non-empty task.',
+          'Exact name of a live agent to check. Omit to list the live agents this session owns.',
       }),
     ),
   });

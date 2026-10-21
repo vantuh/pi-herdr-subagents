@@ -19,16 +19,13 @@ test('a status check reports status and does not prompt, wait, or close', async 
     const started = await harness.callRaw({
       agent: 'scout',
       task: 'long',
-      tabLabel: 'Scout RW',
+      name: 'Scout RW',
     });
     assert.match(started.content[0].text, /Do not check its status/);
     await new Promise((resolve) => setTimeout(resolve, 300));
     const before = harness.fake.calls.length;
 
-    const result = await harness.call({
-      agent: 'scout',
-      tabLabel: 'Scout RW',
-    });
+    const result = await harness.callTool('agent_status', { name: 'Scout RW' });
 
     assert.equal(result.isError, undefined);
     assert.equal(result.details.status, 'working');
@@ -46,76 +43,68 @@ test('a status check reports status and does not prompt, wait, or close', async 
   });
 });
 
-test('a task without agent needs a live agent under the label', async () => {
+test('agent_send to an unknown name reports it and starts nothing', async () => {
   await withHarness({}, async (harness) => {
-    const result = await harness.call({ tabLabel: 'Ghost', task: 'Go' });
+    const result = await harness.callTool('agent_send', {
+      name: 'Ghost',
+      message: 'Go',
+    });
 
     assert.equal(result.isError, true);
     assert.match(
       result.content[0].text,
-      /No agent labeled "Ghost" found for this session\. Pass agent to start a new one\./,
+      /No agent named "Ghost" found for this session\. Use agent_spawn to start one\./,
     );
     assert.deepEqual(harness.fake.callsMatching('agent', 'start'), []);
   });
 });
 
-test('a call without agent and without tabLabel starts nothing', async () => {
+test('agent_spawn without agent or task starts nothing', async () => {
   await withHarness({}, async (harness) => {
-    const result = await harness.call({ task: 'Go' });
+    const noAgent = await harness.call({ task: 'Go' });
+    assert.equal(noAgent.isError, true);
+    assert.match(noAgent.content[0].text, /agent is required\./);
 
-    assert.equal(result.isError, true);
-    assert.match(
-      result.content[0].text,
-      /agent is required to start a new agent; tabLabel is required to address an existing one\./,
-    );
+    const noTask = await harness.call({ agent: 'scout', task: '  ' });
+    assert.equal(noTask.isError, true);
+    assert.match(noTask.content[0].text, /task is required\./);
     assert.deepEqual(harness.fake.callsMatching('agent', 'start'), []);
   });
 });
 
-test('resumeClosed without a task is rejected and does not resurrect', async () => {
+test('agent_send requires a name and a message and starts nothing', async () => {
   await withHarness({}, async (harness) => {
-    const result = await harness.call({
-      agent: 'scout',
-      tabLabel: 'Scout Resume',
-      resumeClosed: true,
+    const noMessage = await harness.callTool('agent_send', {
+      name: 'Scout Resume',
+      message: ' ',
     });
-    assert.equal(result.isError, true);
-    assert.match(
-      result.content[0].text,
-      /resumeClosed requires a non-empty task/,
-    );
+    assert.equal(noMessage.isError, true);
+    assert.match(noMessage.content[0].text, /message is required\./);
+
+    const noName = await harness.callTool('agent_send', {
+      name: '',
+      message: 'continue',
+    });
+    assert.equal(noName.isError, true);
+    assert.match(noName.content[0].text, /name is required\./);
     assert.deepEqual(harness.fake.callsMatching('agent', 'start'), []);
   });
 });
 
-test('resumeClosed without tabLabel is rejected', async () => {
+test('agent_status does not resume a closed agent', async () => {
   await withHarness({}, async (harness) => {
-    const result = await harness.call({
-      agent: 'scout',
-      task: 'continue',
-      resumeClosed: true,
-    });
-    assert.equal(result.isError, true);
-    assert.match(result.content[0].text, /explicit non-empty tabLabel/);
-  });
-});
-
-test('omitting task checks status and does not resume a closed agent', async () => {
-  await withHarness({}, async (harness) => {
-    await harness.call({
-      agent: 'scout',
-      task: 'one',
-      tabLabel: 'Scout Closed',
-    });
+    await harness.call({ agent: 'scout', task: 'one', name: 'Scout Closed' });
     await harness.collect('Scout Closed');
     const starts = harness.fake.callsMatching('agent', 'start').length;
 
-    const result = await harness.call({
-      agent: 'scout',
-      tabLabel: 'Scout Closed',
+    const result = await harness.callTool('agent_status', {
+      name: 'Scout Closed',
     });
     assert.equal(result.isError, true);
-    assert.match(result.content[0].text, /No running Herdr agent/);
+    assert.match(
+      result.content[0].text,
+      /No running agent named "Scout Closed"/,
+    );
     assert.equal(harness.fake.callsMatching('agent', 'start').length, starts);
   });
 });
@@ -125,7 +114,7 @@ test('delivers a detached one-shot result and closes the agent', async () => {
     await harness.callRaw({
       agent: 'scout',
       task: 'background',
-      tabLabel: 'Scout Detached',
+      name: 'Scout Detached',
     });
 
     await harness.waitFor(
@@ -193,10 +182,7 @@ test('keeps spawn warnings out of a detached question body', async () => {
     async (harness) => {
       harness.fake.setBehavior(() => ({ question: 'Which module first?' }));
 
-      await harness.call({
-        agent: 'worker',
-        task: 'background',
-      });
+      await harness.call({ agent: 'worker', task: 'background' });
 
       await harness.waitFor(
         () => harness.messages.length > 0,
@@ -222,7 +208,7 @@ test('keeps the claim when a detached agent settles with nothing to deliver', as
     await harness.call({
       agent: 'scout',
       task: 'background',
-      tabLabel: 'Scout Silent',
+      name: 'Scout Silent',
     });
 
     await harness.waitFor(async () => {

@@ -197,10 +197,7 @@ test('a stalled prompt returns immediately and leaves the pane open', async () =
 test('returns before a never-settling agent finishes and leaves it open', async () => {
   await withHarness({}, async (harness) => {
     harness.fake.setBehavior(() => ({ neverSettle: true }));
-    const started = await harness.call({
-      agent: 'scout',
-      task: 'Long job',
-    });
+    const started = await harness.call({ agent: 'scout', task: 'Long job' });
     assert.match(started.content[0].text, /started/);
     assert.equal(harness.fake.panes.length, 2);
     assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);
@@ -213,7 +210,7 @@ test('rejects an unknown agent profile before touching Herdr', async () => {
     const result = await harness.call({ agent: 'nope', task: 'anything' });
 
     assert.equal(result.isError, true);
-    assert.match(result.content[0].text, /Unknown Herdr agent: nope/);
+    assert.match(result.content[0].text, /Unknown agent profile: nope/);
     assert.match(result.content[0].text, /scout/);
     assert.equal(harness.fake.calls.length, 0);
   });

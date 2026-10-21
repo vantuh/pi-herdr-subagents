@@ -17,7 +17,6 @@ import type {
   HerdrAgentsState,
 } from '../../state/schema.ts';
 import type { orchestratorIdentity } from '../child-args.ts';
-import type { HerdrAgentParams } from '../schema.ts';
 
 export interface SpawnTarget {
   tabId: string;
@@ -26,7 +25,6 @@ export interface SpawnTarget {
 
 export interface TaskInvocation {
   pi: ExtensionAPI;
-  params: HerdrAgentParams;
   /** Absent when reopening a closed agent for reading: no turn is sent. */
   task?: string;
   signal: AbortSignal | undefined;
@@ -34,12 +32,17 @@ export interface TaskInvocation {
   ctx: ExtensionContext;
 }
 
+export type SpawnMode = 'spawn' | 'answer' | 'resume';
+
 export interface SpawnSettings {
   agent: AgentProfile;
   config: HerdrAgentsConfig;
   layout: HerdrAgentLayout;
   baseLabel: string;
-  resumeClosed: boolean;
+  /** `answer` reuses a live agent's parked question; `resume` reopens a closed one. */
+  mode: SpawnMode;
+  /** Only a caller-chosen name is refused when it matches a live agent. */
+  explicitName: boolean;
   owner: ReturnType<typeof orchestratorIdentity>;
 }
 

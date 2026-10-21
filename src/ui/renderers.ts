@@ -22,13 +22,13 @@ export function registerAgentMessageRenderers(pi: ExtensionAPI): void {
       const { expanded, outputPad } = options;
       const details = message.details as
         | {
-            tabLabel?: string;
+            name?: string;
             agent?: string;
             result?: string;
             question?: string;
           }
         | undefined;
-      const label = details?.tabLabel ?? 'agent';
+      const label = details?.name ?? 'agent';
       const profile = details?.agent ? ` · ${details.agent}` : '';
       const border = (str: string) => theme.fg(tone, str);
 

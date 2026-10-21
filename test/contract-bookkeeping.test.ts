@@ -25,11 +25,7 @@ test('prunes state records for panes Herdr no longer reports', async () => {
   await withHarness({}, async (harness) => {
     // A detached agent that never settles keeps its live record.
     harness.fake.setBehavior(() => ({ neverSettle: true }));
-    await harness.callRaw({
-      agent: 'scout',
-      task: 'one',
-      tabLabel: 'Scout Stale',
-    });
+    await harness.callRaw({ agent: 'scout', task: 'one', name: 'Scout Stale' });
     const statePath = harness.statePath;
     const before = JSON.parse(await fs.readFile(statePath, 'utf8'));
     before.agents['terminal:ghost'] = {
@@ -70,7 +66,7 @@ test('writes the state file with owner-only permissions', async () => {
 test('reads herdr-agents.json once per extension load', async () => {
   await withHarness({ layout: 'pane' }, async (harness) => {
     // The first spawn resolves the read; only then is the file rewritten.
-    await harness.callRaw({ agent: 'scout', task: 'first', tabLabel: 'One' });
+    await harness.callRaw({ agent: 'scout', task: 'first', name: 'One' });
 
     const agentDir = process.env.PI_CODING_AGENT_DIR;
     assert.ok(agentDir, 'expected the harness to set PI_CODING_AGENT_DIR');
@@ -79,7 +75,7 @@ test('reads herdr-agents.json once per extension load', async () => {
       `${JSON.stringify({ layout: 'tab' })}\n`,
     );
 
-    await harness.callRaw({ agent: 'scout', task: 'second', tabLabel: 'Two' });
+    await harness.callRaw({ agent: 'scout', task: 'second', name: 'Two' });
 
     // Still the layout loaded at activation, not the one now in the file.
     assert.equal(harness.fake.callsMatching('pane', 'split').length, 2);

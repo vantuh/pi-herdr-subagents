@@ -3,84 +3,89 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 
 import {
-  buildHerdrAgentParams,
+  buildAgentSendParams,
+  buildAgentSpawnParams,
+  buildAgentStatusParams,
+  buildAgentStopParams,
   describeAgentProfiles,
 } from '../src/tool/schema.ts';
 
 /**
- * The parameter schema is the model-facing contract: renaming a field or
- * widening an enum changes how every Orchestrator calls the tool, and nothing
- * else in the suite would notice.
+ * The parameter schemas are the model-facing contract: renaming a field or
+ * making a required one optional changes how every Orchestrator calls the
+ * tools, and nothing else in the suite would notice.
  */
 
-const HerdrAgentParams = buildHerdrAgentParams();
-test('exposes exactly the documented parameters', () => {
-  assert.deepEqual(Object.keys(HerdrAgentParams.properties).sort(), [
-    'agent',
-    'resumeClosed',
-    'tabLabel',
-    'task',
+const verbSchemas = {
+  agent_spawn: { schema: buildAgentSpawnParams(), required: ['agent', 'task'] },
+  agent_send: { schema: buildAgentSendParams(), required: ['message', 'name'] },
+  agent_stop: { schema: buildAgentStopParams(), required: ['name'] },
+  agent_status: { schema: buildAgentStatusParams(), required: [] },
+};
+
+test('exposes exactly the documented parameters per tool', () => {
+  assert.deepEqual(
+    Object.keys(verbSchemas.agent_spawn.schema.properties).sort(),
+    ['agent', 'name', 'task'],
+  );
+  assert.deepEqual(
+    Object.keys(verbSchemas.agent_send.schema.properties).sort(),
+    ['message', 'name'],
+  );
+  assert.deepEqual(Object.keys(verbSchemas.agent_stop.schema.properties), [
+    'name',
+  ]);
+  assert.deepEqual(Object.keys(verbSchemas.agent_status.schema.properties), [
+    'name',
   ]);
 });
 
-test('requires no parameter of its own', () => {
-  // agent is optional on purpose: tabLabel alone can address an existing agent.
-  assert.deepEqual(HerdrAgentParams.required ?? [], []);
-});
-
-test('has no lifecycle or timeout parameters', () => {
-  const names = Object.keys(HerdrAgentParams.properties);
-  assert.ok(!names.includes('lifecycle'));
-  assert.ok(!names.includes('timeoutMs'));
+test('requires each verb its own parameters, with no mode chosen by omission', () => {
+  for (const [tool, { schema, required }] of Object.entries(verbSchemas)) {
+    assert.deepEqual(
+      [...(schema.required ?? [])].sort(),
+      required,
+      `${tool} required parameters`,
+    );
+  }
 });
 
 test('declares parameter types the provider can validate', () => {
-  const properties = HerdrAgentParams.properties as Record<
-    string,
-    { type?: string }
-  >;
-  assert.equal(properties.agent?.type, 'string');
-  assert.equal(properties.task?.type, 'string');
-  assert.equal(properties.tabLabel?.type, 'string');
-  assert.equal(properties.resumeClosed?.type, 'boolean');
+  for (const { schema } of Object.values(verbSchemas)) {
+    for (const property of Object.values(
+      schema.properties as Record<string, { type?: string }>,
+    )) {
+      assert.equal(property.type, 'string');
+    }
+  }
 });
 
-test('has no wait property', () => {
-  assert.equal(
-    (HerdrAgentParams.properties as Record<string, unknown>).wait,
-    undefined,
-  );
-});
-
-test('task description says omitting it checks status', () => {
-  const task = HerdrAgentParams.properties.task as { description?: string };
-  assert.match(task.description ?? '', /Omit to check a live agent/);
-  assert.match(task.description ?? '', /does not send a new prompt/);
-});
-
-test('agent description says when the profile may be omitted', () => {
-  const agent = HerdrAgentParams.properties.agent as { description?: string };
-  assert.match(agent.description ?? '', /Required to start a new agent/);
-  assert.match(agent.description ?? '', /omit it when tabLabel addresses/);
-});
-
-test('resumeClosed description names the continuation contract', () => {
-  const resume = HerdrAgentParams.properties.resumeClosed as {
-    description?: string;
-  };
-  assert.match(resume.description ?? '', /follow-up task to a closed agent/);
-  assert.match(resume.description ?? '', /Matched by exact tabLabel/);
-  assert.match(resume.description ?? '', /requires a non-empty task/);
+test('has no lifecycle, timeout, wait, action or resume parameters', () => {
+  for (const { schema } of Object.values(verbSchemas)) {
+    const names = Object.keys(schema.properties);
+    for (const old of [
+      'lifecycle',
+      'timeoutMs',
+      'wait',
+      'action',
+      'resumeClosed',
+      'tabLabel',
+    ]) {
+      assert.ok(!names.includes(old), `${old} is not a parameter`);
+    }
+  }
 });
 
 test('describes every parameter for the model', () => {
-  for (const [name, schema] of Object.entries(
-    HerdrAgentParams.properties as Record<string, { description?: string }>,
-  )) {
-    assert.ok(
-      (schema.description ?? '').length > 10,
-      `${name} needs a description the model can act on`,
-    );
+  for (const [tool, { schema }] of Object.entries(verbSchemas)) {
+    for (const [name, property] of Object.entries(
+      schema.properties as Record<string, { description?: string }>,
+    )) {
+      assert.ok(
+        (property.description ?? '').length > 10,
+        `${tool}.${name} needs a description the model can act on`,
+      );
+    }
   }
 });
 

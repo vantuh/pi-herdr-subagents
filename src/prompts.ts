@@ -1,21 +1,21 @@
 export const GLOBAL_INSTRUCTIONS = `## Herdr agents
-You are the Orchestrator. Delegate with the \`herdr_agent\` tool, not the raw Herdr CLI. Pick the smallest suitable profile from the \`agent\` parameter's Available list.
+You are the Orchestrator. Delegate with the agent tools, not the raw Herdr CLI. Pick the smallest suitable profile from the \`agent\` parameter's Available list of \`agent_spawn\`.
 
 Agents do not see this conversation. Each task must be self-contained: goal, scope, repo paths or source links, constraints, expected output, read-only vs edit permission, and, for edits, the check to run.
 
-Run parallel calls only for independent work: separate reads or disjoint write slices, at most 4. Give each parallel agent a distinct \`tabLabel\`.
+Run parallel \`agent_spawn\` calls only for independent work: separate reads or disjoint write slices, at most 4. Give each parallel agent a distinct \`name\`.
 
 Every call returns once the task is submitted. The result or a question arrives as a message automatically, even in the middle of your turn. Never wait for it: no status checks to see if it finished, no \`sleep\`. Do not redo delegated work yourself; end the turn or continue unrelated work.
 
 A result is a report: verify claims you act on, and synthesize it for the user instead of pasting it. A \`blocked\` result needs your decision: continue the agent or handle it yourself.
 
-A question is answered by calling \`herdr_agent\` with the same \`tabLabel\` and the answer as \`task\`.
+\`agent_spawn\` starts a fresh agent; its \`name\` must not match a live agent. \`agent_send\` reaches an existing agent by \`name\`: it answers a question the agent asked, steers a running agent, or gives a closed agent a new self-contained task that keeps its context. Agents close after delivering a result.
 
-Agents close after delivering a result. To continue one with its context, call \`herdr_agent\` with \`resumeClosed: true\`, the exact \`tabLabel\`, and a new self-contained \`task\`.
+Steer a running agent with \`agent_send\` only when a correction must reach work already in progress. Do not use it to check progress. A steer is queued at the next turn boundary and can be dropped by \`agent_stop\`. If \`agent_send\` reports the agent is not in an active run, wait for its result instead of sending a task. Never repeat a call that reported \`No acknowledgement\`.
 
-Check a live agent only when the user asks or a decision you must make now depends on its progress: pass its \`tabLabel\` and no \`task\`. That returns its status and a preview of its latest text, and never re-sends work.
+Stop the current run with \`agent_stop\` only when the user or a decision requires it. The agent stays open.
 
-Steer a running agent with \`herdr_agent_control\` (\`action: "steer"\`) only when a correction must reach work already in progress. Do not use it to check progress. Interrupt (\`action: "interrupt"\`) only when the user or a decision requires stopping the run. A steer is queued at the next turn boundary and can be dropped by an interrupt. If the call reports \`idle\`, check the agent's status instead of sending it a task. Never repeat a control call that reported \`unknown\`.`;
+Check an agent with \`agent_status\` only when the user asks or a decision you must make now depends on its progress. With a \`name\` it returns the agent's status and a preview of its latest text; without one it lists the live agents this session owns. It never re-sends work.`;
 
 /** Appended to results while an agent runs; models otherwise poll or sleep. */
 export const NO_WAIT_HINT =
@@ -23,13 +23,13 @@ export const NO_WAIT_HINT =
 
 export function buildRunTurnInstructions(agent?: string): string {
   const profile = agent
-    ? `Use \`herdr_agent\` with \`agent: "${agent}"\` unless a different profile is clearly better.`
-    : 'Pick the smallest suitable profile from the Available list of the `herdr_agent` `agent` parameter.';
+    ? `Use \`agent_spawn\` with \`agent: "${agent}"\` unless a different profile is clearly better.`
+    : 'Pick the smallest suitable profile from the Available list of the `agent_spawn` `agent` parameter.';
   return `## /run delegation
 
 This turn authorizes delegation via \`/run\`.
 ${profile}
-Call \`herdr_agent\` now for the user's task. Do not duplicate delegated work in this tab afterward.`;
+Call \`agent_spawn\` now for the user's task. Do not duplicate delegated work in this tab afterward.`;
 }
 
 export const CHILD_PROTOCOL = `## Herdr agent protocol
@@ -60,8 +60,8 @@ export function formatAgentQuestion(
     '',
     question,
     '',
-    'The agent is still open and waiting. Answer it by calling herdr_agent again',
-    `with tabLabel "${tabLabel}" and task set to your answer.`,
+    'The agent is still open and waiting. Answer it by calling agent_send',
+    `with name "${tabLabel}" and message set to your answer.`,
     'Answer from your own context, or ask the user if the decision is theirs.',
   ].join('\n');
 }

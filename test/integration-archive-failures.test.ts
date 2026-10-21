@@ -15,7 +15,7 @@ test('detached one-shot completion archives before cleanup', async () => {
     await harness.call({
       agent: 'scout',
       task: 'background',
-      tabLabel: 'Scout Detached Resume',
+      name: 'Scout Detached Resume',
     });
     await harness.collect('Scout Detached Resume');
     await harness.waitFor(async () => {
@@ -40,7 +40,7 @@ test('missing continuation metadata does not close or archive a one-shot', async
     await harness.call({
       agent: 'scout',
       task: 'first',
-      tabLabel: 'Scout Missing Meta',
+      name: 'Scout Missing Meta',
     });
     const delivered = await harness.collect('Scout Missing Meta');
     assert.match(delivered.content, /session metadata is missing/);
@@ -56,7 +56,7 @@ test('stage write failure keeps the live one-shot and does not expose resumable 
     await harness.call({
       agent: 'scout',
       task: 'background',
-      tabLabel: 'Scout Stage Fail',
+      name: 'Scout Stage Fail',
     });
     setFailNextStateMutation('stage');
     await harness.fake.releaseChildren();
@@ -80,7 +80,7 @@ test('close failure after staging keeps the live agent and is not resumable', as
     await harness.call({
       agent: 'scout',
       task: 'Find it',
-      tabLabel: 'Scout Close Fail',
+      name: 'Scout Close Fail',
     });
     const delivered = await harness.collect('Scout Close Fail');
     assert.match(delivered.content, /PRECIOUS RESULT/);
@@ -102,18 +102,16 @@ test('close success plus finalize failure still lets a later resume succeed', as
     const first = await harness.call({
       agent: 'scout',
       task: 'first',
-      tabLabel: 'Scout Resume Finalize',
+      name: 'Scout Resume Finalize',
     });
     await harness.collect('Scout Resume Finalize');
     assert.equal(first.isError, undefined);
     assert.equal(harness.fake.panes.length, 1);
     const history = (await harness.readState()).closedHistory ?? [];
     assert.equal(history[0]?.status, 'resumable');
-    const resumed = await harness.call({
-      agent: 'scout',
-      task: 'second',
-      tabLabel: 'Scout Resume Finalize',
-      resumeClosed: true,
+    const resumed = await harness.callTool('agent_send', {
+      message: 'second',
+      name: 'Scout Resume Finalize',
     });
     await harness.collect('Scout Resume Finalize');
     assert.equal(resumed.isError, undefined);

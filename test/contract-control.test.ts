@@ -9,7 +9,7 @@ import type { ChildControlAck } from '../test-support/fake-herdr/types.ts';
 import type { Harness } from '../test-support/harness.ts';
 
 /**
- * `herdr_agent_control` contract: guard order and exact texts, `details` keys,
+ * `agent_send` (steer) and `agent_stop` contract: guard order and exact texts, `details` keys,
  * every status of both actions, the acknowledgement compatibility rule, and the
  * serialization/timeout discipline. Behavior (a real poller, a real delivery)
  * lives in `integration-control.test.ts`; this file owns the prose.
@@ -19,31 +19,31 @@ const LABEL = 'Scout Work';
 const RESULT_TEXT = 'the run produced text';
 
 function steerQueuedText(label: string, paneId: string): string {
-  return `Steer queued for Herdr agent ${label} (${paneId}). It enters the run at its next turn boundary; queuing is not proof the agent has read it. Its answer still arrives with the final result — do not re-send it as a task.`;
+  return `Message queued for agent ${label} (${paneId}). It enters the run at its next turn boundary; queuing is not proof the agent has read it. Its answer still arrives with the final result — do not re-send it as a task.`;
 }
 
 function steerIdleText(label: string, paneId: string): string {
-  return `Herdr agent ${label} (${paneId}) did not apply the steer: it was not in an active run, or the request was already stale. Check its status with the same tabLabel: answer a parked question with a task, or wait for its result.`;
+  return `Agent ${label} (${paneId}) did not take the message: it is not in an active run, or the request was already stale. Its result arrives automatically; wait for it. Check it with agent_status only if a decision depends on it.`;
 }
 
 function steerUnknownText(label: string, paneId: string): string {
-  return `No acknowledgement from Herdr agent ${label} (${paneId}) within 2000 ms. The steer may or may not be applied; do not retry it. Check its status before deciding what to send next.`;
+  return `No acknowledgement from agent ${label} (${paneId}) within 2000 ms. The message may or may not be applied; do not retry it. Check its status before deciding what to send next.`;
 }
 
 function interruptAbortedText(label: string, paneId: string): string {
-  return `Herdr agent ${label} (${paneId}) aborted its run, so no result from that run should normally arrive and the agent stays open. A collection already in flight can still deliver that run's text and close the pane; ignore a result for work you interrupted. A live agent cannot take a new task: continue it manually in its pane, or close it with /herdr-agents and then continue it with resumeClosed and the same tabLabel.`;
+  return `Agent ${label} (${paneId}) aborted its run, so no result from that run should normally arrive and the agent stays open. A collection already in flight can still deliver that run's text and close the pane; ignore a result for work you interrupted. A live agent cannot take a new task: continue it manually in its pane, or close it with /herdr-agents and then continue it with agent_send and the same name.`;
 }
 
 function interruptRequestedText(label: string, paneId: string): string {
-  return `Interrupt sent to Herdr agent ${label} (${paneId}); the child did not report a settled abort within 2000 ms, so the run may have already finished on its own. On the ordinary path expect no result from that run, but a collection already in flight can still deliver its text; ignore a result for work you interrupted. Check its status, then continue it manually in its pane or close it with /herdr-agents and continue it with resumeClosed.`;
+  return `Stop sent to agent ${label} (${paneId}); the child did not report a settled abort within 2000 ms, so the run may have already finished on its own. On the ordinary path expect no result from that run, but a collection already in flight can still deliver its text; ignore a result for work you interrupted. Check its status, then continue it manually in its pane or close it with /herdr-agents and continue it with agent_send.`;
 }
 
 function interruptIdleText(label: string, paneId: string): string {
-  return `Herdr agent ${label} (${paneId}) is not in an active run, so there was nothing to interrupt. Check its status; its result may still arrive.`;
+  return `Agent ${label} (${paneId}) is not in an active run, so there was nothing to stop. Check its status; its result may still arrive.`;
 }
 
 function interruptUnknownText(label: string, paneId: string): string {
-  return `No acknowledgement from Herdr agent ${label} (${paneId}) within 3000 ms. The interrupt may or may not have been applied; do not retry it. Check its status before assuming it stopped.`;
+  return `No acknowledgement from agent ${label} (${paneId}) within 3000 ms. The stop may or may not have been applied; do not retry it. Check its status before assuming it stopped.`;
 }
 
 /**
@@ -165,7 +165,7 @@ async function startChild(
   const started = await harness.call({
     agent: 'scout',
     task: 'Long job',
-    tabLabel,
+    name: tabLabel,
   });
   assert.equal(started.isError, undefined);
   const record = Object.values((await harness.readState()).agents)[0];
@@ -198,12 +198,12 @@ function assertAttempt(
   );
   assert.deepEqual(Object.keys(result.details).sort(), [
     'action',
+    'name',
     'paneId',
     'requestId',
     'status',
-    'tabLabel',
   ]);
-  assert.equal(result.details.tabLabel, expected.tabLabel);
+  assert.equal(result.details.name, expected.tabLabel);
   assert.equal(result.details.paneId, expected.paneId);
   assert.equal(result.details.action, expected.action);
   assert.equal(result.details.status, expected.status);
@@ -212,12 +212,12 @@ function assertAttempt(
 
 function assertGuardFailure(
   result: any,
-  expected: { tabLabel: string; action: string; text: string },
+  expected: { tabLabel: string; action?: string; text: string },
 ): void {
   assert.equal(result.isError, true);
   assert.deepEqual(result.details, {
-    tabLabel: expected.tabLabel,
-    action: expected.action,
+    name: expected.tabLabel,
+    ...(expected.action ? { action: expected.action } : {}),
   });
   assert.equal(result.content.length, 1);
   assert.equal(result.content[0].text, expected.text);
@@ -259,85 +259,81 @@ function recordControlTraffic() {
   };
 }
 
-test('guard 1: a blank tabLabel is rejected', async () => {
+test('guard 1: a blank name is rejected by both tools', async () => {
   await withHarness({}, async (harness) => {
-    const result = await harness.callTool('herdr_agent_control', {
-      tabLabel: '  ',
-      action: 'steer',
+    const send = await harness.callTool('agent_send', {
+      name: '  ',
       message: 'adjust',
     });
+    assert.equal(send.isError, true);
+    assert.deepEqual(send.details, {});
+    assert.equal(send.content[0].text, 'name is required.');
 
-    assertGuardFailure(result, {
+    const stop = await harness.callTool('agent_stop', { name: '  ' });
+    assertGuardFailure(stop, {
       tabLabel: '',
-      action: 'steer',
-      text: 'tabLabel is required.',
+      action: 'interrupt',
+      text: 'name is required.',
     });
   });
 });
 
-test('guard 2: steer without a message is rejected', async () => {
+test('guard 2: agent_send without a message is rejected', async () => {
   await withHarness({}, async (harness) => {
-    const result = await harness.callTool('herdr_agent_control', {
-      tabLabel: LABEL,
-      action: 'steer',
+    const result = await harness.callTool('agent_send', {
+      name: LABEL,
       message: '   ',
     });
 
-    assertGuardFailure(result, {
-      tabLabel: LABEL,
-      action: 'steer',
-      text: 'action "steer" requires a non-empty message.',
-    });
-  });
-});
-
-test('guard 3: interrupt with a message is rejected', async () => {
-  await withHarness({}, async (harness) => {
-    const result = await harness.callTool('herdr_agent_control', {
-      tabLabel: LABEL,
-      action: 'interrupt',
-      message: 'stop now',
-    });
-
-    assertGuardFailure(result, {
-      tabLabel: LABEL,
-      action: 'interrupt',
-      text: 'action "interrupt" takes no message; a steer cannot be combined with an interrupt.',
-    });
+    assert.equal(result.isError, true);
+    assert.deepEqual(result.details, { name: LABEL });
+    assert.equal(result.content[0].text, 'message is required.');
+    assert.deepEqual(harness.fake.calls, [], 'no Herdr call was made');
   });
 });
 
 test('guard 4: a non-TUI session is rejected before any Herdr call', async () => {
   await withHarness({ mode: 'print' }, async (harness) => {
-    const result = await harness.callTool('herdr_agent_control', {
-      tabLabel: LABEL,
-      action: 'steer',
+    const send = await harness.callTool('agent_send', {
+      name: LABEL,
       message: 'adjust',
     });
+    assert.equal(send.isError, true);
+    assert.equal(
+      send.content[0].text,
+      'agent_send requires TUI mode. Non-TUI sessions have no widget poller to deliver the result.',
+    );
 
-    assertGuardFailure(result, {
+    const stop = await harness.callTool('agent_stop', { name: LABEL });
+    assertGuardFailure(stop, {
       tabLabel: LABEL,
-      action: 'steer',
-      text: 'herdr_agent_control requires TUI mode.',
+      action: 'interrupt',
+      text: 'agent_stop requires TUI mode.',
     });
     assert.deepEqual(harness.fake.calls, [], 'no Herdr call was made');
   });
 });
 
-test('guard 5: an unknown label is rejected and writes no request', async () => {
+test('guard 5: an unknown name is rejected and writes no request', async () => {
   await withHarness({}, async (harness) => {
     const child = await startChild(harness);
 
-    const result = await harness.callTool('herdr_agent_control', {
-      tabLabel: 'Other Agent',
-      action: 'steer',
+    const send = await harness.callTool('agent_send', {
+      name: 'Other Agent',
       message: 'adjust',
     });
+    assert.equal(send.isError, true);
+    assert.deepEqual(send.details, { name: 'Other Agent' });
+    assert.equal(
+      send.content[0].text,
+      'No agent named "Other Agent" found for this session. Use agent_spawn to start one.',
+    );
 
-    assertGuardFailure(result, {
+    const stop = await harness.callTool('agent_stop', { name: 'Other Agent' });
+    assertGuardFailure(stop, {
       tabLabel: 'Other Agent',
-      action: 'steer',
-      text: `No running Herdr agent named "Other Agent" found for this session. Pass its exact label; do not start a new agent to steer.`,
+      action: 'interrupt',
+      text: `No running agent named "Other Agent" found for this session. Pass its exact name.`,
     });
     assert.equal(await requestWritten(child.controlDir), false);
   });
@@ -353,15 +349,14 @@ test('guard 6: a child owned by another session is rejected and writes no reques
     state.agents[key!]!.ownerSessionId = 'another-orchestrator-session';
     await writeState(harness, state);
 
-    const result = await harness.callTool('herdr_agent_control', {
-      tabLabel: child.tabLabel,
-      action: 'interrupt',
+    const result = await harness.callTool('agent_stop', {
+      name: child.tabLabel,
     });
 
     assertGuardFailure(result, {
       tabLabel: child.tabLabel,
       action: 'interrupt',
-      text: `Herdr agent "${child.tabLabel}" is not owned by this Orchestrator session, so it cannot be controlled.`,
+      text: `Agent "${child.tabLabel}" is not owned by this Orchestrator session, so it cannot be controlled.`,
     });
     assert.equal(await requestWritten(child.controlDir), false);
   });
@@ -375,16 +370,15 @@ test('guard 7: a live child without a recorded control channel is rejected and w
     delete state.agents[key!]!.resultFile;
     await writeState(harness, state);
 
-    const result = await harness.callTool('herdr_agent_control', {
-      tabLabel: child.tabLabel,
-      action: 'steer',
+    const result = await harness.callTool('agent_send', {
+      name: child.tabLabel,
       message: 'adjust',
     });
 
     assertGuardFailure(result, {
       tabLabel: child.tabLabel,
       action: 'steer',
-      text: `Herdr agent "${child.tabLabel}" has no control channel recorded. Check its status before retrying.`,
+      text: `Agent "${child.tabLabel}" has no control channel recorded. Check its status before retrying.`,
     });
     assert.equal(await requestWritten(child.controlDir), false);
   });
@@ -394,9 +388,8 @@ test('steer reports queued with its exact text', async () => {
   await withHarness({}, async (harness) => {
     const child = await startChild(harness, { controlAck: 'queued' });
 
-    const result = await harness.callTool('herdr_agent_control', {
-      tabLabel: child.tabLabel,
-      action: 'steer',
+    const result = await harness.callTool('agent_send', {
+      name: child.tabLabel,
       message: 'use the cache layer',
     });
 
@@ -419,9 +412,8 @@ test('steer reports idle with its exact text', async () => {
   await withHarness({}, async (harness) => {
     const child = await startChild(harness, { controlAck: 'idle' });
 
-    const result = await harness.callTool('herdr_agent_control', {
-      tabLabel: child.tabLabel,
-      action: 'steer',
+    const result = await harness.callTool('agent_send', {
+      name: child.tabLabel,
       message: 'use the cache layer',
     });
 
@@ -443,9 +435,8 @@ test('steer reports unknown on a missing ack, keeps the request and never retrie
     const child = await startChild(harness, { controlAck: 'none' });
     const traffic = recordControlTraffic();
     try {
-      const result = await harness.callTool('herdr_agent_control', {
-        tabLabel: child.tabLabel,
-        action: 'steer',
+      const result = await harness.callTool('agent_send', {
+        name: child.tabLabel,
         message: 'use the cache layer',
       });
 
@@ -484,9 +475,8 @@ test('interrupt reports aborted with its exact text', async () => {
   await withHarness({}, async (harness) => {
     const child = await startChild(harness, { controlAck: 'aborted' });
 
-    const result = await harness.callTool('herdr_agent_control', {
-      tabLabel: child.tabLabel,
-      action: 'interrupt',
+    const result = await harness.callTool('agent_stop', {
+      name: child.tabLabel,
     });
 
     assertAttempt(result, {
@@ -506,9 +496,8 @@ test('interrupt reports requested with its exact text', async () => {
   await withHarness({}, async (harness) => {
     const child = await startChild(harness, { controlAck: 'requested' });
 
-    const result = await harness.callTool('herdr_agent_control', {
-      tabLabel: child.tabLabel,
-      action: 'interrupt',
+    const result = await harness.callTool('agent_stop', {
+      name: child.tabLabel,
     });
 
     assertAttempt(result, {
@@ -528,9 +517,8 @@ test('interrupt reports idle with its exact text', async () => {
   await withHarness({}, async (harness) => {
     const child = await startChild(harness, { controlAck: 'idle' });
 
-    const result = await harness.callTool('herdr_agent_control', {
-      tabLabel: child.tabLabel,
-      action: 'interrupt',
+    const result = await harness.callTool('agent_stop', {
+      name: child.tabLabel,
     });
 
     assertAttempt(result, {
@@ -550,9 +538,8 @@ test('interrupt reports unknown on a missing ack and keeps the request', async (
   await withHarness({}, async (harness) => {
     const child = await startChild(harness, { controlAck: 'none' });
 
-    const result = await harness.callTool('herdr_agent_control', {
-      tabLabel: child.tabLabel,
-      action: 'interrupt',
+    const result = await harness.callTool('agent_stop', {
+      name: child.tabLabel,
     });
 
     assertAttempt(result, {
@@ -575,9 +562,8 @@ test('an ack for the other action is reported as unknown, not as success', async
     // claim an abort that nobody observed.
     const child = await startChild(harness, { controlAck: 'queued' });
 
-    const result = await harness.callTool('herdr_agent_control', {
-      tabLabel: child.tabLabel,
-      action: 'interrupt',
+    const result = await harness.callTool('agent_stop', {
+      name: child.tabLabel,
     });
 
     assertAttempt(result, {
@@ -604,14 +590,12 @@ test('two parallel operations on one child are serialized', async () => {
     const traffic = recordControlTraffic();
     try {
       const [first, second] = await Promise.all([
-        harness.callTool('herdr_agent_control', {
-          tabLabel: child.tabLabel,
-          action: 'steer',
+        harness.callTool('agent_send', {
+          name: child.tabLabel,
           message: 'first correction',
         }),
-        harness.callTool('herdr_agent_control', {
-          tabLabel: child.tabLabel,
-          action: 'steer',
+        harness.callTool('agent_send', {
+          name: child.tabLabel,
           message: 'second correction',
         }),
       ]);
@@ -657,8 +641,8 @@ test('cancellation during the pre-clean publishes nothing and releases the queue
     const controller = new AbortController();
     try {
       const pending = harness.callTool(
-        'herdr_agent_control',
-        { tabLabel: child.tabLabel, action: 'steer', message: 'cancelled' },
+        'agent_send',
+        { name: child.tabLabel, message: 'cancelled' },
         { signal: controller.signal },
       );
       await gate.hit();
@@ -674,9 +658,8 @@ test('cancellation during the pre-clean publishes nothing and releases the queue
 
       // The queue released in the cancelled operation's `finally`, so the next
       // call runs immediately instead of waiting for a dead entry.
-      const next = await harness.callTool('herdr_agent_control', {
-        tabLabel: child.tabLabel,
-        action: 'steer',
+      const next = await harness.callTool('agent_send', {
+        name: child.tabLabel,
         message: 'next',
       });
       assert.equal(next.details.status, 'queued');
@@ -696,14 +679,12 @@ test('a finished operation drops only its own queue entry, so a third call stays
     // observable.
     const heldAck = pauseNthAckWrite(2);
     try {
-      const first = harness.callTool('herdr_agent_control', {
-        tabLabel: child.tabLabel,
-        action: 'steer',
+      const first = harness.callTool('agent_send', {
+        name: child.tabLabel,
         message: 'one',
       });
-      const second = harness.callTool('herdr_agent_control', {
-        tabLabel: child.tabLabel,
-        action: 'steer',
+      const second = harness.callTool('agent_send', {
+        name: child.tabLabel,
         message: 'two',
       });
       const settled = await Promise.race([first, second]);
@@ -713,9 +694,8 @@ test('a finished operation drops only its own queue entry, so a third call stays
       // The remaining operation owns the map entry. A third call must queue
       // behind it; dropping the entry at the first operation's end would let it
       // publish now and clean the in-flight request away.
-      const third = harness.callTool('herdr_agent_control', {
-        tabLabel: child.tabLabel,
-        action: 'steer',
+      const third = harness.callTool('agent_send', {
+        name: child.tabLabel,
         message: 'three',
       });
       await new Promise((resolve) => setTimeout(resolve, 250));
@@ -758,9 +738,8 @@ test('a control call leaves a pending outcome untouched and cannot duplicate its
     assert.deepEqual(results(), []);
 
     const before = harness.fake.calls.length;
-    const control = await harness.callTool('herdr_agent_control', {
-      tabLabel: child.tabLabel,
-      action: 'steer',
+    const control = await harness.callTool('agent_send', {
+      name: child.tabLabel,
       message: 'adjust',
     });
     assert.equal(control.details.status, 'queued');
@@ -790,9 +769,8 @@ test('a control call leaves a pending outcome untouched and cannot duplicate its
     await new Promise((resolve) => setTimeout(resolve, 1200));
     assert.equal(results().length, 1);
 
-    const afterDelivery = await harness.callTool('herdr_agent_control', {
-      tabLabel: child.tabLabel,
-      action: 'interrupt',
+    const afterDelivery = await harness.callTool('agent_stop', {
+      name: child.tabLabel,
     });
     assert.equal(afterDelivery.isError, true);
     assert.equal(results().length, 1);

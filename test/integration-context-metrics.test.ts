@@ -20,12 +20,12 @@ test('the widget shows each child context sample and survives a corrupt one', as
       question: 'Which file next?',
       context: { tokens: 38_000, contextWindow: 200_000 },
     }));
-    await harness.call({ agent: 'scout', task: 'first', tabLabel: 'Scout A' });
+    await harness.call({ agent: 'scout', task: 'first', name: 'Scout A' });
     harness.fake.setBehavior(() => ({
       question: 'Which file next?',
       context: { tokens: 0, contextWindow: 128_000 },
     }));
-    await harness.call({ agent: 'scout', task: 'second', tabLabel: 'Scout B' });
+    await harness.call({ agent: 'scout', task: 'second', name: 'Scout B' });
 
     const widgetLines = () =>
       (harness.widgets.get(AGENTS_WIDGET_ID) ?? []) as string[];
@@ -74,12 +74,12 @@ test('/herdr-agents still lists and focuses agents while hydrating context', asy
       question: 'Which file next?',
       context: { tokens: 5_000, contextWindow: 200_000 },
     }));
-    await harness.call({ agent: 'scout', task: 'first', tabLabel: 'Scout A' });
+    await harness.call({ agent: 'scout', task: 'first', name: 'Scout A' });
     harness.fake.setBehavior(() => ({
       question: 'Which file next?',
       context: { tokens: 7_000, contextWindow: 200_000 },
     }));
-    await harness.call({ agent: 'scout', task: 'second', tabLabel: 'Scout B' });
+    await harness.call({ agent: 'scout', task: 'second', name: 'Scout B' });
 
     // Corrupt the row the manager lists second: the first row must stay usable.
     const records = Object.values((await harness.readState()).agents);

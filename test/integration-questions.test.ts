@@ -23,7 +23,7 @@ test('returns a child question early, keeps the one-shot parked, and answers it 
     const question = await harness.collect('Scout');
     assert.equal(question.customType, 'herdr_agent_question');
     assert.match(question.content, /Cookie session or JWT\?/);
-    assert.match(question.content, /tabLabel "Scout"/);
+    assert.match(question.content, /name "Scout"/);
 
     // Parked, not closed: pane and state record survive.
     assert.equal(harness.fake.panes.length, 2);
@@ -36,10 +36,9 @@ test('returns a child question early, keeps the one-shot parked, and answers it 
     assert.ok(questionFile);
     assert.ok(await fs.stat(questionFile).catch(() => null));
 
-    const answered = await harness.call({
-      agent: 'scout',
-      task: 'Use the cookie session',
-      tabLabel: 'Scout',
+    const answered = await harness.callTool('agent_send', {
+      name: 'Scout',
+      message: 'Use the cookie session',
     });
 
     assert.equal(answered.details.reused, true);
@@ -63,7 +62,7 @@ test('delivers a detached question without closing the agent', async () => {
     await harness.call({
       agent: 'scout',
       task: 'Background job',
-      tabLabel: 'Scout Detached',
+      name: 'Scout Detached',
     });
     await harness.collect('Scout Detached');
 
@@ -75,7 +74,7 @@ test('delivers a detached question without closing the agent', async () => {
     const [message] = harness.messages;
     assert.equal(message?.customType, 'herdr_agent_question');
     assert.match(message?.content ?? '', /Which module first\?/);
-    assert.equal(message?.details.tabLabel, 'Scout Detached');
+    assert.equal(message?.details.name, 'Scout Detached');
     // Still open and reusable by label.
     assert.equal(harness.fake.panes.length, 2);
     const record = Object.values((await harness.readState()).agents)[0];
@@ -99,10 +98,9 @@ test("does not accept a reused agent's previous settled state as this turn's res
     await harness.call({ agent: 'scout', task: 'one' });
     const firstDelivery = await harness.collect('Scout');
     assert.match(firstDelivery.content, /Which approach?/);
-    const second = await harness.call({
-      agent: 'scout',
-      task: 'Approach B',
-      tabLabel: 'Scout',
+    const second = await harness.callTool('agent_send', {
+      name: 'Scout',
+      message: 'Approach B',
     });
 
     assert.equal(second.details.reused, true);
@@ -116,28 +114,21 @@ test("does not accept a reused agent's previous settled state as this turn's res
 
 test('a resumed one-shot can ask a question and be answered by label', async () => {
   await withHarness({}, async (harness) => {
-    await harness.call({
-      agent: 'scout',
-      task: 'first',
-      tabLabel: 'Scout Resume',
-    });
+    await harness.call({ agent: 'scout', task: 'first', name: 'Scout Resume' });
     await harness.collect('Scout Resume');
     harness.fake.setBehavior(() => ({ question: 'Which module?' }));
-    const asked = await harness.call({
-      agent: 'scout',
-      task: 'continue',
-      tabLabel: 'Scout Resume',
-      resumeClosed: true,
+    const asked = await harness.callTool('agent_send', {
+      message: 'continue',
+      name: 'Scout Resume',
     });
     const question = await harness.collect('Scout Resume');
     assert.equal(question.customType, 'herdr_agent_question');
     assert.equal(asked.details.resumed, true);
 
     harness.fake.setBehavior(() => ({ result: 'answered' }));
-    const answered = await harness.call({
-      agent: 'scout',
-      task: 'the auth module',
-      tabLabel: 'Scout Resume',
+    const answered = await harness.callTool('agent_send', {
+      name: 'Scout Resume',
+      message: 'the auth module',
     });
     const answeredDelivery = await harness.collect('Scout Resume');
     assert.equal(answered.details.reused, true);

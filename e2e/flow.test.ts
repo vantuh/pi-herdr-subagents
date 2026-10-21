@@ -80,7 +80,7 @@ test('collects a working child across an isolated live server handoff without lo
       return { text: 'HANDOFF_FINAL', delayMs: 0 };
     });
     const outcome = harness
-      .call({ agent: 'scout', task: 'HANDOFF_TASK', tabLabel: 'Handoff Child' })
+      .call({ agent: 'scout', task: 'HANDOFF_TASK', name: 'Handoff Child' })
       .then(
         (result) => ({ result }),
         (error: Error) => ({ error }),
@@ -207,17 +207,15 @@ test('continues a closed one-shot via resumeClosed and keeps its context', async
     const first = await harness.call({
       agent: 'scout',
       task: 'First slice: count the routers.',
-      tabLabel: 'Scout E2E',
+      name: 'Scout E2E',
     });
     assert.match(first.content[0].text, /started/);
     const firstDelivery = await harness.collect('Scout E2E', 60000);
     assert.match(firstDelivery.content, /MOCK_CHILD_OK/);
 
-    const second = await harness.call({
-      agent: 'scout',
-      task: 'Second slice: now count the handlers.',
-      tabLabel: 'Scout E2E',
-      resumeClosed: true,
+    const second = await harness.callTool('agent_send', {
+      message: 'Second slice: now count the handlers.',
+      name: 'Scout E2E',
     });
     assert.equal(second.details.resumed, true);
     await harness.collect('Scout E2E', 60000);
@@ -294,21 +292,20 @@ test('keeps a real question agent resumable after its workspace tab is renamed',
       assert.equal(harness.llm.requests.length, 1);
       assert.equal((await harness.snapshot()).panes.length, 2);
       await harness.herdr(['tab', 'rename', asked.details.tabId, 'pi']);
-      const rewaited = await harness.call({
-        agent: 'scout',
-        tabLabel: 'Scout',
+      const rewaited = await harness.callTool('agent_status', {
+        name: 'Scout',
       });
       assert.equal(rewaited.details.status, 'question');
-      assert.equal(rewaited.details.tabLabel, 'Scout');
+      assert.equal(rewaited.details.name, 'Scout');
 
       const answered = await harness.call({
         agent: 'scout',
         task: 'ANSWER: cookie session.',
-        tabLabel: 'Scout',
+        name: 'Scout',
       });
 
       assert.equal(answered.details.reused, true);
-      assert.equal(answered.details.tabLabel, 'Scout');
+      assert.equal(answered.details.name, 'Scout');
       const answeredDelivery = await harness.collect('Scout', 60000);
       assert.match(answeredDelivery.content, /MOCK_CHILD_OK/);
       assert.equal(harness.llm.requests.length, 2);
@@ -317,11 +314,9 @@ test('keeps a real question agent resumable after its workspace tab is renamed',
         'Scout',
       );
 
-      const resumed = await harness.call({
-        agent: 'scout',
-        tabLabel: 'Scout',
-        resumeClosed: true,
-        task: 'ANSWER: verify remembered cookie session.',
+      const resumed = await harness.callTool('agent_send', {
+        name: 'Scout',
+        message: 'ANSWER: verify remembered cookie session.',
       });
       assert.equal(resumed.details.resumed, true);
       await harness.collect('Scout', 60000);
@@ -346,16 +341,8 @@ test('stacks two real agent panes into a single right column', async () => {
     }));
     // Detached spawns keep both children live while the layout is checked.
     await Promise.all([
-      harness.callRaw({
-        agent: 'scout',
-        task: 'one',
-        tabLabel: 'Scout One',
-      }),
-      harness.callRaw({
-        agent: 'scout',
-        task: 'two',
-        tabLabel: 'Scout Two',
-      }),
+      harness.callRaw({ agent: 'scout', task: 'one', name: 'Scout One' }),
+      harness.callRaw({ agent: 'scout', task: 'two', name: 'Scout Two' }),
     ]);
 
     const snapshot = await harness.snapshot();
@@ -387,10 +374,7 @@ test("delivers a detached real child's result and closes its pane on its own", a
   // so the widget poller has to notice a real Pi child settling, read its
   // artifact, push it into the session and close the real pane.
   await withE2e({}, async (harness) => {
-    await harness.call({
-      agent: 'scout',
-      task: 'Report the magic word.',
-    });
+    await harness.call({ agent: 'scout', task: 'Report the magic word.' });
     assert.equal((await harness.snapshot()).panes.length, 2);
 
     await harness.waitFor(
@@ -434,7 +418,7 @@ test('does not deliver a real intermediate assistant artifact while a detached t
       await harness.call({
         agent: 'scout',
         task: 'Investigate intermediate delivery',
-        tabLabel: 'Intermediate Child',
+        name: 'Intermediate Child',
       });
       await harness.waitFor(
         () => harness.llm.requests.length >= 2 || harness.messages.length > 0,
@@ -683,12 +667,12 @@ test('batches a real detached result and question with one turn trigger', async 
         harness.callRaw({
           agent: 'scout',
           task: 'RESULT_BATCH',
-          tabLabel: 'Batch Result',
+          name: 'Batch Result',
         }),
         harness.callRaw({
           agent: 'scout',
           task: 'QUESTION_BATCH',
-          tabLabel: 'Batch Question',
+          name: 'Batch Question',
         }),
       ]);
       await harness.waitFor(
@@ -742,7 +726,7 @@ test('resumes a closed real one-shot with prior conversation context', async () 
     const first = await harness.call({
       agent: 'scout',
       task: 'Remember the token ALPHA-42.',
-      tabLabel: 'Scout Resume E2E',
+      name: 'Scout Resume E2E',
     });
     assert.equal(first.isError, undefined);
     const firstDelivery = await harness.collect('Scout Resume E2E', 60000);
@@ -751,11 +735,9 @@ test('resumes a closed real one-shot with prior conversation context', async () 
     assert.equal(history.length, 1);
     assert.ok(history[0]?.childSessionFile);
 
-    const resumed = await harness.call({
-      agent: 'scout',
-      task: 'What token did I ask you to remember?',
-      tabLabel: 'Scout Resume E2E',
-      resumeClosed: true,
+    const resumed = await harness.callTool('agent_send', {
+      message: 'What token did I ask you to remember?',
+      name: 'Scout Resume E2E',
     });
     assert.equal(resumed.isError, undefined);
     assert.equal(resumed.details.resumed, true);
@@ -819,10 +801,7 @@ test('delivers an unseen real child that finishes in the background', async () =
   // strict `done` semantics are pinned by the FakeHerdr integration test and
   // cross-checked here with a server-side wait witness.
   await withE2e({ layout: 'workspace' }, async (harness) => {
-    await harness.call({
-      agent: 'scout',
-      task: 'Report the magic word.',
-    });
+    await harness.call({ agent: 'scout', task: 'Report the magic word.' });
 
     // Server-side witness: resolves only if the unseen child really reached
     // Herdr's `done` state while its tab was still open. If the poller closes
@@ -952,7 +931,7 @@ test('steers a real running child and delivers its post-steer answer once', asyn
       const spawned = await harness.call({
         agent: 'scout',
         task: 'STEER_LIVE_TASK',
-        tabLabel: 'Steer Child',
+        name: 'Steer Child',
       });
       assert.equal(spawned.isError, undefined);
       await harness.waitFor(
@@ -980,9 +959,8 @@ test('steers a real running child and delivers its post-steer answer once', asyn
         `expected a working child, saw: ${[...statuses].join(', ') || 'nothing'}`,
       );
 
-      const steered = await harness.control({
-        tabLabel: 'Steer Child',
-        action: 'steer',
+      const steered = await harness.callTool('agent_send', {
+        name: 'Steer Child',
         message: 'STEER_LIVE_CORRECTION: answer the second half too.',
       });
       assert.equal(steered.details.action, 'steer');
@@ -1049,7 +1027,7 @@ test('interrupts a real running child and never consumes its queued steer', asyn
     await harness.call({
       agent: 'scout',
       task: 'INTERRUPT_TARGET_TASK',
-      tabLabel: 'Interrupt Child',
+      name: 'Interrupt Child',
     });
     const record = Object.values((await harness.readState()).agents)[0];
     assert.ok(record?.automationName);
@@ -1068,16 +1046,14 @@ test('interrupts a real running child and never consumes its queued steer', asyn
 
     // The tool call holds the turn, so only the abort can end this run: the
     // steer is queued into it and cannot reach a turn boundary first.
-    const steered = await harness.control({
-      tabLabel: 'Interrupt Child',
-      action: 'steer',
+    const steered = await harness.callTool('agent_send', {
+      name: 'Interrupt Child',
       message: 'STEER_BEFORE_INTERRUPT',
     });
     assert.equal(steered.details.status, 'queued');
 
-    const interrupted = await harness.control({
-      tabLabel: 'Interrupt Child',
-      action: 'interrupt',
+    const interrupted = await harness.callTool('agent_stop', {
+      name: 'Interrupt Child',
     });
     assert.equal(interrupted.details.action, 'interrupt');
     assert.equal(interrupted.details.status, 'aborted');
@@ -1166,16 +1142,15 @@ test('delivers a real child question once when an interrupt lands on its steered
       await harness.call({
         agent: 'scout',
         task: 'QUESTION_INTERRUPT_TASK',
-        tabLabel: 'Question Child',
+        name: 'Question Child',
       });
       await harness.waitFor(
         () => harness.llm.requests.length === 1,
         'the child to reach its first model request',
         60000,
       );
-      const steered = await harness.control({
-        tabLabel: 'Question Child',
-        action: 'steer',
+      const steered = await harness.callTool('agent_send', {
+        name: 'Question Child',
         message: 'STEER_INTO_QUESTION_TURN',
       });
       assert.equal(steered.details.status, 'queued');
@@ -1199,9 +1174,8 @@ test('delivers a real child question once when an interrupt lands on its steered
         'QUESTION_OVER_INTERRUPT: cookie or JWT?',
       );
 
-      const interrupted = await harness.control({
-        tabLabel: 'Question Child',
-        action: 'interrupt',
+      const interrupted = await harness.callTool('agent_stop', {
+        name: 'Question Child',
       });
       assert.equal(interrupted.details.action, 'interrupt');
       assert.equal(interrupted.details.status, 'aborted');

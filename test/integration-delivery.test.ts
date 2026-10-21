@@ -78,7 +78,7 @@ test('delivers a detached result through the widget poller and closes the one-sh
     assert.equal(message?.triggerTurn, true);
     // Pane-layout agents are visible on screen, so no notification ping.
     assert.equal(harness.fake.callsMatching('notification', 'show').length, 0);
-    assert.equal(message?.details.tabLabel, 'Scout');
+    assert.equal(message?.details.name, 'Scout');
 
     // Delivered exactly once, pane closed, state pruned.
     await harness.fire('session_start');
@@ -147,10 +147,7 @@ test('delivers an unseen done completion, notifies, and closes the one-shot', as
       settleStatus: 'done',
     }));
 
-    await harness.call({
-      agent: 'scout',
-      task: 'Background job',
-    });
+    await harness.call({ agent: 'scout', task: 'Background job' });
 
     await harness.waitFor(
       () => harness.messages.length > 0,
@@ -193,7 +190,7 @@ test('collects a child that finishes as done rather than idle', async () => {
     }));
 
     const result = await harness.call({ agent: 'scout', task: 'Find it' });
-    const delivered = await harness.collect(result.details.tabLabel);
+    const delivered = await harness.collect(result.details.name);
 
     assert.match(delivered.content, /DONE-STATUS RESULT/);
   });
@@ -248,16 +245,8 @@ test('delivers two detached outcomes as one batch with a single turn trigger', a
     // Neither child runs until both are spawned, so both settle in the same
     // poller tick — the condition the batching exists for.
     harness.fake.holdChildren();
-    await harness.call({
-      agent: 'scout',
-      task: 'a',
-      tabLabel: 'Scout A',
-    });
-    await harness.call({
-      agent: 'scout',
-      task: 'b',
-      tabLabel: 'Scout B',
-    });
+    await harness.call({ agent: 'scout', task: 'a', name: 'Scout A' });
+    await harness.call({ agent: 'scout', task: 'b', name: 'Scout B' });
     await harness.fake.releaseChildren();
 
     await harness.waitFor(
@@ -281,7 +270,7 @@ test('delivers two detached outcomes as one batch with a single turn trigger', a
       ['steer', 'steer'],
     );
     assert.deepEqual(
-      harness.messages.map((message) => message.details.tabLabel).sort(),
+      harness.messages.map((message) => message.details.name).sort(),
       ['Scout A', 'Scout B'],
     );
   });

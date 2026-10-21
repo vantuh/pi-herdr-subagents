@@ -109,14 +109,14 @@ export async function runAgentTask(
     return textResult(`Herdr agent ${spawn.tabLabel} opened.`, {
       tabId: target.tabId,
       paneId: target.paneId,
-      tabLabel: spawn.tabLabel,
+      name: spawn.tabLabel,
     });
   }
   return await runAgentTurn(invocation, spawn, target, invocation.task);
 }
 
 /**
- * Reopens a closed one-shot through the resumeClosed spawn path without
+ * Reopens a closed one-shot through the resume spawn path without
  * sending a task, so the user can read its session.
  */
 export async function openClosedAgent(
@@ -138,11 +138,6 @@ export async function openClosedAgent(
   return await runAgentTask(
     {
       pi,
-      params: {
-        agent: agent.name,
-        tabLabel: record.tabLabel,
-        resumeClosed: true,
-      },
       signal: undefined,
       onUpdate: undefined,
       ctx,
@@ -152,7 +147,8 @@ export async function openClosedAgent(
       config,
       layout: getHerdrAgentsLayout(config),
       baseLabel: record.tabLabel,
-      resumeClosed: true,
+      mode: 'resume',
+      explicitName: true,
       owner: orchestratorIdentity(ctx),
     },
   );

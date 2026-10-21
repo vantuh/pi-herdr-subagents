@@ -184,7 +184,7 @@ test('renders delivered results and questions as their own blocks', async () => 
         {
           content: 'inline attribution the model reads',
           details: {
-            tabLabel: 'Scout',
+            name: 'Scout',
             agent: 'scout',
             result: 'BODY TEXT',
             question: 'BODY TEXT',

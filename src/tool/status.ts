@@ -24,45 +24,41 @@ import { paneStateKey } from '../state/live-records.ts';
 import type { HerdrAgentStateRecord } from '../state/schema.ts';
 import { textResult } from './result.ts';
 
-export function resumeClosedLiveDecision(input: {
+export function unresolvedOwnedAgentResult(target: {
+  automationName?: string;
+}) {
+  return textResult(
+    `Owned Herdr target ${target.automationName} is still live, but its legacy owner/pane identity cannot be reconciled safely. Inspect that target; do not resend the task or spawn a replacement.`,
+    {},
+    true,
+  );
+}
+
+/** Why a closed agent cannot be resumed while a live pane carries its name. */
+export function liveAgentResumeRefusal(input: {
   label: string;
   pane: PaneInfo;
   record?: HerdrAgentStateRecord;
-  answeringQuestion: boolean;
-}): { action: 'reuse' } | { action: 'reject'; text: string } {
-  if (input.answeringQuestion) return { action: 'reuse' };
+}): string {
   const status = input.pane.agent_status;
   if (status === 'working' || status === 'blocked') {
-    return {
-      action: 'reject',
-      text: `A live Herdr agent named "${input.label}" is still working. Check its status with the same tabLabel and no task; do not resume a closed copy over live work.`,
-    };
+    return `A live agent named "${input.label}" is still working. Check it with agent_status; do not resume a closed copy over live work.`;
   }
   if (input.record?.detached) {
-    return {
-      action: 'reject',
-      text: `A live Herdr agent named "${input.label}" already settled and is waiting to be delivered. Wait for delivery; do not resume a closed copy over live work.`,
-    };
+    return `A live agent named "${input.label}" already settled and is waiting to be delivered. Wait for delivery; do not resume a closed copy over live work.`;
   }
-  return {
-    action: 'reject',
-    text: `A live Herdr agent named "${input.label}" is still open. Check its status or answer it; do not resume a closed copy over live work.`,
-  };
+  return `A live agent named "${input.label}" is still open. Check it with agent_status or answer it with agent_send; do not resume a closed copy over live work.`;
 }
 
 export async function executeAgentStatus(args: {
   agent: AgentProfile;
-  tabLabel: string | undefined;
-  baseLabel: string;
+  name: string;
   layout: HerdrAgentLayout;
   config: HerdrAgentsConfig;
   ownerSessionId?: string;
   signal?: AbortSignal;
 }) {
-  const { agent, baseLabel, layout, signal } = args;
-  if (!args.tabLabel?.trim()) {
-    return textResult('tabLabel is required when task is omitted.', {}, true);
-  }
+  const { agent, name: baseLabel, layout, signal } = args;
 
   const { context: current, state } = await loadContextWithState(signal);
   // Tab and workspace layouts reuse by tab label; workspace tabs live in the
@@ -100,13 +96,9 @@ export async function executeAgentStatus(args: {
       baseLabel,
       args.ownerSessionId,
     );
-    return textResult(
-      unresolved
-        ? `Owned Herdr target ${unresolved.automationName} is still live, but its legacy owner/pane identity cannot be reconciled safely. Inspect that target; do not resend the task or spawn a replacement.`
-        : `No running Herdr agent named "${baseLabel}" found.`,
-      {},
-      true,
-    );
+    return unresolved
+      ? unresolvedOwnedAgentResult(unresolved)
+      : textResult(`No running agent named "${baseLabel}" found.`, {}, true);
   }
 
   const spawnWarnings = record?.spawnWarnings ?? [];
@@ -120,7 +112,7 @@ export async function executeAgentStatus(args: {
       {
         tabId,
         paneId: pane.pane_id,
-        tabLabel: label,
+        name: label,
         agent,
         status: 'question',
         closed: false,
@@ -131,11 +123,11 @@ export async function executeAgentStatus(args: {
 
   if (record?.collected) {
     return textResult(
-      `Herdr agent ${label} was already collected. Close it with /herdr-agents if it is still open, then continue it with resumeClosed and the same tabLabel. Do not resend the previous task.`,
+      `Herdr agent ${label} was already collected. Close it with /herdr-agents if it is still open, then continue it with agent_send and the same name. Do not resend the previous task.`,
       {
         tabId,
         paneId: pane.pane_id,
-        tabLabel: label,
+        name: label,
       },
     );
   }
@@ -155,7 +147,7 @@ export async function executeAgentStatus(args: {
   return textResult(formatSpawnWarnings(text, spawnWarnings), {
     tabId,
     paneId: pane.pane_id,
-    tabLabel: label,
+    name: label,
     agent,
     status: snapshot.status,
     ...spawnWarningDetails(spawnWarnings),

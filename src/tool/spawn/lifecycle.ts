@@ -34,7 +34,7 @@ function turnDetails(
   return {
     tabId: target.tabId,
     paneId: target.paneId,
-    tabLabel: spawn.tabLabel,
+    name: spawn.tabLabel,
     reused: spawn.reused,
     ...resumedDetails(spawn.resumed),
     agent: spawn.agent,
@@ -167,7 +167,7 @@ export async function runAgentTurn(
     details: {
       tabId,
       paneId,
-      tabLabel,
+      name: tabLabel,
       reused: spawn.reused,
       agent: spawn.agent,
     },
