@@ -88,7 +88,9 @@ and no result is ever delivered.
 
 The second pane-layout agent exists only because the answer path rebalances the
 layout between the two steps, and `FakeHerdr.holdApi` (new, mirroring
-`holdCommand`) holds `layout.export` to pin that window for a whole tick.
+`holdCommand`) holds `layout.export` to pin that window; the test then waits for
+the `agent get` a poller pass issues against the re-armed record, so no fixed
+sleep stands in for the tick.
 
 Evidence:
 

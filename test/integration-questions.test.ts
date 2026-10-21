@@ -98,14 +98,14 @@ test('does not re-deliver the answered question or lose the result that follows 
     );
 
     await harness.call({ agent: 'scout', task: 'Smoke the answer path' });
+    const asked = await harness.collect('Scout');
+    assert.equal(asked.customType, 'agent_question');
     // A second pane-layout agent makes the answer path rebalance the layout.
     await harness.call({
       agent: 'scout',
       task: 'Stay working',
       name: 'Other',
     });
-    const asked = await harness.collect('Scout');
-    assert.equal(asked.customType, 'agent_question');
     const before = harness.messages.length;
 
     // `layout.export` is the first Herdr call after the record is re-armed, so
@@ -123,7 +123,27 @@ test('does not re-deliver the answered question or lose the result that follows 
       );
       return record?.detached === true;
     }, 'the answer path to re-arm delivery');
-    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    const rearmed = Object.values((await harness.readState()).agents).find(
+      (item) => item.tabLabel === 'Scout',
+    );
+    assert.ok(rearmed?.automationName);
+
+    // A poller pass inspects the re-armed agent through `agent get`; that call
+    // landing while `layout.export` is still held proves the pass ran inside
+    // the window. Scout is the only settled agent, so the baseline count is
+    // what separates this pass from the one that delivered the question.
+    const inspected = () =>
+      harness.fake.calls.filter(
+        (argv) =>
+          argv[0] === 'agent' &&
+          argv[1] === 'get' &&
+          argv[2] === rearmed?.automationName,
+      ).length;
+    const baseline = inspected();
+    await harness.waitFor(
+      () => inspected() > baseline,
+      'a poller pass over the re-armed agent',
+    );
     const reDelivered = harness.messages
       .slice(before)
       .filter((message) => message.customType === 'agent_question');
