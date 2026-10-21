@@ -54,7 +54,7 @@ Notes:
 ## Prompt body
 
 The body (trimmed) becomes the profile system prompt. The extension appends the
-Herdr child protocol (result/`ask_question` rules) to it and writes both to a
+child protocol (result/`ask_question` rules) to it and writes both to a
 temp file. That file is passed with `--append-system-prompt` (default) or
 `--system-prompt` (`system-prompt: replace`). An empty body leaves only the
 protocol text.

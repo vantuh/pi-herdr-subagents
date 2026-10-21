@@ -223,7 +223,7 @@ test('renders block content by keeping its text and dropping image blocks', asyn
           { type: 'text', text: 'BLOCK BODY TEXT' },
           { type: 'image', data: 'AAAA', mimeType: 'image/png' },
         ],
-        details: { tabLabel: 'Scout', agent: 'scout' },
+        details: { name: 'Scout', agent: 'scout' },
       },
       { expanded: false, outputPad: 1 },
       {
@@ -234,6 +234,7 @@ test('renders block content by keeping its text and dropping image blocks', asyn
     );
 
     const rendered = component.render(80).join('\n');
+    assert.match(rendered, /Agent Scout · scout/);
     assert.match(rendered, /BLOCK BODY TEXT/);
     assert.doesNotMatch(rendered, /AAAA|image\/png/);
   });

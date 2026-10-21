@@ -150,9 +150,7 @@ export class AgentManagerOverlay extends Container {
     };
 
     this.addChild(new DynamicBorder((str: string) => theme.fg('accent', str)));
-    this.addChild(
-      new Text(theme.fg('accent', theme.bold('Herdr Agents')), 1, 0),
-    );
+    this.addChild(new Text(theme.fg('accent', theme.bold('Agents')), 1, 0));
     this.emptyText = new Text(
       theme.fg('dim', 'No managed agents. Watching for new ones…'),
       1,
