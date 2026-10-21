@@ -102,7 +102,10 @@ Easy to break and not obvious from one file:
 - Each managed run writes an `interrupted` marker before work starts. Only
   successful `agent_before_settle` removes it; Escape skips that boundary, so
   aborted runs stay blocked. The poller must not claim or close partial results.
-  The parent clears old result/interruption artifacts before a new task.
+  The parent clears old result/question artifacts before a new task, and before
+  the lifecycle write that re-arms delivery: a poller tick takes its snapshot
+  before it reads artifacts, so clearing first is what stops it from claiming
+  the previous turn's question or result as this turn's outcome.
 - Every agent tool refuses to run outside TUI mode before any Herdr call, because
   only the TUI poller delivers outcomes.
 - `agent_send` has no `agent` parameter: it dispatches on the named agent's state

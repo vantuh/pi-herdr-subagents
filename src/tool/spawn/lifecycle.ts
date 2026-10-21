@@ -1,11 +1,6 @@
 import type { AgentToolResult } from '@earendil-works/pi-coding-agent';
 
-import {
-  clearAgentQuestion,
-  clearAgentResult,
-  createResultFile,
-  RESULT_FILE_MARKER,
-} from '../../artifacts.ts';
+import { createResultFile, RESULT_FILE_MARKER } from '../../artifacts.ts';
 import { promptAgent, startAgent } from '../../herdr/agent.ts';
 import { rebalanceCurrentPaneAgents } from '../../herdr/layout.ts';
 import { listPanes } from '../../herdr/snapshot.ts';
@@ -151,11 +146,6 @@ export async function runAgentTurn(
     'All assistant text you write for this task is captured as the result artifact.',
     `${RESULT_FILE_MARKER} ${spawn.resultFile}`,
   ].join('\n');
-
-  await clearAgentResult(spawn.resultFile);
-  // A leftover question from the previous turn would otherwise be reported
-  // again as soon as this prompt finishes.
-  await clearAgentQuestion(spawn.resultFile);
 
   onUpdate?.({
     content: [

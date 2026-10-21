@@ -83,6 +83,82 @@ test('delivers a detached question without closing the agent', async () => {
   });
 });
 
+test('does not re-deliver the answered question or lose the result that follows it', async () => {
+  // The answer path re-arms delivery, then clears the previous turn's artifacts
+  // and prompts. A poller tick that lands between those two steps sees an armed
+  // record beside the stale question, claims the run for it, re-delivers the
+  // question and swallows the real result.
+  await withHarness({}, async (harness) => {
+    harness.fake.setBehavior((turn) =>
+      turn.prompt.includes('Stay working')
+        ? { neverSettle: true }
+        : turn.turn === 1
+          ? { question: 'Which token?' }
+          : { result: 'LIVE_ANSWER_20261021\n\nAGENT_RESULT: done' },
+    );
+
+    await harness.call({ agent: 'scout', task: 'Smoke the answer path' });
+    // A second pane-layout agent makes the answer path rebalance the layout.
+    await harness.call({
+      agent: 'scout',
+      task: 'Stay working',
+      name: 'Other',
+    });
+    const asked = await harness.collect('Scout');
+    assert.equal(asked.customType, 'agent_question');
+    const before = harness.messages.length;
+
+    // `layout.export` is the first Herdr call after the record is re-armed, so
+    // holding it pins the answer path inside the window for a full tick.
+    harness.fake.holdApi('layout.export');
+    const answering = harness.callTool('agent_send', {
+      name: 'Scout',
+      message: 'Return exact token LIVE_ANSWER_20261021',
+    });
+    // Stays handled in case an assertion below abandons it mid-flight.
+    void answering.catch(() => {});
+    await harness.waitFor(async () => {
+      const record = Object.values((await harness.readState()).agents).find(
+        (item) => item.tabLabel === 'Scout',
+      );
+      return record?.detached === true;
+    }, 'the answer path to re-arm delivery');
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    const reDelivered = harness.messages
+      .slice(before)
+      .filter((message) => message.customType === 'agent_question');
+    harness.fake.releaseCommands();
+    assert.deepEqual(
+      reDelivered.map((message) => message.content),
+      [],
+      'the answered question must not be delivered again',
+    );
+
+    const answered = await answering;
+    assert.match(answered.content[0].text, /^Answer sent to agent Scout /);
+
+    const delivered = await harness.collect('Scout');
+    assert.equal(delivered.customType, 'agent_result');
+    assert.match(delivered.content, /LIVE_ANSWER_20261021/);
+    // Delivered once: the one-shot closed and its history was archived.
+    assert.deepEqual(
+      harness.messages
+        .slice(before)
+        .filter((message) => message.customType === 'agent_result')
+        .map((message) => message.details.name),
+      ['Scout'],
+    );
+    assert.equal(
+      harness.fake.panes.some((pane) => pane.pane_id === asked.details.paneId),
+      false,
+    );
+    assert.equal(
+      (await harness.readState()).closedHistory[0]?.tabLabel,
+      'Scout',
+    );
+  });
+});
+
 test("does not accept a reused agent's previous settled state as this turn's result", async () => {
   // A parked one-shot still exposes its prior idle/done status, and the
   // old artifact is still on disk until this prompt clears it. Reuse happens

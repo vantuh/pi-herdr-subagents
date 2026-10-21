@@ -116,6 +116,8 @@ export class FakeHerdr {
   private readonly commandMalformed = new Map<string, string>();
   /** `herdr <group> <command>` keys whose calls block until released. */
   private readonly heldCommands = new Set<string>();
+  /** API socket methods whose calls block until released. */
+  private readonly heldApiMethods = new Set<string>();
   private readonly commandWaiters: Array<() => void> = [];
   private omitTabIdOnCreate = false;
   private createdTabLabel?: string;
@@ -206,9 +208,15 @@ export class FakeHerdr {
     this.heldCommands.add(prefix);
   }
 
-  /** Let every held command through; calls made after this are not held. */
+  /** Block API socket methods until `releaseCommands()`. */
+  holdApi(method: string): void {
+    this.heldApiMethods.add(method);
+  }
+
+  /** Let every held command and API method through; new calls are not held. */
   releaseCommands(): void {
     this.heldCommands.clear();
+    this.heldApiMethods.clear();
     const waiters = this.commandWaiters.splice(0);
     for (const wake of waiters) wake();
   }
@@ -383,6 +391,10 @@ export class FakeHerdr {
       method: string;
       params: Record<string, unknown>;
     };
+
+    if (this.heldApiMethods.has(method)) {
+      await new Promise<void>((resolve) => this.commandWaiters.push(resolve));
+    }
 
     if (method === 'layout.export') {
       const pane = this.paneById(String(params.pane_id));

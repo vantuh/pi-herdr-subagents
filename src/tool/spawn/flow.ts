@@ -5,7 +5,12 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 
 import { discoverAgents } from '../../agents.ts';
-import { createAgentTempFiles, removeAgentTempFiles } from '../../artifacts.ts';
+import {
+  clearAgentQuestion,
+  clearAgentResult,
+  createAgentTempFiles,
+  removeAgentTempFiles,
+} from '../../artifacts.ts';
 import { getHerdrAgentsLayout } from '../../config.ts';
 import type { HerdrAgentsConfig } from '../../config/schema.ts';
 import { execHerdr } from '../../herdr/cli.ts';
@@ -235,6 +240,15 @@ async function prepareSpawnTarget(
     spawn.agentPane = (await listPanes(invocation.signal)).find(
       (pane) => pane.pane_id === paneId,
     );
+  }
+
+  // Must precede the lifecycle write, which re-arms outcome delivery for this
+  // turn: a poller tick that loads its snapshot after that write reads the
+  // artifacts after this clear, so the previous turn's question or result can
+  // never be claimed again.
+  if (invocation.task !== undefined) {
+    await clearAgentResult(spawn.resultFile);
+    await clearAgentQuestion(spawn.resultFile);
   }
 
   await startAndRecordAgent(invocation, settings, spawn, placement);
