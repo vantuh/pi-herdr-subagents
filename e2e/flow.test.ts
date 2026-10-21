@@ -905,7 +905,13 @@ test('archives a long real child result and delivers an excerpt with its report 
     assert.ok(reportPath, 'expected a report path line');
     assert.equal(
       path.dirname(reportPath),
-      path.join(harness.root, 'home', '.pi', 'agent', 'pi-herdr-subagents-results'),
+      path.join(
+        harness.root,
+        'home',
+        '.pi',
+        'agent',
+        'pi-herdr-subagents-results',
+      ),
       'the report belongs to the hermetic agent dir',
     );
     assert.equal(await fs.readFile(reportPath, 'utf8'), report);

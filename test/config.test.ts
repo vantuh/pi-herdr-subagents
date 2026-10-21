@@ -78,7 +78,10 @@ async function writeConfigFile(content: string): Promise<string> {
 }
 
 test('config path sits in the given agent dir', () => {
-  assert.equal(herdrAgentsConfigPath('/agents'), '/agents/pi-herdr-subagents.json');
+  assert.equal(
+    herdrAgentsConfigPath('/agents'),
+    '/agents/pi-herdr-subagents.json',
+  );
 });
 
 test('reads a valid config file', async () => {
