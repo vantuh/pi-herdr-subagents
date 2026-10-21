@@ -50,12 +50,12 @@ export interface HarnessOptions {
   /** Agent profiles written to the fixture project. Defaults to `scout`. */
   profiles?: AgentProfileFixture[];
   /**
-   * Layout written to the fixture's herdr-agents.json. Existing tests default
+   * Layout written to the fixture's pi-herdr-subagents.json. Existing tests default
    * to "pane"; "workspace" exercises the extension's real default explicitly.
    */
   layout?: 'pane' | 'tab' | 'workspace';
   /**
-   * Full herdr-agents.json content, written before activation. Overrides
+   * Full pi-herdr-subagents.json content, written before activation. Overrides
    * `layout` when present.
    */
   config?: Record<string, unknown>;
@@ -137,9 +137,9 @@ export async function createHarness(
     path.join(cwd, '.pi', 'agents'),
     options.profiles ?? [{ name: 'scout' }],
   );
-  // Layout config lives in the agent dir (herdr-agents.json), not in env.
+  // Layout config lives in the agent dir (pi-herdr-subagents.json), not in env.
   await fs.writeFile(
-    path.join(agentDir, 'herdr-agents.json'),
+    path.join(agentDir, 'pi-herdr-subagents.json'),
     `${JSON.stringify(options.config ?? { layout: options.layout ?? 'pane' })}\n`,
     'utf8',
   );

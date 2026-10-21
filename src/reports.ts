@@ -4,7 +4,7 @@ import * as path from 'node:path';
 
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
-export const HERDR_AGENTS_REPORTS_DIR = 'herdr-agents-results';
+export const HERDR_AGENTS_REPORTS_DIR = 'pi-herdr-subagents-results';
 export const REPORT_TTL_DAYS = 30;
 
 const REPORT_FILE_MODE = 0o600;

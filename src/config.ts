@@ -15,7 +15,7 @@ import { parseJson } from './json.ts';
 export const DEFAULT_HERDR_AGENTS_LAYOUT: HerdrAgentLayout = 'workspace';
 export const DEFAULT_AGENTS_WORKSPACE_LABEL = 'subagents';
 
-export const HERDR_AGENTS_CONFIG_FILE = 'herdr-agents.json';
+export const HERDR_AGENTS_CONFIG_FILE = 'pi-herdr-subagents.json';
 
 export function herdrAgentsConfigPath(
   agentDir: string = getAgentDir(),
@@ -33,7 +33,7 @@ function normalizeLabel(value: unknown): string | undefined {
   return trimmed || undefined;
 }
 
-/** Reads herdr-agents.json; `{}` when missing or invalid. */
+/** Reads pi-herdr-subagents.json; `{}` when missing or invalid. */
 export async function loadHerdrAgentsConfig(
   path: string = herdrAgentsConfigPath(),
 ): Promise<HerdrAgentsConfig> {

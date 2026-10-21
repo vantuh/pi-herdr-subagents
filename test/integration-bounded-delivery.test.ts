@@ -31,7 +31,7 @@ function longReport(marker: string): string {
   return ['FIRST LINE OF THE REPORT', ...middle, marker].join('\n');
 }
 
-/** `<agent dir>/herdr-agents-results`, the directory the extension just used. */
+/** `<agent dir>/pi-herdr-subagents-results`, the directory the extension just used. */
 async function reports(): Promise<string[]> {
   return await fs.readdir(herdrAgentReportsDir()).catch(() => []);
 }

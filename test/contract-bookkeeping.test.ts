@@ -63,7 +63,7 @@ test('writes the state file with owner-only permissions', async () => {
   });
 });
 
-test('reads herdr-agents.json once per extension load', async () => {
+test('reads pi-herdr-subagents.json once per extension load', async () => {
   await withHarness({ layout: 'pane' }, async (harness) => {
     // The first spawn resolves the read; only then is the file rewritten.
     await harness.callRaw({ agent: 'scout', task: 'first', name: 'One' });
@@ -71,7 +71,7 @@ test('reads herdr-agents.json once per extension load', async () => {
     const agentDir = process.env.PI_CODING_AGENT_DIR;
     assert.ok(agentDir, 'expected the harness to set PI_CODING_AGENT_DIR');
     await fs.writeFile(
-      path.join(agentDir, 'herdr-agents.json'),
+      path.join(agentDir, 'pi-herdr-subagents.json'),
       `${JSON.stringify({ layout: 'tab' })}\n`,
     );
 

@@ -43,7 +43,7 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
     return;
   }
 
-  // Read once per extension load: herdr-agents.json changes apply on /reload.
+  // Read once per extension load: pi-herdr-subagents.json edits apply on /reload.
   const configPromise = loadHerdrAgentsConfig();
   // Sweep expired durable reports at load. The directory is captured
   // synchronously because the sweep is fire-and-forget: resolving it inside the

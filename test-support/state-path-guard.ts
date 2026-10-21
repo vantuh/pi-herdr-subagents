@@ -3,7 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 /**
- * Stand-in for the live `~/.pi/agent/herdr-agents-state.json` for a whole test
+ * Stand-in for the live `~/.pi/agent/pi-herdr-subagents-state.json` for a whole test
  * run.
  *
  * `vitest.config.ts` pins `PI_AGENTS_STATE_PATH` to this path, so nothing in

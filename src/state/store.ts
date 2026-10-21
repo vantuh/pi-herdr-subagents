@@ -22,6 +22,8 @@ import {
 
 const STATE_PATH_ENV = 'PI_AGENTS_STATE_PATH';
 
+export const HERDR_AGENTS_STATE_FILE = 'pi-herdr-subagents-state.json';
+
 type StateMutationKind = 'lifecycle' | 'stage' | 'finalize' | 'detached';
 
 let failNextStateSaves = 0;
@@ -60,7 +62,7 @@ export function throwIfInjectedMutation(kind: StateMutationKind): void {
 export function getHerdrAgentsStatePath(): string {
   return (
     process.env[STATE_PATH_ENV] ??
-    path.join(os.homedir(), '.pi', 'agent', 'herdr-agents-state.json')
+    path.join(os.homedir(), '.pi', 'agent', HERDR_AGENTS_STATE_FILE)
   );
 }
 

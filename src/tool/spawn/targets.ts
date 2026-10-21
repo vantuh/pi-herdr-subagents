@@ -60,7 +60,7 @@ export async function resolveAgentPlacement(
     if (agentsWorkspaceId === current.workspaceId) {
       return {
         error: textResult(
-          `The configured workspace.label matches this Orchestrator's own workspace. Change workspace.label in herdr-agents.json so agents spawn into a dedicated workspace instead of the Orchestrator's.`,
+          `The configured workspace.label matches this Orchestrator's own workspace. Change workspace.label in pi-herdr-subagents.json so agents spawn into a dedicated workspace instead of the Orchestrator's.`,
           { workspaceId: agentsWorkspaceId },
           true,
         ),

@@ -15,8 +15,8 @@ export function isHerdrAgentLayout(value: unknown): value is HerdrAgentLayout {
 }
 
 /**
- * User configuration, read from `herdr-agents.json` in the Pi agent dir
- * (`~/.pi/agent/herdr-agents.json` by default). Same pattern as kiro-acp:
+ * User configuration, read from `pi-herdr-subagents.json` in the Pi agent dir
+ * (`~/.pi/agent/pi-herdr-subagents.json` by default). Same pattern as kiro-acp:
  * a missing or invalid file yields `{}`, so every field falls back to its
  * default and a broken config can never break spawning.
  *
