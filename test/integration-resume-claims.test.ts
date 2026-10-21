@@ -47,7 +47,7 @@ async function seedClosedOneShotWithMissingSession(
   return state;
 }
 
-test('resumeClosed fails closed when placement state pruning fails', async () => {
+test('agent_send fails closed when placement state pruning fails', async () => {
   await withHarness({}, async (harness) => {
     await harness.call({ agent: 'scout', task: 'first', name: 'Scout Resume' });
     await harness.collect('Scout Resume');
@@ -82,7 +82,7 @@ test('resumeClosed fails closed when placement state pruning fails', async () =>
   });
 });
 
-test('resumeClosed releases no claim when invalidation succeeded', async () => {
+test('agent_send releases no claim when invalidation succeeded', async () => {
   await withHarness({}, async (harness) => {
     const state = await seedClosedOneShotWithMissingSession(harness);
     const restore = failStateReadOnce(harness, (raw) =>
@@ -109,7 +109,7 @@ test('resumeClosed releases no claim when invalidation succeeded', async () => {
   });
 });
 
-test('resumeClosed releases the claim again when invalidation failed', async () => {
+test('agent_send releases the claim again when invalidation failed', async () => {
   await withHarness({}, async (harness) => {
     const state = await seedClosedOneShotWithMissingSession(harness);
     const restore = failStateReadOnce(harness, (raw) =>
@@ -139,7 +139,7 @@ test('resumeClosed releases the claim again when invalidation failed', async () 
   });
 });
 
-test('concurrent resumeClosed has a single winner', async () => {
+test('concurrent agent_send resumes have a single winner', async () => {
   await withHarness({}, async (harness) => {
     await harness.call({ agent: 'scout', task: 'first', name: 'Scout Resume' });
     await harness.collect('Scout Resume');

@@ -51,17 +51,17 @@ AGENT_RESULT: done | blocked — <one-line summary>`;
 
 /** Early tool result when a child asked instead of finishing. */
 export function formatAgentQuestion(
-  tabLabel: string,
+  name: string,
   agent: string,
   question: string,
 ): string {
   return [
-    `Agent ${tabLabel} (${agent}) asked a question instead of finishing:`,
+    `Agent ${name} (${agent}) asked a question instead of finishing:`,
     '',
     question,
     '',
     'The agent is still open and waiting. Answer it by calling agent_send',
-    `with name "${tabLabel}" and message set to your answer.`,
+    `with name "${name}" and message set to your answer.`,
     'Answer from your own context, or ask the user if the decision is theirs.',
   ].join('\n');
 }

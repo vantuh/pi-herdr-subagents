@@ -202,7 +202,7 @@ test('collects a real fast completion without a duplicate Enter', async () => {
   });
 });
 
-test('continues a closed one-shot via resumeClosed and keeps its context', async () => {
+test('continues a closed one-shot via agent_send and keeps its context', async () => {
   await withE2e({}, async (harness) => {
     const first = await harness.call({
       agent: 'scout',
@@ -298,10 +298,9 @@ test('keeps a real question agent resumable after its workspace tab is renamed',
       assert.equal(rewaited.details.status, 'question');
       assert.equal(rewaited.details.name, 'Scout');
 
-      const answered = await harness.call({
-        agent: 'scout',
-        task: 'ANSWER: cookie session.',
+      const answered = await harness.callTool('agent_send', {
         name: 'Scout',
+        message: 'ANSWER: cookie session.',
       });
 
       assert.equal(answered.details.reused, true);

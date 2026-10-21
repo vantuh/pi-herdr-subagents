@@ -6,7 +6,7 @@ import { test } from 'vitest';
 import { flagValue, withHarness } from '../test-support/integration-harness.ts';
 
 /**
- * Basic resume: live-label protection, logical labels, and resumeClosed
+ * Basic resume: live-name protection, logical names, and agent_send
  * spawns in every layout.
  */
 
@@ -114,7 +114,7 @@ for (const layout of ['tab', 'workspace'] as const) {
   });
 }
 
-test('continues a closed workspace agent via resumeClosed', async () => {
+test('continues a closed workspace agent via agent_send', async () => {
   await withHarness({ layout: 'workspace' }, async (harness) => {
     const first = await harness.call({
       agent: 'scout',
@@ -137,7 +137,7 @@ test('continues a closed workspace agent via resumeClosed', async () => {
   });
 });
 
-test('resumeClosed archives and resumes in workspace mode', async () => {
+test('agent_send archives and resumes in workspace mode', async () => {
   await withHarness({ layout: 'workspace' }, async (harness) => {
     const first = await harness.call({
       agent: 'scout',
@@ -201,7 +201,7 @@ test('archives a completed one-shot and resumes it with --session', async () => 
   });
 });
 
-test('resumeClosed resolves the profile from the closed history when agent is omitted', async () => {
+test('agent_send resolves the profile from the closed history when agent is omitted', async () => {
   await withHarness({}, async (harness) => {
     const first = await harness.call({
       agent: 'scout',

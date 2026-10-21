@@ -11,7 +11,7 @@ import { flagValue, withHarness } from '../test-support/integration-harness.ts';
  * sessions and archived profile policy.
  */
 
-test('resumeClosed errors when the child JSONL is missing or mismatched', async () => {
+test('agent_send errors when the child JSONL is missing or mismatched', async () => {
   await withHarness({}, async (harness) => {
     await harness.call({ agent: 'scout', task: 'first', name: 'Scout Resume' });
     await harness.collect('Scout Resume');
@@ -93,7 +93,7 @@ test("another Orchestrator session cannot resume this session's closed agent", a
   });
 });
 
-test('resumeClosed resolves project skills from the archived cwd', async () => {
+test('agent_send resolves project skills from the archived cwd', async () => {
   await withHarness(
     { profiles: [{ name: 'scout', skills: ['tdd'] }] },
     async (harness) => {
