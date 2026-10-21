@@ -7,7 +7,10 @@ import type { ExtensionMode } from '@earendil-works/pi-coding-agent';
 
 import herdrAgentsExtension from '../src/index.ts';
 import type { HerdrAgentsState } from '../src/state/schema.ts';
-import { whenStorageReady } from '../src/state/store.ts';
+import {
+  mutateHerdrAgentsState,
+  whenStorageReady,
+} from '../src/state/store.ts';
 import { FakeHerdr } from './fake-herdr.ts';
 import {
   type AgentProfileFixture,
@@ -126,6 +129,12 @@ export interface Harness {
   /** Run a registered slash command with the mock command context. */
   runCommand(name: string, args?: string): Promise<void>;
   readState(): Promise<HerdrAgentsState>;
+  /**
+   * Locked, atomic state edit: the same read-modify-write protocol the extension
+   * uses. A raw `writeFile` here can be caught mid-truncation by a poller read,
+   * which quarantines the file and leaves the harness with no state at all.
+   */
+  updateState(mutate: (state: HerdrAgentsState) => void): Promise<void>;
   waitFor(
     predicate: () => boolean | Promise<boolean>,
     label: string,
@@ -259,11 +268,17 @@ export async function createHarness(
       await command.handler(args, host.ctx);
     },
     readState: async () => {
-      try {
-        return JSON.parse(await fs.readFile(statePath, 'utf8'));
-      } catch {
-        return { version: 1, agents: {} };
-      }
+      const raw = await fs.readFile(statePath, 'utf8').catch((error) => {
+        if ((error as { code?: string }).code === 'ENOENT') return undefined;
+        throw error;
+      });
+      return raw === undefined ? { version: 1, agents: {} } : JSON.parse(raw);
+    },
+    updateState: async (mutateState) => {
+      await mutateHerdrAgentsState(statePath, {}, (state) => {
+        mutateState(state);
+        return { save: true, value: undefined };
+      });
     },
     waitFor,
     dispose: async () => {

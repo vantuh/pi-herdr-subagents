@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { promises as fs } from 'node:fs';
 
 import { test } from 'vitest';
 
@@ -79,11 +78,11 @@ test('agent_send refuses to steer a live agent owned by another session', async 
       controlAck: 'queued',
     }));
     await harness.call({ agent: 'scout', task: 'Long', name: 'Scout F' });
-    const state = await harness.readState();
-    for (const record of Object.values(state.agents)) {
-      record.ownerSessionId = 'another-orchestrator-session';
-    }
-    await fs.writeFile(harness.statePath, JSON.stringify(state));
+    await harness.updateState((state) => {
+      for (const record of Object.values(state.agents)) {
+        record.ownerSessionId = 'another-orchestrator-session';
+      }
+    });
 
     const refused = await harness.callTool('agent_send', {
       name: 'Scout F',

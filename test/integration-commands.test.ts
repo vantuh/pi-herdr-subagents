@@ -188,13 +188,14 @@ test('/agents lists and reopens a closed one-shot of this session without a task
     await harness.collect('Scout Read');
     const state = await harness.readState();
     const archived = state.closedHistory[0]!;
-    state.closedHistory.push({
-      ...archived,
-      id: 'ch_foreign',
-      ownerSessionId: 'another-session',
-      tabLabel: 'Foreign',
+    await harness.updateState((current) => {
+      current.closedHistory.push({
+        ...archived,
+        id: 'ch_foreign',
+        ownerSessionId: 'another-session',
+        tabLabel: 'Foreign',
+      });
     });
-    await fs.writeFile(harness.statePath, JSON.stringify(state));
     const prompts = harness.fake.callsMatching('agent', 'prompt').length;
     const messages = harness.messages.length;
 
@@ -242,9 +243,9 @@ test('/agents does not list closed one-shots of another session', async () => {
   await withHarness({ dialogInputs: [['\r']] }, async (harness) => {
     await harness.call({ agent: 'scout', task: 'first', name: 'Scout Read' });
     await harness.collect('Scout Read');
-    const state = await harness.readState();
-    state.closedHistory[0]!.ownerSessionId = 'another-session';
-    await fs.writeFile(harness.statePath, JSON.stringify(state));
+    await harness.updateState((state) => {
+      state.closedHistory[0]!.ownerSessionId = 'another-session';
+    });
 
     await harness.runCommand('agents');
 

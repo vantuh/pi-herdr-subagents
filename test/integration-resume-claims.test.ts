@@ -43,7 +43,6 @@ async function seedClosedOneShotWithMissingSession(
   await harness.fire('session_shutdown');
   const state = await harness.readState();
   await fs.rm(state.closedHistory[0]!.childSessionFile);
-  await fs.writeFile(harness.statePath, JSON.stringify(state));
   return state;
 }
 
@@ -55,13 +54,14 @@ test('agent_send fails closed when placement state pruning fails', async () => {
     const state = await harness.readState();
     const history = state.closedHistory[0]!;
     await fs.rm(history.childSessionFile);
-    state.agents['terminal:gone'] = {
-      lifecycle: 'oneshot',
-      paneId: 'gone',
-      collected: false,
-      updatedAt: new Date().toISOString(),
-    };
-    await fs.writeFile(harness.statePath, JSON.stringify(state));
+    await harness.updateState((current) => {
+      current.agents['terminal:gone'] = {
+        lifecycle: 'oneshot',
+        paneId: 'gone',
+        collected: false,
+        updatedAt: new Date().toISOString(),
+      };
+    });
     setFailNextStateSaves(1);
 
     const result = await harness.callTool('agent_send', {

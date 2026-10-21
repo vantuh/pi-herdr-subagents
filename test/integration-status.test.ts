@@ -135,11 +135,12 @@ test('agent_status without a name lists only agents this session owns', async ()
     harness.fake.setBehavior(() => ({ neverSettle: true }));
     await harness.call({ agent: 'scout', task: 'mine', name: 'Mine' });
     await harness.call({ agent: 'scout', task: 'theirs', name: 'Theirs' });
-    const state = await harness.readState();
-    for (const record of Object.values(state.agents)) {
-      if (record.tabLabel === 'Theirs') record.ownerSessionId = 'other-session';
-    }
-    await fs.writeFile(harness.statePath, JSON.stringify(state));
+    await harness.updateState((state) => {
+      for (const record of Object.values(state.agents)) {
+        if (record.tabLabel === 'Theirs')
+          record.ownerSessionId = 'other-session';
+      }
+    });
     const prompts = harness.fake.callsMatching('agent', 'prompt').length;
 
     const result = await harness.callTool('agent_status', {});
@@ -201,9 +202,11 @@ test('unreconcilable legacy handoff records are retained without adopting or rep
       task: 'One task',
       name: 'Legacy Handoff',
     });
-    const state = await harness.readState();
-    for (const record of Object.values(state.agents)) delete record.ownerPaneId;
-    await fs.writeFile(harness.statePath, JSON.stringify(state));
+    await harness.updateState((state) => {
+      for (const record of Object.values(state.agents)) {
+        delete record.ownerPaneId;
+      }
+    });
     harness.fake.simulateLiveHandoff();
     const rewait = await harness.callTool('agent_status', {
       name: 'Legacy Handoff',
@@ -230,24 +233,13 @@ test('session_shutdown cancels an in-flight widget tick without pruning or resta
     // Hold the tick inside its first Herdr call, which is where a real tick sits
     // when a test tears its harness down.
     harness.fake.holdCommand('api snapshot');
-    await fs.writeFile(
-      harness.statePath,
-      `${JSON.stringify(
-        {
-          version: 2,
-          agents: {
-            'terminal:gone': {
-              lifecycle: 'oneshot',
-              tabLabel: 'Gone',
-              updatedAt: new Date().toISOString(),
-            },
-          },
-          closedHistory: [],
-        },
-        null,
-        2,
-      )}\n`,
-    );
+    await harness.updateState((state) => {
+      state.agents['terminal:gone'] = {
+        lifecycle: 'oneshot',
+        tabLabel: 'Gone',
+        updatedAt: new Date().toISOString(),
+      };
+    });
 
     await harness.fire('session_start');
     await harness.waitFor(
@@ -282,6 +274,8 @@ test('session_shutdown cancels an in-flight widget tick without pruning or resta
 
 test('shutdown cancels a widget state-lock wait without leaving a pruning mutation queued', async () => {
   await withHarness({}, async (harness) => {
+    // Raw on purpose: this test holds the lock, so the locked harness path would
+    // wait on itself.
     await fs.mkdir(`${harness.statePath}.lock`);
     const before = JSON.stringify({
       version: 2,

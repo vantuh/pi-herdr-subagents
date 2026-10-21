@@ -26,14 +26,13 @@ test('prunes state records for panes Herdr no longer reports', async () => {
     // A detached agent that never settles keeps its live record.
     harness.fake.setBehavior(() => ({ neverSettle: true }));
     await harness.callRaw({ agent: 'scout', task: 'one', name: 'Scout Stale' });
-    const statePath = harness.statePath;
-    const before = JSON.parse(await fs.readFile(statePath, 'utf8'));
-    before.agents['terminal:ghost'] = {
-      lifecycle: 'persistent',
-      tabLabel: 'Ghost',
-      updatedAt: new Date().toISOString(),
-    };
-    await fs.writeFile(statePath, JSON.stringify(before));
+    await harness.updateState((state) => {
+      state.agents['terminal:ghost'] = {
+        lifecycle: 'persistent',
+        tabLabel: 'Ghost',
+        updatedAt: new Date().toISOString(),
+      };
+    });
 
     // Any path that lists managed agents reconciles the file.
     await harness.runCommand('agents');

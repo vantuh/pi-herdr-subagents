@@ -45,12 +45,14 @@ test('agent_send preserves claimed history with a missing session', async () => 
       await harness.collect('Scout Resume');
       await harness.fire('session_shutdown');
       const state = await harness.readState();
-      const history = state.closedHistory[0]!;
-      await fs.rm(history.childSessionFile);
-      history.status = 'claimed';
-      history.claimGeneration += 1;
-      history.claimedAt = new Date().toISOString();
-      await fs.writeFile(harness.statePath, JSON.stringify(state));
+      await fs.rm(state.closedHistory[0]!.childSessionFile);
+      await harness.updateState((current) => {
+        const history = current.closedHistory[0]!;
+        history.status = 'claimed';
+        history.claimGeneration += 1;
+        history.claimedAt = new Date().toISOString();
+      });
+      const seeded = await harness.readState();
 
       const result = await harness.callTool('agent_send', {
         message: 'again',
@@ -63,7 +65,7 @@ test('agent_send preserves claimed history with a missing session', async () => 
       );
       assert.deepEqual(
         (await harness.readState()).closedHistory,
-        state.closedHistory,
+        seeded.closedHistory,
       );
       assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
     },
@@ -75,10 +77,10 @@ test("another Orchestrator session cannot resume this session's closed agent", a
     await first.call({ agent: 'scout', task: 'first', name: 'Scout Resume' });
     const state = await first.readState();
     await withHarness({ sessionId: 'other-orch' }, async (second) => {
-      await fs.writeFile(
-        second.statePath,
-        `${JSON.stringify(state, null, 2)}\n`,
-      );
+      await second.updateState((current) => {
+        current.agents = state.agents;
+        current.closedHistory = state.closedHistory;
+      });
       const result = await second.callTool('agent_send', {
         message: 'steal',
         name: 'Scout Resume',
@@ -107,8 +109,7 @@ test('agent_send resolves project skills from the archived cwd', async () => {
       );
       await harness.call({ agent: 'scout', task: 'first', name: 'Scout Cwd' });
       await harness.collect('Scout Cwd');
-      const statePath = harness.statePath;
-      const state = JSON.parse(await fs.readFile(statePath, 'utf8'));
+      const state = await harness.readState();
       const record = state.closedHistory[0];
       const sessionFile = record.childSessionFile as string;
       const raw = await fs.readFile(sessionFile, 'utf8');
@@ -119,8 +120,9 @@ test('agent_send resolves project skills from the archived cwd', async () => {
         sessionFile,
         [JSON.stringify(header), ...rest].join('\n'),
       );
-      record.cwd = otherDir;
-      await fs.writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`);
+      await harness.updateState((current) => {
+        current.closedHistory[0]!.cwd = otherDir;
+      });
 
       const resumed = await harness.callTool('agent_send', {
         message: 'second',
