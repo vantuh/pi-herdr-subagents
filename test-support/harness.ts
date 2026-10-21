@@ -32,8 +32,8 @@ import {
 
 function isAgentOutcome(message: SentMessage, label?: string): boolean {
   if (
-    message.customType !== 'herdr_agent_result' &&
-    message.customType !== 'herdr_agent_question'
+    message.customType !== 'agent_result' &&
+    message.customType !== 'agent_question'
   ) {
     return false;
   }
@@ -155,12 +155,12 @@ export async function createHarness(
     HERDR_FAKE_CLI_SOCKET: cliSocketPath,
     HERDR_SOCKET_PATH: apiSocketPath,
     HERDR_PANE_ID: options.paneIdEnv ?? fake.orchestratorPane.pane_id,
-    HERDR_AGENTS_STATE_PATH: statePath,
+    PI_AGENTS_STATE_PATH: statePath,
     PI_CODING_AGENT_DIR: agentDir,
     // Neutralize any stale live-session env: layout comes from the config file.
     HERDR_AGENTS_LAYOUT: undefined,
     HERDR_AGENTS_WORKSPACE_LABEL: undefined,
-    HERDR_AGENT_CHILD: undefined,
+    PI_AGENT_CHILD: undefined,
   });
 
   const host = createMockHost({

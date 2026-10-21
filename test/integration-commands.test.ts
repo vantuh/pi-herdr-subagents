@@ -21,12 +21,9 @@ test('injects Orchestrator instructions, and /run instructions for one turn', as
     })) as any;
     assert.equal(base.systemPrompt, 'BASE');
     assert.equal(base.systemPromptOptions.sections.unrelated, 'KEEP');
-    assert.match(
-      base.systemPromptOptions.sections.herdr_agents,
-      /^## Herdr agents/,
-    );
+    assert.match(base.systemPromptOptions.sections.agents, /^## Agents/);
     assert.doesNotMatch(
-      base.systemPromptOptions.sections.herdr_agents,
+      base.systemPromptOptions.sections.agents,
       /\/run delegation/,
     );
 
@@ -43,14 +40,11 @@ test('injects Orchestrator instructions, and /run instructions for one turn', as
 
     const custom = (await harness.fire('before_agent_start', {
       messageType: 'custom',
-      message: { customType: 'herdr_agent_result', content: 'finished' },
+      message: { customType: 'agent_result', content: 'finished' },
     })) as any;
-    assert.match(
-      custom.systemPromptOptions.sections.herdr_agents,
-      /## Herdr agents/,
-    );
+    assert.match(custom.systemPromptOptions.sections.agents, /## Agents/);
     assert.doesNotMatch(
-      custom.systemPromptOptions.sections.herdr_agents,
+      custom.systemPromptOptions.sections.agents,
       /\/run delegation/,
     );
 
@@ -59,11 +53,11 @@ test('injects Orchestrator instructions, and /run instructions for one turn', as
       prompt: 'hi',
     })) as any;
     assert.match(
-      delegating.systemPromptOptions.sections.herdr_agents,
+      delegating.systemPromptOptions.sections.agents,
       /## \/run delegation/,
     );
     assert.match(
-      delegating.systemPromptOptions.sections.herdr_agents,
+      delegating.systemPromptOptions.sections.agents,
       /agent: "scout"/,
     );
 
@@ -73,7 +67,7 @@ test('injects Orchestrator instructions, and /run instructions for one turn', as
       prompt: 'hi',
     })) as any;
     assert.doesNotMatch(
-      after.systemPromptOptions.sections.herdr_agents,
+      after.systemPromptOptions.sections.agents,
       /\/run delegation/,
     );
   });
@@ -97,7 +91,7 @@ test('/herdr-agents focuses a managed agent', async () => {
       assert.equal(focus[2], harness.fake.paneByLabel('Scout')?.pane_id);
       assert.match(
         harness.notifications.at(-1)?.message ?? '',
-        /Focused Herdr agent "Scout"/,
+        /Focused agent "Scout"/,
       );
       // Focusing must not close the agent.
       assert.equal(harness.fake.panes.length, 2);
@@ -127,7 +121,7 @@ test('/herdr-agents closes a managed agent and cleans up its temp directory', as
       assert.equal(await fs.stat(tempDir).catch(() => null), null);
       assert.match(
         harness.notifications.at(-1)?.message ?? '',
-        /Closed Herdr agent "Scout"/,
+        /Closed agent "Scout"/,
       );
     },
   );
@@ -175,7 +169,7 @@ test('/herdr-agents refuses to close an active resumed one-shot', async () => {
       name: 'Scout Resume Close',
     });
     const question = await harness.collect('Scout Resume Close');
-    assert.equal(question.customType, 'herdr_agent_question');
+    assert.equal(question.customType, 'agent_question');
     await harness.runCommand('herdr-agents');
     assert.equal(harness.fake.panes.length, 2);
     assert.match(
@@ -212,7 +206,7 @@ test('/herdr-agents lists and reopens a closed one-shot of this session without 
     assert.equal(harness.fake.callsMatching('agent', 'prompt').length, prompts);
     assert.match(
       harness.notifications.at(-1)?.message ?? '',
-      /Opened Herdr agent "Scout Read"/,
+      /Opened agent "Scout Read"/,
     );
     const opened = await harness.readState();
     const live = Object.values(opened.agents)[0];
@@ -366,7 +360,7 @@ test('/herdr-agents reports a closed one-shot whose session file is gone', async
 
     assert.match(
       harness.notifications.at(-1)?.message ?? '',
-      /Could not open Herdr agent "Scout Read": .*missing, corrupt/,
+      /Could not open agent "Scout Read": .*missing, corrupt/,
     );
     assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
     assert.equal(harness.fake.panes.length, 1);

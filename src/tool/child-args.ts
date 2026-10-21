@@ -12,7 +12,7 @@ import { ASK_QUESTION_TOOL, SESSION_META_ENV } from '../artifacts.ts';
 export function herdrChildEnvArgs(sessionMetaFile?: string): string[] {
   const args = [
     '--env',
-    'HERDR_AGENT_CHILD=1',
+    'PI_AGENT_CHILD=1',
     '--env',
     'PROCESS_LAUNCHED_BY_Q=1',
   ];

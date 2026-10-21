@@ -33,7 +33,7 @@ export interface MockRequestBody {
 }
 
 export const DEFAULT_RESULT_TEXT = [
-  'HERDR_RESULT:',
+  'AGENT_RESULT:',
   '- status: done',
   '- summary: MOCK_CHILD_OK',
   '- evidence: none',

@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 const DEFAULT_STATE_LOCK_WAIT_MS = 60_000;
-const STATE_LOCK_WAIT_MS_ENV = 'HERDR_AGENTS_LOCK_WAIT_MS';
+const STATE_LOCK_WAIT_MS_ENV = 'PI_AGENTS_LOCK_WAIT_MS';
 
 function getStateLockWaitMs(): number {
   return envMs(STATE_LOCK_WAIT_MS_ENV, DEFAULT_STATE_LOCK_WAIT_MS);
@@ -18,7 +18,7 @@ function envMs(name: string, fallback: number): number {
 }
 
 // Serializes load-mutate-save cycles per state file path. The in-process
-// queue stops parallel herdr_agent calls in one Pi from clobbering each
+// queue stops parallel agent tool calls in one Pi from clobbering each
 // other; the exclusive lock directory stops a second Orchestrator from doing
 // the same to claimDetached / record writes.
 const stateFileQueues = new Map<string, Promise<unknown>>();

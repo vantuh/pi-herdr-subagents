@@ -43,7 +43,7 @@ test('status check previews the child assistant text without reading the pane', 
         '────',
         'repeated',
         'repeated',
-        'HERDR_RESULT_FILE: literal content, not a boundary',
+        'AGENT_RESULT_FILE: literal content, not a boundary',
       ].join('\n'),
     );
 
@@ -61,7 +61,7 @@ test('status check previews the child assistant text without reading the pane', 
     assert.match(result.content[0].text, /repeated\nrepeated/);
     assert.match(
       result.content[0].text,
-      /HERDR_RESULT_FILE: literal content, not a boundary/,
+      /AGENT_RESULT_FILE: literal content, not a boundary/,
     );
     assert.doesNotMatch(result.content[0].text, /\[Extensions\]|v1\.2\.0/);
     assert.deepEqual(harness.fake.callsMatching('agent', 'read'), []);

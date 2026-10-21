@@ -293,7 +293,7 @@ test('picker filters agents, goes back on Escape and closes only from the agent 
   assert.doesNotMatch(h.text(), /clear model/);
   assert.equal(h.picker.focused, true);
   h.picker.handleInput('\x1b');
-  assert.match(h.text(), /Herdr agent model · agent/);
+  assert.match(h.text(), /Agent model · agent/);
   assert.equal(h.closed(), false);
   h.picker.handleInput('\x1b');
   assert.equal(h.closed(), true);
@@ -362,7 +362,7 @@ test('without scoped models, All is selected initially and an empty Scoped tab r
   h.picker.handleInput('\t');
   assert.match(h.text(), /provider\/all-only/);
   h.picker.handleInput('\x1b');
-  assert.match(h.text(), /Herdr agent model · agent/);
+  assert.match(h.text(), /Agent model · agent/);
 });
 
 test('saving returns to agents with the refreshed model, file path and clear row', async () => {
@@ -379,7 +379,7 @@ test('saving returns to agents with the refreshed model, file path and clear row
       /saved scout → provider\/new-model \(\/profiles\/scout.md\)/,
     ),
   );
-  assert.match(h.text(), /Herdr agent model · agent/);
+  assert.match(h.text(), /Agent model · agent/);
   assert.match(h.text(), /provider\/new-model · user/);
   assert.deepEqual(h.applied, [{ agent, model: 'provider/new-model' }]);
   assert.equal(h.closed(), false);

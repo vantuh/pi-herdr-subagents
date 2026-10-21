@@ -106,7 +106,7 @@ export async function runAgentTask(
   ensureAgentsWidget(invocation.pi, invocation.ctx);
 
   if (invocation.task === undefined) {
-    return textResult(`Herdr agent ${spawn.tabLabel} opened.`, {
+    return textResult(`Agent ${spawn.tabLabel} opened.`, {
       tabId: target.tabId,
       paneId: target.paneId,
       name: spawn.tabLabel,
@@ -130,7 +130,7 @@ export async function openClosedAgent(
   );
   if (!agent) {
     return textResult(
-      `Unknown Herdr agent profile: ${record.profileName}.`,
+      `Unknown agent profile: ${record.profileName}.`,
       {},
       true,
     );

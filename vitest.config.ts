@@ -4,7 +4,7 @@ import { GUARDED_STATE_PATH } from './test-support/state-path-guard.ts';
 
 // Every test process resolves the default state path to a throwaway file, so no
 // leaked task can reach the live session's state; see the guard's teardown.
-const stateEnv = { HERDR_AGENTS_STATE_PATH: GUARDED_STATE_PATH };
+const stateEnv = { PI_AGENTS_STATE_PATH: GUARDED_STATE_PATH };
 // Suites that drive the extension through the fake-Herdr harness.
 const integrationFiles = [
   'test/integration-*.test.ts',

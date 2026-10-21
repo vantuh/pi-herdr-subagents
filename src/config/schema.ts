@@ -20,8 +20,8 @@ export function isHerdrAgentLayout(value: unknown): value is HerdrAgentLayout {
  * a missing or invalid file yields `{}`, so every field falls back to its
  * default and a broken config can never break spawning.
  *
- * State-file internals (`HERDR_AGENTS_STATE_PATH`, `HERDR_AGENTS_LOCK_WAIT_MS`,
- * `HERDR_AGENTS_CLAIM_LEASE_MS`) stay environment-only: they exist for test
+ * State-file internals (`PI_AGENTS_STATE_PATH`, `PI_AGENTS_LOCK_WAIT_MS`,
+ * `PI_AGENTS_CLAIM_LEASE_MS`) stay environment-only: they exist for test
  * harnesses and debugging, not for users.
  */
 export const HerdrAgentsConfig = Type.Object({

@@ -6,7 +6,7 @@ import * as path from 'node:path';
  * Stand-in for the live `~/.pi/agent/herdr-agents-state.json` for a whole test
  * run.
  *
- * `vitest.config.ts` pins `HERDR_AGENTS_STATE_PATH` to this path, so nothing in
+ * `vitest.config.ts` pins `PI_AGENTS_STATE_PATH` to this path, so nothing in
  * a test process can fall back to the real state file — not even async work that
  * resolves the default path after a harness restored the env. Such a leak
  * prunes the sentinel record seeded here, and the teardown fails the run.

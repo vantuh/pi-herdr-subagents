@@ -122,8 +122,8 @@ export interface E2eHarness {
 
 function isAgentOutcome(message: SentMessage, label?: string): boolean {
   if (
-    message.customType !== 'herdr_agent_result' &&
-    message.customType !== 'herdr_agent_question'
+    message.customType !== 'agent_result' &&
+    message.customType !== 'agent_question'
   ) {
     return false;
   }
@@ -335,14 +335,14 @@ export async function createE2eHarness(
     TMPDIR: tmp,
     HERDR_SOCKET_PATH: socketPath,
     HERDR_PANE_ID: orchestratorPaneId,
-    HERDR_AGENTS_STATE_PATH: statePath,
+    PI_AGENTS_STATE_PATH: statePath,
     PI_CODING_AGENT_DIR: agentDir,
     // Use the real binary; layout comes from the fixture's herdr-agents.json.
     HERDR_BIN_PATH: undefined,
     HERDR_FAKE_CLI_SOCKET: undefined,
     HERDR_AGENTS_LAYOUT: undefined,
     HERDR_AGENTS_WORKSPACE_LABEL: undefined,
-    HERDR_AGENT_CHILD: undefined,
+    PI_AGENT_CHILD: undefined,
   });
 
   const host = createMockHost({ cwd });

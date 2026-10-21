@@ -123,7 +123,7 @@ export async function executeAgentStatus(args: {
 
   if (record?.collected) {
     return textResult(
-      `Herdr agent ${label} was already collected. Close it with /herdr-agents if it is still open, then continue it with agent_send and the same name. Do not resend the previous task.`,
+      `Agent ${label} was already collected. Close it with /herdr-agents if it is still open, then continue it with agent_send and the same name. Do not resend the previous task.`,
       {
         tabId,
         paneId: pane.pane_id,
@@ -137,10 +137,10 @@ export async function executeAgentStatus(args: {
   const settledWithoutResult =
     isSettledAgentStatus(snapshot.status) && artifact === undefined;
   const statusLine = settledWithoutResult
-    ? `Herdr agent ${label} (${pane.pane_id}) finished without a result.`
+    ? `Agent ${label} (${pane.pane_id}) finished without a result.`
     : isSettledAgentStatus(snapshot.status)
-      ? `Herdr agent ${label} (${pane.pane_id}) status: ${snapshot.status}.`
-      : `Herdr agent ${label} (${pane.pane_id}) status: ${snapshot.status}. ${NO_WAIT_HINT}`;
+      ? `Agent ${label} (${pane.pane_id}) status: ${snapshot.status}.`
+      : `Agent ${label} (${pane.pane_id}) status: ${snapshot.status}. ${NO_WAIT_HINT}`;
   const text = artifact
     ? `${statusLine}\n\nLatest assistant text (preview; not a completion):\n${formatAssistantPreview(artifact)}`
     : statusLine;

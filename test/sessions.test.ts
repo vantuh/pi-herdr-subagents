@@ -223,5 +223,5 @@ test('validates a Pi session JSONL header against stored metadata', async () => 
 });
 
 test('does not expose the session meta env as a result-file marker', () => {
-  assert.equal(SESSION_META_ENV, 'HERDR_AGENT_SESSION_META');
+  assert.equal(SESSION_META_ENV, 'PI_AGENT_SESSION_META');
 });

@@ -32,7 +32,7 @@ test('spawns a one-shot pane agent, collects the artifact and closes it', async 
     assert.equal(flagValue(split, '--direction'), 'right');
     assert.equal(flagValue(split, '--ratio'), '0.6');
     assert.equal(flagValue(split, '--cwd'), harness.cwd);
-    assert.ok(split.includes('HERDR_AGENT_CHILD=1'));
+    assert.ok(split.includes('PI_AGENT_CHILD=1'));
     assert.ok(split.includes('PROCESS_LAUNCHED_BY_Q=1'));
     assert.ok(split.includes('--no-focus'));
 
@@ -46,7 +46,7 @@ test('spawns a one-shot pane agent, collects the artifact and closes it', async 
     const prompt = harness.fake.callsMatching('agent', 'prompt')[0];
     assert.ok(prompt);
     assert.match(prompt[3], /Task from Orchestrator:\nFind the auth flow/);
-    assert.match(prompt[3], /^HERDR_RESULT_FILE: \S+result\.md$/m);
+    assert.match(prompt[3], /^AGENT_RESULT_FILE: \S+result\.md$/m);
 
     // Pane closed, layout back to a single pane, state pruned.
     assert.deepEqual(
@@ -91,7 +91,7 @@ test('passes profile model and tool allowlist to the child and closes the one-sh
       assert.ok(systemFile);
       const systemPrompt = await fs.readFile(systemFile, 'utf8');
       assert.match(systemPrompt, /WORKER PROFILE BODY/);
-      assert.match(systemPrompt, /## Herdr agent protocol/);
+      assert.match(systemPrompt, /## Agent protocol/);
 
       assert.equal(harness.fake.callsMatching('agent', 'start').length, 1);
       assert.equal(harness.fake.callsMatching('agent', 'prompt').length, 1);

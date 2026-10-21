@@ -24,14 +24,14 @@ import {
 
 test('writes and reads a managed result artifact', async () => {
   const filePath = await createResultFile();
-  await appendAgentResult(filePath, 'HERDR_RESULT:\n- status: done\n');
+  await appendAgentResult(filePath, 'AGENT_RESULT:\n- status: done\n');
 
   assert.equal(
     await readAgentResult(filePath),
-    'HERDR_RESULT:\n- status: done',
+    'AGENT_RESULT:\n- status: done',
   );
   assert.equal(
-    findResultFileMarker(`task\nHERDR_RESULT_FILE: ${filePath}`),
+    findResultFileMarker(`task\nAGENT_RESULT_FILE: ${filePath}`),
     filePath,
   );
   await removeAgentTempFiles(filePath);
@@ -58,7 +58,7 @@ test('clears stale result content before a reused-agent prompt', async () => {
 
 test('rejects result markers outside managed temp directories', () => {
   assert.equal(
-    findResultFileMarker('HERDR_RESULT_FILE: /tmp/result.md'),
+    findResultFileMarker('AGENT_RESULT_FILE: /tmp/result.md'),
     undefined,
   );
 });

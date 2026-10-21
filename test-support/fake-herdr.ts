@@ -817,7 +817,7 @@ export class FakeHerdr {
     agent.turns += 1;
     const turn: ChildTurn = {
       prompt,
-      resultFile: /^HERDR_RESULT_FILE:\s*(.+)$/m.exec(prompt)?.[1]?.trim(),
+      resultFile: /^AGENT_RESULT_FILE:\s*(.+)$/m.exec(prompt)?.[1]?.trim(),
       agentName: agent.name,
       paneId: agent.paneId,
       turn: agent.turns,

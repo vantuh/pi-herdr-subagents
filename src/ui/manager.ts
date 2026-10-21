@@ -154,7 +154,7 @@ export class AgentManagerOverlay extends Container {
       new Text(theme.fg('accent', theme.bold('Herdr Agents')), 1, 0),
     );
     this.emptyText = new Text(
-      theme.fg('dim', 'No managed Herdr agents. Watching for new ones…'),
+      theme.fg('dim', 'No managed agents. Watching for new ones…'),
       1,
       0,
     );
@@ -392,7 +392,7 @@ export async function showHerdrAgentsManager(
       const text = opened.content.find((part) => part.type === 'text');
       if (opened.isError) {
         ctx.ui.notify(
-          `Could not open Herdr agent "${selected.record.tabLabel}": ${text?.type === 'text' ? text.text : 'unknown error'}`,
+          `Could not open agent "${selected.record.tabLabel}": ${text?.type === 'text' ? text.text : 'unknown error'}`,
           'error',
         );
         continue;
@@ -402,7 +402,7 @@ export async function showHerdrAgentsManager(
         tabId: string;
       };
       await focusAgent(getHerdrAgentsLayout(config), paneId, tabId);
-      ctx.ui.notify(`Opened Herdr agent "${selected.record.tabLabel}"`, 'info');
+      ctx.ui.notify(`Opened agent "${selected.record.tabLabel}"`, 'info');
       return;
     }
 
@@ -412,7 +412,7 @@ export async function showHerdrAgentsManager(
         selected.agent.paneId,
         selected.agent.tabId,
       );
-      ctx.ui.notify(`Focused Herdr agent "${selected.agent.tabLabel}"`, 'info');
+      ctx.ui.notify(`Focused agent "${selected.agent.tabLabel}"`, 'info');
       return;
     }
 
@@ -436,11 +436,11 @@ export async function showHerdrAgentsManager(
     });
     if (closeError) {
       ctx.ui.notify(
-        `Could not close Herdr agent "${selected.agent.tabLabel}": ${closeError}`,
+        `Could not close agent "${selected.agent.tabLabel}": ${closeError}`,
         'error',
       );
       continue;
     }
-    ctx.ui.notify(`Closed Herdr agent "${selected.agent.tabLabel}"`, 'info');
+    ctx.ui.notify(`Closed agent "${selected.agent.tabLabel}"`, 'info');
   }
 }

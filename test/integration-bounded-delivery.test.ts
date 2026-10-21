@@ -40,14 +40,14 @@ function reportPathIn(content: string): string | undefined {
   return /Full report saved to (\S+)/.exec(content)?.[1];
 }
 
-/** The delivered body, below the `Herdr agent … finished on its own:` header. */
+/** The delivered body, below the `Agent … finished on its own:` header. */
 function bodyOf(content: string): string {
   return content.slice(content.indexOf('\n\n') + 2);
 }
 
 test('archives a long result and delivers a head/tail excerpt', async () => {
   await withHarness({}, async (harness) => {
-    const text = longReport('HERDR_RESULT: done — long report');
+    const text = longReport('AGENT_RESULT: done — long report');
     harness.fake.setBehavior(() => ({ result: text }));
 
     await harness.call({ agent: 'scout', task: 'Write a long report' });
@@ -59,7 +59,7 @@ test('archives a long result and delivers a head/tail excerpt', async () => {
     const reportPath = reportPathIn(delivered.content);
     assert.ok(reportPath, 'expected a report path line');
     assert.match(delivered.content, /FIRST LINE OF THE REPORT/);
-    assert.match(delivered.content, /HERDR_RESULT: done — long report/);
+    assert.match(delivered.content, /AGENT_RESULT: done — long report/);
     assert.ok(/characters omitted/.test(delivered.content));
 
     assert.equal(await fs.readFile(reportPath, 'utf8'), text);
@@ -106,7 +106,7 @@ test('archives a long result and delivers a head/tail excerpt', async () => {
 
 test('delivers a short result whole with only the report path added', async () => {
   await withHarness({}, async (harness) => {
-    const text = 'Short answer.\n\nHERDR_RESULT: done — short';
+    const text = 'Short answer.\n\nAGENT_RESULT: done — short';
     harness.fake.setBehavior(() => ({ result: text }));
 
     await harness.call({ agent: 'scout', task: 'Answer briefly' });
@@ -115,7 +115,7 @@ test('delivers a short result whole with only the report path added', async () =
     assert.ok(!/characters omitted/.test(delivered.content));
     assert.match(
       delivered.content,
-      /Short answer\.\n\nHERDR_RESULT: done — short\n\nFull report saved to \S+/,
+      /Short answer\.\n\nAGENT_RESULT: done — short\n\nFull report saved to \S+/,
     );
     const reportPath = reportPathIn(delivered.content);
     assert.equal(await fs.readFile(reportPath, 'utf8'), text);
@@ -124,7 +124,7 @@ test('delivers a short result whole with only the report path added', async () =
 
 test('a failed report write still delivers the complete result', async () => {
   await withHarness({}, async (harness) => {
-    const text = longReport('HERDR_RESULT: done — unarchived');
+    const text = longReport('AGENT_RESULT: done — unarchived');
     harness.fake.setBehavior(() => ({ result: text }));
     setFailNextReportWrites(1);
 
@@ -136,12 +136,12 @@ test('a failed report write still delivers the complete result', async () => {
     const delivered = await harness.collect('Scout');
     assert.match(
       delivered.content,
-      /Warning: failed to save the full report for Herdr agent Scout:/,
+      /Warning: failed to save the full report for agent Scout:/,
     );
     assert.ok(!/characters omitted/.test(delivered.content));
     assert.ok(!/Full report saved to/.test(delivered.content));
     assert.match(delivered.content, /FIRST LINE OF THE REPORT/);
-    assert.match(delivered.content, /HERDR_RESULT: done — unarchived/);
+    assert.match(delivered.content, /AGENT_RESULT: done — unarchived/);
 
     // Delivery, close and scratch cleanup all still happen.
     assert.equal(
@@ -164,14 +164,14 @@ test('an unusable reports directory degrades the same way', async () => {
     await fs.writeFile(reportsDir, 'not a directory', 'utf8');
 
     harness.fake.setBehavior(() => ({
-      result: longReport('HERDR_RESULT: done — blocked dir'),
+      result: longReport('AGENT_RESULT: done — blocked dir'),
     }));
     await harness.call({ agent: 'scout', task: 'Write a long report' });
     const delivered = await harness.collect('Scout');
 
     assert.match(
       delivered.content,
-      /Warning: failed to save the full report for Herdr agent Scout:/,
+      /Warning: failed to save the full report for agent Scout:/,
     );
     assert.ok(!/characters omitted/.test(delivered.content));
     assert.equal(await fs.readFile(reportsDir, 'utf8'), 'not a directory');
@@ -187,7 +187,7 @@ test('a parked question writes no report and keeps the one-shot open', async () 
     await harness.call({ agent: 'scout', task: 'Find the auth flow' });
     const delivered = await harness.collect('Scout');
 
-    assert.equal(delivered.customType, 'herdr_agent_question');
+    assert.equal(delivered.customType, 'agent_question');
     assert.match(delivered.content, /Cookie session or JWT\?/);
     assert.ok(!/Full report saved to/.test(delivered.content));
     assert.deepEqual(await reports(), []);
@@ -219,8 +219,8 @@ test('an interrupted run is not delivered and not archived', async () => {
 
 test('a resume turn archives its own report and leaves the first immutable', async () => {
   await withHarness({}, async (harness) => {
-    const first = longReport('HERDR_RESULT: done — first slice');
-    const second = longReport('HERDR_RESULT: done — second slice');
+    const first = longReport('AGENT_RESULT: done — first slice');
+    const second = longReport('AGENT_RESULT: done — second slice');
     harness.fake.setBehavior((turn) => ({
       result: turn.prompt.includes('Second slice') ? second : first,
     }));
@@ -272,7 +272,7 @@ test('the save sweeps expired reports without touching foreign ones', async () =
     await fs.writeFile(path.join(reportsDir, 'notes.md'), 'foreign', 'utf8');
 
     harness.fake.setBehavior(() => ({
-      result: longReport('HERDR_RESULT: done — sweep'),
+      result: longReport('AGENT_RESULT: done — sweep'),
     }));
     await harness.call({ agent: 'scout', task: 'Write a long report' });
     await harness.collect('Scout');

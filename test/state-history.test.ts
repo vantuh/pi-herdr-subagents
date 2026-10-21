@@ -164,15 +164,15 @@ test('releases stale claimed history that has no live generation', async () => {
     filePath,
   );
   assert.equal(claimed.ok, true);
-  const previous = process.env.HERDR_AGENTS_CLAIM_LEASE_MS;
-  process.env.HERDR_AGENTS_CLAIM_LEASE_MS = '0';
+  const previous = process.env.PI_AGENTS_CLAIM_LEASE_MS;
+  process.env.PI_AGENTS_CLAIM_LEASE_MS = '0';
   try {
     const loaded = await loadHerdrAgentsState(filePath);
     assert.equal(loaded.closedHistory[0]?.id, archived.id);
     assert.equal(loaded.closedHistory[0]?.status, 'resumable');
   } finally {
-    if (previous === undefined) delete process.env.HERDR_AGENTS_CLAIM_LEASE_MS;
-    else process.env.HERDR_AGENTS_CLAIM_LEASE_MS = previous;
+    if (previous === undefined) delete process.env.PI_AGENTS_CLAIM_LEASE_MS;
+    else process.env.PI_AGENTS_CLAIM_LEASE_MS = previous;
   }
 });
 
@@ -198,8 +198,8 @@ test('does not release a claimed generation that still has a live agent', async 
     },
     filePath,
   );
-  const previous = process.env.HERDR_AGENTS_CLAIM_LEASE_MS;
-  process.env.HERDR_AGENTS_CLAIM_LEASE_MS = '0';
+  const previous = process.env.PI_AGENTS_CLAIM_LEASE_MS;
+  process.env.PI_AGENTS_CLAIM_LEASE_MS = '0';
   try {
     const loaded = await loadHerdrAgentsState(filePath);
     assert.equal(loaded.closedHistory[0]?.status, 'claimed');
@@ -213,8 +213,8 @@ test('does not release a claimed generation that still has a live agent', async 
     );
     assert.equal(again.ok, false);
   } finally {
-    if (previous === undefined) delete process.env.HERDR_AGENTS_CLAIM_LEASE_MS;
-    else process.env.HERDR_AGENTS_CLAIM_LEASE_MS = previous;
+    if (previous === undefined) delete process.env.PI_AGENTS_CLAIM_LEASE_MS;
+    else process.env.PI_AGENTS_CLAIM_LEASE_MS = previous;
   }
 });
 

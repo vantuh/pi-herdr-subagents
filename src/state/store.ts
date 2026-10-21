@@ -20,7 +20,7 @@ import {
   type HerdrAgentsState,
 } from './schema.ts';
 
-const STATE_PATH_ENV = 'HERDR_AGENTS_STATE_PATH';
+const STATE_PATH_ENV = 'PI_AGENTS_STATE_PATH';
 
 type StateMutationKind = 'lifecycle' | 'stage' | 'finalize' | 'detached';
 

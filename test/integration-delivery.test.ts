@@ -72,7 +72,7 @@ test('delivers a detached result through the widget poller and closes the one-sh
     );
 
     const [message] = harness.messages;
-    assert.equal(message?.customType, 'herdr_agent_result');
+    assert.equal(message?.customType, 'agent_result');
     assert.match(message?.content ?? '', /finished on its own/);
     assert.match(message?.content ?? '', /Result from scout_/);
     assert.equal(message?.triggerTurn, true);
@@ -155,7 +155,7 @@ test('delivers an unseen done completion, notifies, and closes the one-shot', as
     );
 
     const [message] = harness.messages;
-    assert.equal(message?.customType, 'herdr_agent_result');
+    assert.equal(message?.customType, 'agent_result');
     assert.match(message?.content ?? '', /Background done\./);
     assert.equal(message?.triggerTurn, true);
 
@@ -257,7 +257,7 @@ test('delivers two detached outcomes as one batch with a single turn trigger', a
     assert.equal(harness.messages.length, 2);
     assert.deepEqual(
       harness.messages.map((message) => message.customType),
-      ['herdr_agent_question', 'herdr_agent_question'],
+      ['agent_question', 'agent_question'],
     );
     // Only the last message starts a turn; both are steered because the
     // Orchestrator is mid-turn.

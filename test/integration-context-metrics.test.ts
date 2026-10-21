@@ -101,7 +101,7 @@ test('/herdr-agents still lists and focuses agents while hydrating context', asy
     assert.equal(focus[2], harness.fake.paneByLabel('Scout A')?.pane_id);
     assert.match(
       harness.notifications.at(-1)?.message ?? '',
-      /Focused Herdr agent "Scout A"/,
+      /Focused agent "Scout A"/,
     );
   });
 });

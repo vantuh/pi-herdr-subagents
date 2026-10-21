@@ -102,7 +102,7 @@ test('uses tabs instead of panes when the tab layout is configured', async () =>
     const create = harness.fake.callsMatching('tab', 'create')[0];
     assert.ok(create, 'expected a tab create');
     assert.equal(flagValue(create, '--label'), 'Scout');
-    assert.ok(create.includes('HERDR_AGENT_CHILD=1'));
+    assert.ok(create.includes('PI_AGENT_CHILD=1'));
     assert.equal(harness.fake.callsMatching('pane', 'split').length, 0);
     assert.equal(harness.fake.callsMatching('tab', 'close').length, 1);
     // No pane column to rebalance in tab layout.

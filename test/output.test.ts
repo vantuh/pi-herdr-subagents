@@ -22,7 +22,7 @@ test('previews assistant text verbatim', () => {
     '──────',
     'repeated',
     'repeated',
-    'HERDR_RESULT_FILE: literal content, not a boundary',
+    'AGENT_RESULT_FILE: literal content, not a boundary',
     '↑12 additions and 52 tok/s stay',
   ].join('\n');
 
@@ -64,14 +64,14 @@ test('appends spawn warnings to model-facing result text', () => {
 test('falls back to a placeholder for empty agent output', () => {
   assert.equal(
     formatAgentOutput('   \n', 'Worker'),
-    '(Herdr agent Worker finished with no visible output.)',
+    '(Agent Worker finished with no visible output.)',
   );
 });
 
 test('appends a close warning when closing the agent failed', () => {
   assert.equal(
     formatAgentOutput('done', 'Worker', 'target not found'),
-    'done\n\nWarning: failed to close one-shot Herdr agent Worker: target not found',
+    'done\n\nWarning: failed to close one-shot agent Worker: target not found',
   );
 });
 
@@ -115,14 +115,14 @@ function parseExcerpt(body: string): {
 
 test('delivers a small result whole plus the report path', () => {
   const body = formatResultForDelivery({
-    result: 'Findings\n\nHERDR_RESULT: done — short',
+    result: 'Findings\n\nAGENT_RESULT: done — short',
     tabLabel: 'Scout',
     reportPath: '/tmp/reports/a.md',
   });
 
   assert.equal(
     body,
-    'Findings\n\nHERDR_RESULT: done — short\n\nFull report saved to /tmp/reports/a.md',
+    'Findings\n\nAGENT_RESULT: done — short\n\nFull report saved to /tmp/reports/a.md',
   );
   assert.ok(!body.includes('omitted'));
 });
@@ -154,13 +154,13 @@ test('switches to the excerpt one unit above the retained budget', () => {
   assert.ok(over.length > budget + 1);
 });
 
-test('keeps whole lines at both ends and the final HERDR_RESULT line', () => {
+test('keeps whole lines at both ends and the final AGENT_RESULT line', () => {
   const report = [
     ...Array.from(
       { length: 40 },
       (_, index) => `finding ${index}: ${'evidence '.repeat(20).trim()}`,
     ),
-    'HERDR_RESULT: done — one line summary',
+    'AGENT_RESULT: done — one line summary',
   ].join('\n');
   const body = formatResultForDelivery({
     result: report,
@@ -182,7 +182,7 @@ test('keeps whole lines at both ends and the final HERDR_RESULT line', () => {
   );
   assert.equal(
     excerpt.tail.split('\n').at(-1),
-    'HERDR_RESULT: done — one line summary',
+    'AGENT_RESULT: done — one line summary',
   );
 });
 
@@ -287,7 +287,7 @@ test('never leaves a lone surrogate at a character cut', () => {
     report.length - excerpt.head.length - excerpt.tail.length,
   );
 
-  const lined = `a${'😀'.repeat(4_000)}\nHERDR_RESULT: done — 😀 tail`;
+  const lined = `a${'😀'.repeat(4_000)}\nAGENT_RESULT: done — 😀 tail`;
   const linedBody = formatResultForDelivery({
     result: lined,
     tabLabel: 'Scout',
@@ -315,6 +315,6 @@ test('keeps the full text when no report was written or attempted', () => {
       tabLabel: 'Scout',
       reportError: 'EEXIST: nope',
     }),
-    `${report}\n\nWarning: failed to save the full report for Herdr agent Scout: EEXIST: nope. Delivering the full result instead.`,
+    `${report}\n\nWarning: failed to save the full report for agent Scout: EEXIST: nope. Delivering the full result instead.`,
   );
 });

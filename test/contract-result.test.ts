@@ -40,7 +40,7 @@ test('status check reports status only and never reads the pane', async () => {
 
     assert.equal(
       status.content[0].text,
-      'Herdr agent Scout (w1:p2) finished without a result.',
+      'Agent Scout (w1:p2) finished without a result.',
     );
     assert.deepEqual(harness.fake.callsMatching('agent', 'read'), []);
 
@@ -56,7 +56,7 @@ test('status check reports status only and never reads the pane', async () => {
 
     assert.equal(
       previewed.content[0].text,
-      'Herdr agent Scout (w1:p2) status: idle.\n\n' +
+      'Agent Scout (w1:p2) status: idle.\n\n' +
         'Latest assistant text (preview; not a completion):\n' +
         'Working on the status path.\n\n• bullet kept\n────',
     );
@@ -187,7 +187,7 @@ test('runs the whole flow even when the state file is unusable', async () => {
     assert.match(result.content[0].text, /started/);
     const prompt =
       harness.fake.callsMatching('agent', 'prompt').at(-1)?.[3] ?? '';
-    const resultFile = /^HERDR_RESULT_FILE:\s*(.+)$/m.exec(prompt)?.[1]?.trim();
+    const resultFile = /^AGENT_RESULT_FILE:\s*(.+)$/m.exec(prompt)?.[1]?.trim();
     assert.ok(resultFile);
     await harness.waitFor(async () => {
       try {

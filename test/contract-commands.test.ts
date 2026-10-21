@@ -18,7 +18,7 @@ import { applyEnv, createMockHost } from '../test-support/mock-extension.ts';
 test('/herdr-agent-models is registered only in parent mode', async () => {
   await withHarness({}, async (harness) => {
     assert.ok(harness.commands.has('herdr-agent-models'));
-    const restore = applyEnv({ HERDR_AGENT_CHILD: '1' });
+    const restore = applyEnv({ PI_AGENT_CHILD: '1' });
     try {
       const child = createMockHost({ cwd: harness.cwd });
       herdrAgentsExtension(child.pi);
@@ -65,7 +65,7 @@ test('/herdr-agent-models reports an empty roster without opening the overlay', 
     });
     assert.equal(
       harness.notifications.at(-1)?.message,
-      'No Herdr agent profiles found',
+      'No agent profiles found',
     );
   });
 });
@@ -162,7 +162,7 @@ test('/herdr-agents surfaces a Herdr failure as a notification', async () => {
 
     assert.match(
       harness.notifications.at(-1)?.message ?? '',
-      /Failed to load Herdr agents/,
+      /Failed to load agents/,
     );
   });
 });
@@ -199,7 +199,7 @@ test('renders delivered results and questions as their own blocks', async () => 
       );
 
       const rendered = component.render(80).join('\n');
-      assert.match(rendered, /Herdr agent Scout · scout/);
+      assert.match(rendered, /Agent Scout · scout/);
       assert.match(rendered, /BODY TEXT/);
       // The header carries the attribution, so the inline copy is not repeated.
       assert.doesNotMatch(rendered, /inline attribution/);

@@ -124,7 +124,7 @@ test('a profile with every optional frontmatter field drives the exact spawn arg
       // replace swaps the flag; the child protocol still rides along.
       const systemPrompt = await fs.readFile(systemFile, 'utf8');
       assert.match(systemPrompt, /WORKER BODY/);
-      assert.match(systemPrompt, /## Herdr agent protocol/);
+      assert.match(systemPrompt, /## Agent protocol/);
     },
   );
 });

@@ -217,7 +217,7 @@ test('an empty listing shows an empty state and keeps watching', async () => {
 
   await overlay.refresh();
 
-  assert.match(lines(), /No managed Herdr agents\. Watching for new ones/);
+  assert.match(lines(), /No managed agents\. Watching for new ones/);
   assert.doesNotMatch(lines(), /No matching commands/);
 
   next = {
@@ -236,7 +236,7 @@ test('starts on the empty state when nothing is listed yet', () => {
     closed: [],
   }));
 
-  assert.match(lines(), /No managed Herdr agents\. Watching for new ones/);
+  assert.match(lines(), /No managed agents\. Watching for new ones/);
   assert.doesNotMatch(lines(), /No matching commands/);
 });
 

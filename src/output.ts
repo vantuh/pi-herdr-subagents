@@ -84,7 +84,7 @@ export function formatResultForDelivery(input: {
   reportError?: string;
 }): string {
   if (input.reportError) {
-    return `${input.result}\n\nWarning: failed to save the full report for Herdr agent ${input.tabLabel}: ${input.reportError}. Delivering the full result instead.`;
+    return `${input.result}\n\nWarning: failed to save the full report for agent ${input.tabLabel}: ${input.reportError}. Delivering the full result instead.`;
   }
   if (!input.reportPath) return input.result;
   if (
@@ -110,10 +110,9 @@ export function formatAgentOutput(
   closeError?: string,
 ): string {
   const text =
-    output.trim() ||
-    `(Herdr agent ${tabLabel} finished with no visible output.)`;
+    output.trim() || `(Agent ${tabLabel} finished with no visible output.)`;
   return closeError
-    ? `${text}\n\nWarning: failed to close one-shot Herdr agent ${tabLabel}: ${closeError}`
+    ? `${text}\n\nWarning: failed to close one-shot agent ${tabLabel}: ${closeError}`
     : text;
 }
 

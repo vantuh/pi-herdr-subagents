@@ -23,7 +23,7 @@ import {
 
 /**
  * Child-side control consumer (docs/plans/agent-control.md, §7.3): the real
- * child extension under `HERDR_AGENT_CHILD=1`, driven through its handlers with
+ * child extension under `PI_AGENT_CHILD=1`, driven through its handlers with
  * real transport files and a real `fs.watch`. The mock host only supplies
  * `ctx.isIdle()` and `ctx.abort()`.
  */
@@ -115,7 +115,7 @@ async function withChildFixture(
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'herdr-child-control-'));
   const tmp = path.join(root, 'tmp');
   await fs.mkdir(tmp, { recursive: true });
-  const restoreEnv = applyEnv({ TMPDIR: tmp, HERDR_AGENT_CHILD: '1' });
+  const restoreEnv = applyEnv({ TMPDIR: tmp, PI_AGENT_CHILD: '1' });
   const host = createMockHost({ cwd: root, ...options });
   herdrAgentsExtension(host.pi);
   try {
@@ -180,7 +180,7 @@ test('a steer into an active, non-idle run is applied synchronously and acked qu
 
     assert.equal(fixture.host.messages.length, 1);
     const [message] = fixture.host.messages;
-    assert.equal(message.customType, 'herdr_agent_steer');
+    assert.equal(message.customType, 'agent_steer');
     assert.equal(message.content, 'STEER_TEXT');
     assert.equal(message.deliverAs, 'steer');
     assert.equal(

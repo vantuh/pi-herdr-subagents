@@ -115,8 +115,8 @@ async function mirrorPaneLabelAsSessionName(pi: ExtensionAPI): Promise<void> {
 }
 
 /**
- * Child-side half of the Herdr agent protocol. Runs only when
- * `HERDR_AGENT_CHILD=1`, so the delegation tool and the status widget stay out
+ * Child-side half of the agent protocol. Runs only when
+ * `PI_AGENT_CHILD=1`, so the delegation tool and the status widget stay out
  * of spawned agents.
  *
  * Both features hang off the result-file marker in the incoming prompt: the
@@ -212,7 +212,7 @@ export function registerChildMode(pi: ExtensionAPI): void {
       'Ask the Orchestrator a single clarifying question instead of guessing.',
     promptGuidelines: [
       'Call ask_question only for genuine ambiguity or a scope-changing decision, not for details you can settle by reading the repo.',
-      'After ask_question, end the turn immediately: no other tool calls and no HERDR_RESULT.',
+      'After ask_question, end the turn immediately: no other tool calls and no AGENT_RESULT.',
     ],
     parameters: Type.Object({
       question: Type.String({

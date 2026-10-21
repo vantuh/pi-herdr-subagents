@@ -128,7 +128,7 @@ test('/herdr-agents focuses an Agents-workspace agent via tab focus', async () =
       );
       assert.match(
         harness.notifications.at(-1)?.message ?? '',
-        /Focused Herdr agent "Scout Ws"/,
+        /Focused agent "Scout Ws"/,
       );
       // The empty root tab was dropped at spawn; focusing must not close the
       // agent itself.

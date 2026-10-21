@@ -111,7 +111,7 @@ async function startSettledChild(
 
 function resultMessages(harness: Harness) {
   return harness.messages.filter(
-    (message) => message.customType === 'herdr_agent_result',
+    (message) => message.customType === 'agent_result',
   );
 }
 
@@ -310,7 +310,7 @@ test('a question written before an interrupt is still delivered', async () => {
     assert.equal(interrupt.details.status, 'aborted');
 
     const delivered = await harness.collect(child.tabLabel, 8000);
-    assert.equal(delivered.customType, 'herdr_agent_question');
+    assert.equal(delivered.customType, 'agent_question');
     assert.match(delivered.content, /Which database should I target\?/);
     assert.deepEqual(resultMessages(harness), []);
   });

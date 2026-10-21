@@ -38,7 +38,7 @@ import { errorMessage } from './utils.ts';
 let pendingRunDelegation: RunDelegationRequest | null = null;
 
 export default function herdrAgentsExtension(pi: ExtensionAPI) {
-  if (process.env.HERDR_AGENT_CHILD === '1') {
+  if (process.env.PI_AGENT_CHILD === '1') {
     registerChildMode(pi);
     return;
   }
@@ -91,11 +91,11 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
       instructions = `${instructions}\n\n${buildRunTurnInstructions(runRequest.agent)}`;
     }
 
-    event.systemPromptOptions.sections.herdr_agents = instructions;
+    event.systemPromptOptions.sections.agents = instructions;
   });
 
   pi.registerCommand('run', {
-    description: 'Explicitly delegate a task to a Herdr agent',
+    description: 'Explicitly delegate a task to an agent',
     getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
       const [first = '', ...rest] = prefix.trimStart().split(/\s+/);
       const taskPrefix = rest.join(' ');
@@ -142,21 +142,18 @@ export default function herdrAgentsExtension(pi: ExtensionAPI) {
   });
 
   pi.registerCommand('herdr-agents', {
-    description: 'Show, focus, and close managed Herdr agents',
+    description: 'Show, focus, and close managed agents',
     handler: async (_args, ctx) => {
       try {
         await showHerdrAgentsManager(pi, ctx, configPromise);
       } catch (error) {
-        ctx.ui.notify(
-          `Failed to load Herdr agents: ${errorMessage(error)}`,
-          'error',
-        );
+        ctx.ui.notify(`Failed to load agents: ${errorMessage(error)}`, 'error');
       }
     },
   });
 
   pi.registerCommand('herdr-agent-models', {
-    description: 'Choose models for Herdr agents (edits profile frontmatter)',
+    description: 'Choose models for agents (edits profile frontmatter)',
     handler: async (_args, ctx) => showAgentModelPicker(ctx),
   });
 

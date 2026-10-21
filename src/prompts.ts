@@ -1,4 +1,4 @@
-export const GLOBAL_INSTRUCTIONS = `## Herdr agents
+export const GLOBAL_INSTRUCTIONS = `## Agents
 You are the Orchestrator. Delegate with the agent tools, not the raw Herdr CLI. Pick the smallest suitable profile from the \`agent\` parameter's Available list of \`agent_spawn\`.
 
 Agents do not see this conversation. Each task must be self-contained: goal, scope, repo paths or source links, constraints, expected output, read-only vs edit permission, and, for edits, the check to run.
@@ -32,7 +32,7 @@ ${profile}
 Call \`agent_spawn\` now for the user's task. Do not duplicate delegated work in this tab afterward.`;
 }
 
-export const CHILD_PROTOCOL = `## Herdr agent protocol
+export const CHILD_PROTOCOL = `## Agent protocol
 
 You are running in a Herdr pane spawned by the Orchestrator. Do not close it;
 the Orchestrator closes it after completion. Do not start other agents, panes,
@@ -47,7 +47,7 @@ Give the complete answer as text, and keep progress narration short.
 
 Use your profile's output format, if it has one. End with one line:
 
-HERDR_RESULT: done | blocked — <one-line summary>`;
+AGENT_RESULT: done | blocked — <one-line summary>`;
 
 /** Early tool result when a child asked instead of finishing. */
 export function formatAgentQuestion(
@@ -56,7 +56,7 @@ export function formatAgentQuestion(
   question: string,
 ): string {
   return [
-    `Herdr agent ${tabLabel} (${agent}) asked a question instead of finishing:`,
+    `Agent ${tabLabel} (${agent}) asked a question instead of finishing:`,
     '',
     question,
     '',

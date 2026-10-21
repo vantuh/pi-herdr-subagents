@@ -112,7 +112,7 @@ await withStateFileLock(filePath, async () => {
   const env = {
     ...process.env,
     HERDR_AGENTS_LOCK_STALE_MS: '40',
-    HERDR_AGENTS_LOCK_WAIT_MS: '2000',
+    PI_AGENTS_LOCK_WAIT_MS: '2000',
   };
   const holder = spawn(process.execPath, [holderScript], { env });
   await waitForChildFile(dir, 'holder-entered');
@@ -152,7 +152,7 @@ await withStateFileLock(filePath, async () => {
 });
 `,
   );
-  const env = { ...process.env, HERDR_AGENTS_LOCK_WAIT_MS: '2000' };
+  const env = { ...process.env, PI_AGENTS_LOCK_WAIT_MS: '2000' };
   const a = spawn(process.execPath, [lockerScript, 'a'], { env });
   const b = spawn(process.execPath, [lockerScript, 'b'], { env });
   const [aCode, bCode] = await Promise.all([waitForExit(a), waitForExit(b)]);
@@ -217,7 +217,7 @@ try {
 }
 `,
   );
-  const env = { ...process.env, HERDR_AGENTS_LOCK_WAIT_MS: '80' };
+  const env = { ...process.env, PI_AGENTS_LOCK_WAIT_MS: '80' };
   const first = spawn(process.execPath, [waiterScript], { env });
   const second = spawn(process.execPath, [waiterScript], { env });
   const [firstCode, secondCode] = await Promise.all([

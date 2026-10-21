@@ -15,11 +15,11 @@ import herdrAgentsExtension from '../src/index.ts';
 import { applyEnv, waitFor } from '../test-support/mock-extension.ts';
 import { MockLlm } from '../test-support/mock-llm.ts';
 
-test('real Pi batches custom outcomes into one run with Herdr guidance', async () => {
+test('real Pi batches custom outcomes into one run with agent guidance', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'herdr-pi-events-'));
   const restore = applyEnv({
     PI_CODING_AGENT_DIR: root,
-    HERDR_AGENT_CHILD: undefined,
+    PI_AGENT_CHILD: undefined,
   });
   const llm = new MockLlm();
   await llm.start();
@@ -72,7 +72,7 @@ test('real Pi batches custom outcomes into one run with Herdr guidance', async (
     }));
     await session.sendCustomMessage(
       {
-        customType: 'herdr_agent_result',
+        customType: 'agent_result',
         content: 'SCOUT_BATCH_RESULT',
         display: true,
       },
@@ -80,7 +80,7 @@ test('real Pi batches custom outcomes into one run with Herdr guidance', async (
     );
     await session.sendCustomMessage(
       {
-        customType: 'herdr_agent_question',
+        customType: 'agent_question',
         content: 'WORKER_BATCH_QUESTION',
         display: true,
       },
@@ -95,7 +95,7 @@ test('real Pi batches custom outcomes into one run with Herdr guidance', async (
     assert.match(messages, /SCOUT_BATCH_RESULT/);
     assert.match(messages, /WORKER_BATCH_QUESTION/);
     assert.match(messages, /You are the Orchestrator/);
-    assert.match(messages, /herdr_agent/);
+    assert.match(messages, /agent_spawn/);
   } finally {
     session?.dispose();
     await llm.stop();

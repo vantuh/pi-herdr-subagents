@@ -18,7 +18,7 @@ import { bestEffort } from '../utils.ts';
 export const CONTROL_ABORT_OBSERVE_MS = 2000;
 
 export interface ChildRunState {
-  /** From the `HERDR_RESULT_FILE:` marker in the incoming assignment. */
+  /** From the `AGENT_RESULT_FILE:` marker in the incoming assignment. */
   resultFile?: string;
   /** `agent_start` .. `agent_settled`; a continuation re-enters without a settle. */
   active: boolean;
@@ -132,7 +132,7 @@ export function registerChildControl(
       // No await after the guard: the steer must enqueue synchronously. Never `triggerTurn`.
       pi.sendMessage(
         {
-          customType: 'herdr_agent_steer',
+          customType: 'agent_steer',
           content: request.message ?? '',
           display: false,
           details: { requestId: request.id },

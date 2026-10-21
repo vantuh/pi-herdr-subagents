@@ -87,7 +87,7 @@ test('renders a header and one row per agent', () => {
   );
 
   assert.deepEqual(lines, [
-    'Herdr agents · 2 · 1 working',
+    'Agents · 2 · 1 working',
     '   01:23 Scout — message-bus  working · ctx —',
     ' 1:02:03 Reviewer             blocked · attach to unblock · ctx —',
   ]);
@@ -134,7 +134,7 @@ test('aligns the label column when elapsed widths differ', () => {
 
 test('omits the working suffix when nothing is working', () => {
   const lines = renderAgentWidgetLines([agent({ status: 'idle' })], NOW);
-  assert.equal(lines[0], 'Herdr agents · 1');
+  assert.equal(lines[0], 'Agents · 1');
 });
 
 test('pads labels to a common width across rows', () => {
@@ -172,7 +172,7 @@ test('applies paint per column and tone', () => {
     paint,
   );
 
-  assert.equal(lines[0], 'H(Herdr agents · 1)');
+  assert.equal(lines[0], 'H(Agents · 1)');
   assert.equal(
     lines[1],
     ' E(01:23) Scout  S:attention(blocked · attach to unblock) · C(ctx —)',

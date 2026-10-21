@@ -59,7 +59,7 @@ test('agent_send preserves claimed history with a missing session', async () => 
       assert.equal(result.isError, true);
       assert.equal(
         result.content[0].text,
-        'Closed Herdr agent "Scout Resume" is already being resumed.',
+        'Closed agent "Scout Resume" is already being resumed.',
       );
       assert.deepEqual(
         (await harness.readState()).closedHistory,

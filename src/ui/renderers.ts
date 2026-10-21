@@ -6,8 +6,8 @@ import { Box, Text } from '@earendil-works/pi-tui';
 
 import { assistantText } from '../artifacts.ts';
 
-export const AGENT_RESULT_MESSAGE_TYPE = 'herdr_agent_result';
-export const AGENT_QUESTION_MESSAGE_TYPE = 'herdr_agent_question';
+export const AGENT_RESULT_MESSAGE_TYPE = 'agent_result';
+export const AGENT_QUESTION_MESSAGE_TYPE = 'agent_question';
 
 export function registerAgentMessageRenderers(pi: ExtensionAPI): void {
   // Delivered results arrive outside any turn the user started. With plain text
@@ -36,7 +36,7 @@ export function registerAgentMessageRenderers(pi: ExtensionAPI): void {
       box.addChild(new DynamicBorder(border));
       box.addChild(
         new Text(
-          theme.fg(tone, theme.bold(`Herdr agent ${label}${profile}${suffix}`)),
+          theme.fg(tone, theme.bold(`Agent ${label}${profile}${suffix}`)),
           1,
           0,
         ),

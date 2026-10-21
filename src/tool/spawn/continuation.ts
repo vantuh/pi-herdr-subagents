@@ -141,7 +141,7 @@ export async function claimClosedHistoryForResume(
   );
   if (!existing) {
     return textResult(
-      `No closed one-shot Herdr agent named "${baseLabel}" is owned by this Orchestrator session.`,
+      `No closed one-shot agent named "${baseLabel}" is owned by this Orchestrator session.`,
       { name: baseLabel },
       true,
     );

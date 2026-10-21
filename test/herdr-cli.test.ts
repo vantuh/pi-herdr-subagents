@@ -83,7 +83,7 @@ test('redacts session, system-prompt, and managed temp paths from Herdr argv', (
     '--append-system-prompt',
     system,
     '--env',
-    `HERDR_AGENT_SESSION_META=${meta}`,
+    `PI_AGENT_SESSION_META=${meta}`,
   ]);
   assert.equal(redacted.includes(session), false);
   assert.equal(redacted.includes(system), false);

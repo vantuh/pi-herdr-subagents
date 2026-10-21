@@ -159,7 +159,7 @@ test('current Herdr starts Pi with one CLI call during cold-shell initialization
           '--cwd',
           harness.cwd,
           '--env',
-          'HERDR_AGENT_CHILD=1',
+          'PI_AGENT_CHILD=1',
           '--env',
           'PROCESS_LAUNCHED_BY_Q=1',
           '--no-focus',
@@ -264,7 +264,7 @@ test('keeps a real question agent resumable after its workspace tab is renamed',
       });
 
       const question = await harness.collect('Scout', 60000);
-      assert.equal(question.customType, 'herdr_agent_question');
+      assert.equal(question.customType, 'agent_question');
       assert.match(question.content, /Cookie session or JWT\?/);
 
       // The real child publishes an absolute context sample at its finalized
@@ -384,7 +384,7 @@ test("delivers a detached real child's result and closes its pane on its own", a
     );
 
     const [message] = harness.messages;
-    assert.equal(message?.customType, 'herdr_agent_result');
+    assert.equal(message?.customType, 'agent_result');
     assert.match(message?.content ?? '', /MOCK_CHILD_OK/);
     assert.equal(message?.triggerTurn, true);
 
@@ -534,7 +534,7 @@ test('keeps an escaped child open for correction and delivers the complete resul
       () => harness.messages.length === 1,
       'corrected result delivery',
     );
-    assert.equal(harness.messages[0]?.customType, 'herdr_agent_result');
+    assert.equal(harness.messages[0]?.customType, 'agent_result');
     assert.match(
       harness.messages[0]?.content ?? '',
       /PARTIAL_BEFORE_ESCAPE\n\nFINAL_AFTER_CORRECTION/,
@@ -707,7 +707,7 @@ test('batches a real detached result and question with one turn trigger', async 
       );
       assert.deepEqual(
         harness.messages.map((message) => message.customType).sort(),
-        ['herdr_agent_question', 'herdr_agent_result'],
+        ['agent_question', 'agent_result'],
       );
       assert.equal(harness.llm.requests.length, 2);
       const records = Object.values((await harness.readState()).agents);
@@ -850,7 +850,7 @@ test('delivers an unseen real child that finishes in the background', async () =
     );
 
     const [message] = harness.messages;
-    assert.equal(message?.customType, 'herdr_agent_result');
+    assert.equal(message?.customType, 'agent_result');
     assert.match(message?.content ?? '', /MOCK_CHILD_OK/);
     assert.equal(message?.triggerTurn, true);
 
@@ -883,7 +883,7 @@ test('archives a long real child result and delivers an excerpt with its report 
         { length: 60 },
         (_, index) => `finding ${index}: ${'evidence '.repeat(20).trim()}`,
       ),
-      'HERDR_RESULT: done — MOCK_CHILD_OK',
+      'AGENT_RESULT: done — MOCK_CHILD_OK',
     ].join('\n');
     harness.llm.setScript(() => ({ text: report, delayMs: 0 }));
 
@@ -895,7 +895,7 @@ test('archives a long real child result and delivers an excerpt with its report 
     );
 
     const [message] = harness.messages;
-    assert.equal(message?.customType, 'herdr_agent_result');
+    assert.equal(message?.customType, 'agent_result');
     assert.match(message?.content ?? '', /characters omitted/);
     assert.match(message?.content ?? '', /FINDINGS/);
     assert.match(message?.content ?? '', /MOCK_CHILD_OK/);
@@ -986,7 +986,7 @@ test('steers a real running child and delivers its post-steer answer once', asyn
       );
 
       const delivered = await harness.collect('Steer Child', 60000);
-      assert.equal(delivered.customType, 'herdr_agent_result');
+      assert.equal(delivered.customType, 'agent_result');
       assert.match(
         delivered.content,
         /ANSWER_BEFORE_CORRECTION\n\nANSWER_AFTER_CORRECTION/,
@@ -1189,7 +1189,7 @@ test('delivers a real child question once when an interrupt lands on its steered
         60000,
       );
       const [question] = harness.messages;
-      assert.equal(question?.customType, 'herdr_agent_question');
+      assert.equal(question?.customType, 'agent_question');
       assert.match(question?.content ?? '', /cookie or JWT\?/);
       assert.equal(await isAgentResultInterrupted(record?.resultFile), true);
       assert.equal((await readAgentResult(record?.resultFile)) ?? '', '');
@@ -1199,7 +1199,7 @@ test('delivers a real child question once when an interrupt lands on its steered
       assert.equal(harness.messages.length, 1);
       assert.equal(
         harness.messages.filter(
-          (message) => message.customType === 'herdr_agent_result',
+          (message) => message.customType === 'agent_result',
         ).length,
         0,
       );

@@ -157,7 +157,7 @@ export async function claimClosedHistory(
           save: false,
           value: {
             ok: false as const,
-            error: `No closed one-shot Herdr agent named "${input.tabLabel}" is owned by this Orchestrator session.`,
+            error: `No closed one-shot agent named "${input.tabLabel}" is owned by this Orchestrator session.`,
           },
         };
       }
@@ -168,7 +168,7 @@ export async function claimClosedHistory(
           save: false,
           value: {
             ok: false as const,
-            error: `Closed Herdr agent "${input.tabLabel}" is already being resumed.`,
+            error: `Closed agent "${input.tabLabel}" is already being resumed.`,
           },
         };
       }
@@ -181,7 +181,7 @@ export async function claimClosedHistory(
           save: false,
           value: {
             ok: false as const,
-            error: `Closed Herdr agent "${input.tabLabel}" cannot be resumed in its current state.`,
+            error: `Closed agent "${input.tabLabel}" cannot be resumed in its current state.`,
           },
         };
       }
@@ -190,7 +190,7 @@ export async function claimClosedHistory(
           save: false,
           value: {
             ok: false as const,
-            error: `Closed Herdr agent "${input.tabLabel}" was a ${newest.profileName} agent, not ${input.profileName}.`,
+            error: `Closed agent "${input.tabLabel}" was a ${newest.profileName} agent, not ${input.profileName}.`,
           },
         };
       }
@@ -199,7 +199,7 @@ export async function claimClosedHistory(
           save: false,
           value: {
             ok: false as const,
-            error: `Closed Herdr agent "${input.tabLabel}" is not a resumable one-shot.`,
+            error: `Closed agent "${input.tabLabel}" is not a resumable one-shot.`,
           },
         };
       }
@@ -209,7 +209,7 @@ export async function claimClosedHistory(
           save: false,
           value: {
             ok: false as const,
-            error: `Closed Herdr agent "${input.tabLabel}" still has a live generation and cannot be resumed over it.`,
+            error: `Closed agent "${input.tabLabel}" still has a live generation and cannot be resumed over it.`,
           },
         };
       }

@@ -70,8 +70,8 @@ export async function startAndRecordAgent(
         {
           type: 'text',
           text: spawn.resumed
-            ? `Resuming Herdr agent ${spawn.tabLabel} (${spawn.paneId})...`
-            : `Starting Herdr agent ${spawn.tabLabel} (${spawn.paneId})...`,
+            ? `Resuming agent ${spawn.tabLabel} (${spawn.paneId})...`
+            : `Starting agent ${spawn.tabLabel} (${spawn.paneId})...`,
         },
       ],
       details: turnDetails(spawn, {
@@ -123,7 +123,7 @@ export async function startAndRecordAgent(
     }
   } else if (spawn.resumeClaim) {
     throw new Error(
-      `Could not record a live lifecycle for resumed Herdr agent ${spawn.tabLabel}.`,
+      `Could not record a live lifecycle for resumed agent ${spawn.tabLabel}.`,
     );
   }
   if (layout === 'pane') {
@@ -143,7 +143,7 @@ export async function runAgentTurn(
 
   const promptTarget = spawn.automationName ?? paneId;
   const taskPrompt = [
-    `You are the ${spawn.agent.name} Herdr agent.`,
+    `You are the ${spawn.agent.name} agent.`,
     '',
     'Task from Orchestrator:',
     task,
@@ -161,7 +161,7 @@ export async function runAgentTurn(
     content: [
       {
         type: 'text',
-        text: `Sending task to Herdr agent ${tabLabel} (${paneId})...`,
+        text: `Sending task to agent ${tabLabel} (${paneId})...`,
       },
     ],
     details: {
@@ -177,7 +177,7 @@ export async function runAgentTurn(
 
   return textResult(
     formatSpawnWarnings(
-      `${spawn.reused ? `Answer sent to Herdr agent ${tabLabel}` : `Herdr agent ${tabLabel} started`} (${paneId}). ${NO_WAIT_HINT}`,
+      `${spawn.reused ? `Answer sent to agent ${tabLabel}` : `Agent ${tabLabel} started`} (${paneId}). ${NO_WAIT_HINT}`,
       spawn.spawnWarnings,
     ),
     turnDetails(spawn, target),

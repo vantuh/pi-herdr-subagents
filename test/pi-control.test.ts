@@ -40,7 +40,7 @@ import { MockLlm } from '../test-support/mock-llm.ts';
  */
 
 const assignment = (resultFile: string) =>
-  `Do the job.\n\nHERDR_RESULT_FILE: ${resultFile}`;
+  `Do the job.\n\nAGENT_RESULT_FILE: ${resultFile}`;
 
 interface ControlFixture {
   resultFile: string;
@@ -72,7 +72,7 @@ async function createControlFixture(): Promise<ControlFixture> {
   assert.ok(dir, 'expected a managed control directory');
   const restoreEnv = applyEnv({
     PI_CODING_AGENT_DIR: root,
-    HERDR_AGENT_CHILD: '1',
+    PI_AGENT_CHILD: '1',
   });
   const llm = new MockLlm();
   await llm.start();
@@ -170,7 +170,7 @@ function appendedSteerIds(
       customType?: string;
       details?: { requestId?: string };
     };
-    return custom.role === 'custom' && custom.customType === 'herdr_agent_steer'
+    return custom.role === 'custom' && custom.customType === 'agent_steer'
       ? [custom.details?.requestId]
       : [];
   });
@@ -180,7 +180,7 @@ test('check 1: a steer published in the before-settle window is applied as a con
   await withFixture(async (fixture) => {
     fixture.llm.setScript((_body, index) =>
       index === 0
-        ? { text: 'HERDR_RESULT: first turn', delayMs: 0 }
+        ? { text: 'AGENT_RESULT: first turn', delayMs: 0 }
         : { text: 'SECOND_TURN', delayMs: 0 },
     );
     const published: { id: string; ack?: ControlAck } = {
@@ -228,7 +228,7 @@ test('check 1: a steer published in the before-settle window is applied as a con
 test('check 2: a steer after Pi settled is refused while the run state still reads active', async () => {
   await withFixture(async (fixture) => {
     fixture.llm.setScript(() => ({
-      text: 'HERDR_RESULT: only turn',
+      text: 'AGENT_RESULT: only turn',
       delayMs: 0,
     }));
     const observed: { id: string; ack?: ControlAck } = {

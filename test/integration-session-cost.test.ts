@@ -147,7 +147,7 @@ test('/herdr-agents watches from an empty list until an agent appears', async ()
       await harness.waitFor(() => dialog !== undefined, 'the modal to open');
       assert.match(
         dialog!.render().join('\n'),
-        /No managed Herdr agents\. Watching for new ones/,
+        /No managed agents\. Watching for new ones/,
       );
 
       // A parallel spawn must appear without reopening the command.
@@ -169,7 +169,7 @@ test('/herdr-agents watches from an empty list until an agent appears', async ()
       assert.equal(focus[2], harness.fake.paneByLabel('Scout Late')?.pane_id);
       assert.match(
         harness.notifications.at(-1)?.message ?? '',
-        /Focused Herdr agent "Scout Late"/,
+        /Focused agent "Scout Late"/,
       );
     },
   );
@@ -245,7 +245,7 @@ test('/herdr-agents updates context and cost and focuses a newly spawned agent',
       assert.equal(focus[2], harness.fake.paneByLabel('Scout B')?.pane_id);
       assert.match(
         harness.notifications.at(-1)?.message ?? '',
-        /Focused Herdr agent "Scout B"/,
+        /Focused agent "Scout B"/,
       );
     },
   );

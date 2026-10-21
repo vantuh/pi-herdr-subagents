@@ -53,7 +53,7 @@ export async function showAgentModelPicker(
   try {
     const data = await buildData(ctx);
     if (data.agents.length === 0) {
-      ctx.ui.notify('No Herdr agent profiles found', 'warning');
+      ctx.ui.notify('No agent profiles found', 'warning');
       return;
     }
     await ctx.ui.custom<void>(
@@ -74,7 +74,7 @@ export async function showAgentModelPicker(
     );
   } catch (error) {
     ctx.ui.notify(
-      `Failed to load Herdr agent models: ${errorMessage(error)}`,
+      `Failed to load agent models: ${errorMessage(error)}`,
       'error',
     );
   }

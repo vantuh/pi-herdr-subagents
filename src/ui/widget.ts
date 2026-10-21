@@ -95,7 +95,7 @@ export function renderAgentWidgetLines(
   const working = rows.filter((row) => row.status.tone === 'active').length;
   const suffix = working > 0 ? ` · ${working} working` : '';
   const lines = [
-    paint.header(`Herdr agents · ${agents.length}${suffix}`),
+    paint.header(`Agents · ${agents.length}${suffix}`),
     ...rows.map((row) =>
       [
         ' ',

@@ -16,7 +16,7 @@ import herdrAgentsExtension from '../src/index.ts';
 import { applyEnv, createMockHost } from '../test-support/mock-extension.ts';
 
 /**
- * Child-mode contract: with `HERDR_AGENT_CHILD=1` the extension must not offer
+ * Child-mode contract: with `PI_AGENT_CHILD=1` the extension must not offer
  * delegation or inject Orchestrator guidance, but must still capture the
  * child's final answer and expose the question channel.
  */
@@ -31,7 +31,7 @@ async function withChildHost(
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'herdr-agents-child-'));
   const tmp = path.join(root, 'tmp');
   await fs.mkdir(tmp, { recursive: true });
-  const restoreEnv = applyEnv({ TMPDIR: tmp, HERDR_AGENT_CHILD: '1' });
+  const restoreEnv = applyEnv({ TMPDIR: tmp, PI_AGENT_CHILD: '1' });
   try {
     const host = createMockHost({
       cwd: root,
@@ -79,7 +79,14 @@ function contextUsage(
 test('a child registers the question channel but never delegation', async () => {
   await withChildHost(async (host) => {
     assert.deepEqual([...host.tools.keys()], ['ask_question']);
-    assert.equal(host.tools.has('herdr_agent'), false);
+    for (const tool of [
+      'agent_spawn',
+      'agent_send',
+      'agent_stop',
+      'agent_status',
+    ]) {
+      assert.equal(host.tools.has(tool), false, tool);
+    }
     // No Orchestrator commands, renderers or instruction injection either.
     assert.deepEqual([...host.commands.keys()], []);
     assert.deepEqual([...host.renderers.keys()], []);
@@ -102,12 +109,12 @@ test('a child appends every assistant message to the result artifact', async () 
     await host.fire('message_end', {
       message: {
         role: 'assistant',
-        content: [{ type: 'text', text: 'HERDR_RESULT:\n- status: done' }],
+        content: [{ type: 'text', text: 'AGENT_RESULT:\n- status: done' }],
       },
     });
     assert.equal(
       await fs.readFile(resultFile, 'utf8'),
-      'HERDR_RESULT:\n- status: done',
+      'AGENT_RESULT:\n- status: done',
     );
 
     // A report followed by a separate summary message must keep both.
@@ -117,7 +124,7 @@ test('a child appends every assistant message to the result artifact', async () 
         content: [{ type: 'text', text: 'final' }],
       },
     });
-    const both = 'HERDR_RESULT:\n- status: done\n\nfinal';
+    const both = 'AGENT_RESULT:\n- status: done\n\nfinal';
     assert.equal(await fs.readFile(resultFile, 'utf8'), both);
 
     // A user message and a blank answer must not touch the artifact.

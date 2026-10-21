@@ -15,12 +15,12 @@ import {
 } from './artifacts/schema.ts';
 import { parseJson } from './json.ts';
 
-export const RESULT_FILE_MARKER = 'HERDR_RESULT_FILE:';
+export const RESULT_FILE_MARKER = 'AGENT_RESULT_FILE:';
 
 export const ASK_QUESTION_TOOL = 'ask_question';
 
 /** Child-only: absolute path to the private session metadata artifact. */
-export const SESSION_META_ENV = 'HERDR_AGENT_SESSION_META';
+export const SESSION_META_ENV = 'PI_AGENT_SESSION_META';
 
 const SESSION_META_FILE_NAME = 'session.json';
 
@@ -92,7 +92,7 @@ export function isManagedResultFile(filePath: string): boolean {
 
 /**
  * The question lives next to the result file, so the child can derive it from
- * the single `HERDR_RESULT_FILE:` marker already present in its prompt — no
+ * the single `AGENT_RESULT_FILE:` marker already present in its prompt — no
  * second marker to keep in sync.
  */
 function siblingArtifact(
@@ -186,7 +186,7 @@ export async function clearAgentQuestion(
 }
 
 export function findResultFileMarker(prompt: string): string | undefined {
-  const matches = [...prompt.matchAll(/^HERDR_RESULT_FILE:\s*(.+)$/gm)];
+  const matches = [...prompt.matchAll(/^AGENT_RESULT_FILE:\s*(.+)$/gm)];
   const candidate = matches.at(-1)?.[1]?.trim();
   return candidate && isManagedResultFile(candidate) ? candidate : undefined;
 }

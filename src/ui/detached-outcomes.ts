@@ -93,7 +93,7 @@ export async function deliverDetachedOutcomes(
     if (!isSettledAgentStatus(agent.status)) continue;
 
     // Checked before the result: a child that asked ends its turn without
-    // HERDR_RESULT, so it settles like a completion while the artifact may
+    // AGENT_RESULT, so it settles like a completion while the artifact may
     // already hold its assistant text.
     const question = await bestEffort(undefined, () =>
       readAgentQuestion(agent.resultFile),
@@ -209,7 +209,7 @@ export async function deliverDetachedOutcomes(
     pending.push({
       customType: AGENT_RESULT_MESSAGE_TYPE,
       content: [
-        `Herdr agent ${agent.tabLabel} (${agent.agent}) finished on its own:`,
+        `Agent ${agent.tabLabel} (${agent.agent}) finished on its own:`,
         '',
         resultWithWarnings,
       ].join('\n'),

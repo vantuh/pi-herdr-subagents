@@ -106,8 +106,8 @@ export class AgentModelPicker extends Container {
           this.theme.fg(
             'accent',
             step === 'agent'
-              ? 'Herdr agent model · agent'
-              : `Herdr agent model · model for ${this.agent?.name ?? ''}`,
+              ? 'Agent model · agent'
+              : `Agent model · model for ${this.agent?.name ?? ''}`,
           ),
         ),
       ),

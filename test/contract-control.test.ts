@@ -733,7 +733,7 @@ test('a control call leaves a pending outcome untouched and cannot duplicate its
     await new Promise((resolve) => setTimeout(resolve, 1500));
     const results = () =>
       harness.messages.filter(
-        (message) => message.customType === 'herdr_agent_result',
+        (message) => message.customType === 'agent_result',
       );
     assert.deepEqual(results(), []);
 
