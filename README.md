@@ -229,9 +229,16 @@ sessions are not moved and remain visible in the default history.
 
 Optional settings live in `~/.pi/agent/pi-herdr-subagents.json`. The file is read
 once when the extension loads; run `/reload` after editing it. A missing or
-invalid file uses the defaults. The state file and reports directory are
-renamed once at load from the older `herdr-agents-*` names; the config file is
-not renamed for you ([docs/config.md](docs/config.md#storage-names)).
+invalid file uses the defaults. State and its lock are local to the active Pi
+agent directory: `<getAgentDir()>/pi-herdr-subagents-state.json` and its `.lock`
+sidecar. Profiles can share a config symlink without sharing state. An explicit
+`PI_AGENTS_STATE_PATH` overrides the state path.
+
+The state file and reports directory are renamed once at load from the older
+`herdr-agents-*` names in the same directory; the config file is not renamed for
+you. Existing multi-profile installations must back up and split the previously
+shared state before using profile-local files
+([docs/config.md](docs/config.md#storage-names)).
 
 ```json
 {

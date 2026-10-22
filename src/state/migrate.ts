@@ -39,20 +39,22 @@ async function pathExists(target: string): Promise<boolean> {
  */
 async function migrateStateFile(statePath: string, warn: Warn): Promise<void> {
   const legacyPath = path.join(path.dirname(statePath), LEGACY_STATE_FILE);
-  await withStateFileLock(statePath, async () => {
+  const needsRename = async () => {
     const [current, legacy] = await Promise.all([
       pathExists(statePath),
       pathExists(legacyPath),
     ]);
-    if (current) {
-      if (legacy) {
-        warn(
-          `herdr-agents: ${statePath} and ${legacyPath} both exist; keeping ${statePath} and leaving ${legacyPath} untouched`,
-        );
-      }
-      return;
+    if (current && legacy) {
+      warn(
+        `herdr-agents: ${statePath} and ${legacyPath} both exist; keeping ${statePath} and leaving ${legacyPath} untouched`,
+      );
     }
-    if (!legacy) return;
+    return !current && legacy;
+  };
+  if (!(await needsRename())) return;
+
+  await withStateFileLock(statePath, async () => {
+    if (!(await needsRename())) return;
     try {
       await fs.rename(legacyPath, statePath);
     } catch (error) {

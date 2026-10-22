@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import { Value } from 'typebox/value';
 
 import { readIfExists } from '../artifacts.ts';
@@ -76,7 +76,7 @@ export function throwIfInjectedMutation(kind: StateMutationKind): void {
 export function getHerdrAgentsStatePath(): string {
   return (
     process.env[STATE_PATH_ENV] ??
-    path.join(os.homedir(), '.pi', 'agent', HERDR_AGENTS_STATE_FILE)
+    path.join(getAgentDir(), HERDR_AGENTS_STATE_FILE)
   );
 }
 

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 
-import { afterAll, test } from 'vitest';
+import { afterAll, test, vi } from 'vitest';
 
 import { pruneExpiredReports } from '../src/reports.ts';
 import { migrateHerdrAgentStorage } from '../src/state/migrate.ts';
@@ -105,6 +105,45 @@ test('keeps the new state file and the legacy one when both exist', async () => 
   assert.match(targets.warnings[0]!, /both exist/);
   assert.match(targets.warnings[0]!, new RegExp(targets.legacyStatePath));
 });
+
+test.each([
+  { current: true, legacy: false },
+  { current: true, legacy: true },
+  { current: false, legacy: false },
+  { current: false, legacy: true },
+])(
+  'needs the lock only for a legacy rename: $current / $legacy',
+  async ({ current, legacy }) => {
+    const targets = await paths();
+    if (current) await fs.writeFile(targets.statePath, STATE);
+    if (legacy) await fs.writeFile(targets.legacyStatePath, STATE);
+    const lockPath = `${targets.statePath}.lock`;
+    await fs.mkdir(lockPath);
+    await fs.writeFile(path.join(lockPath, 'owner.keep'), 'keep');
+    vi.stubEnv('PI_AGENTS_LOCK_WAIT_MS', '0');
+    try {
+      await migrate(targets);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    assert.deepEqual(await fs.readdir(lockPath), ['owner.keep']);
+    assert.equal(
+      await fs.readFile(path.join(lockPath, 'owner.keep'), 'utf8'),
+      'keep',
+    );
+    assert.equal(targets.warnings.length, legacy ? 1 : 0);
+    if (legacy)
+      assert.match(
+        targets.warnings[0]!,
+        current ? /both exist/ : /Timed out waiting/,
+      );
+    assert.equal(await exists(targets.statePath), current);
+    if (current)
+      assert.equal(await fs.readFile(targets.statePath, 'utf8'), STATE);
+    if (legacy)
+      assert.equal(await fs.readFile(targets.legacyStatePath, 'utf8'), STATE);
+  },
+);
 
 test('writes nothing when neither storage name exists', async () => {
   const targets = await paths();

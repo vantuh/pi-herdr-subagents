@@ -164,12 +164,19 @@ Easy to break and not obvious from one file:
   `unknown`.
 - `pi-herdr-subagents.json` is read once at extension load; edits apply on
   `/reload`.
+- State defaults to `<getAgentDir()>/pi-herdr-subagents-state.json`; its `.lock`
+  sidecar shares the profile boundary. `PI_AGENTS_STATE_PATH` still overrides it.
+  Resolve the agent directory at call time, not module import. Shared config
+  symlinks do not share state. Never migrate the whole previously global state
+  into an arbitrary profile; partition it explicitly after backing it up.
 - Storage names derive from the package name. `migrateHerdrAgentStorage` runs once
   at load, before the config read and before any state read (which awaits
   `whenStorageReady`): it renames the legacy state file under the state lock and
   the legacy reports directory in the same parent. When both names exist the new
   one wins and the old one stays untouched, never merged; a symlinked reports
-  directory is refused. A failed rename warns on stderr and never blocks load.
+  directory is refused. No state lock is acquired when no rename is needed; a
+  rename rechecks both paths under the lock. A failed rename warns on stderr
+  and never blocks load.
 - `session_shutdown` stops the poller and awaits the tick in flight, so no tick
   writes state after shutdown.
 - Stored `persistent` records from older versions are kept but never reused,

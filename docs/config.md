@@ -45,13 +45,28 @@ A match fails the spawn and leaves the Orchestrator workspace unchanged.
 
 ## Storage names
 
+State defaults to `<getAgentDir()>/pi-herdr-subagents-state.json`. Its lock is
+`<state path>.lock`, so different `PI_CODING_AGENT_DIR` profiles have separate
+state and locks. `PI_AGENTS_STATE_PATH` overrides this path; pointing profiles
+at the same override deliberately shares both state and locking. A shared config
+symlink does not share state.
+
+Earlier versions kept all profiles in `~/.pi/agent/pi-herdr-subagents-state.json`.
+Before upgrading an existing multi-profile setup, stop its Pi sessions and back
+up the shared state. Partition its records by their owner session paths into
+the matching profile directories. Validate session headers and preserve IDs
+and child session paths, including older children stored in another directory.
+Do not move the whole shared file into the first profile: it can contain other
+profiles' history. Keep ambiguous records in the backup for manual review.
+
 All three storage names derive from the package name: this file, the state file
 `pi-herdr-subagents-state.json` and the reports directory
 `pi-herdr-subagents-results/`. The legacy names (`herdr-agents.json`,
 `herdr-agents-state.json`, `herdr-agents-results/`) are migrated once when the
-extension loads: the state file is renamed under the state lock and the reports
-directory in the same parent. When both names exist the new one wins and the old
-one stays untouched; a symlinked reports directory is refused. A failed rename
+extension loads: the state file is renamed under its profile-local state lock
+and the reports directory in the same parent. A load that needs no state rename
+does not acquire the state lock. When both names exist the new one wins and
+the old one stays untouched; a symlinked reports directory is refused. A failed rename
 warns on stderr and never blocks the load.
 
 This config file is not renamed at runtime: it is managed by chezmoi, so rename
